@@ -10,7 +10,7 @@ import {
     type ReactNode,
 } from "react";
 import { COMPANIES as SEED_COMPANIES, USERS as SEED_USERS } from "@/lib/admin/demoData";
-import { INVOICES as SEED_INVOICES } from "@/lib/admin/billingDemoData";
+import { INVOICES as SEED_INVOICES, TOP_UP_REQUESTS as SEED_TOP_UP_REQUESTS } from "@/lib/admin/billingDemoData";
 import { clonePlans, getPlanById, PLANS } from "@/lib/admin/plans";
 import {
     addCompanyDocument as addCompanyDocumentRecord,
@@ -20,6 +20,11 @@ import {
     type CompanyDocumentKind,
 } from "@/lib/admin/companyDocuments";
 import { consumeUserTokens as consumeUserTokenRecord } from "@/lib/admin/consumeUserTokens";
+import {
+    chargeUsdForTokens,
+    effectiveSellRate,
+    marginForTokens,
+} from "@/lib/billing/tokenEconomics";
 import { applyCheckout } from "@/lib/billing/checkout";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import type { ChronologyReport } from "@/lib/chronology/types";
@@ -60,7 +65,7 @@ import {
     maskApiKey,
     retryInvoiceStatus,
 } from "@/lib/admin/wave2Helpers";
-import type { Invoice, InvoiceStatus } from "@/lib/admin/billingTypes";
+import type { Invoice, InvoiceStatus, TopUpRequest, TopUpStatus } from "@/lib/admin/billingTypes";
 import type {
     AuditEntry,
     Company,
@@ -68,6 +73,7 @@ import type {
     ModuleId,
     Plan,
     PlanId,
+    TokenEconomics,
     User,
     UserRole,
     UserStatus,
@@ -107,6 +113,21 @@ type AdminDataContextValue = {
     maintenanceMessage: string;
     plans: Plan[];
     companyWorkspaces: Record<string, CompanyWorkspaceState>;
+    tokenEconomics: TokenEconomics;
+    topUpRequests: TopUpRequest[];
+
+    updateTokenEconomics: (input: {
+        providerTokensPerUsd: number;
+        sellTokensPerUsd: number;
+    }) => { ok: boolean; error?: string };
+    setCompanySellRateOverride: (
+        companyId: string,
+        override?: number
+    ) => { ok: boolean; error?: string };
+    resolveTopUpRequest: (
+        requestId: string,
+        status: Exclude<TopUpStatus, "pending">
+    ) => { ok: boolean; error?: string };
 
     createCompany: (input: {
         name: string;
@@ -285,6 +306,37 @@ const DEFAULT_MAINTENANCE_MESSAGE =
     "We're performing scheduled maintenance. Some features may be temporarily unavailable.";
 
 const ACCESS_REQUESTS_KEY = "coair.accessRequests";
+const TOKEN_ECONOMICS_KEY = "coair.tokenEconomics";
+
+const DEFAULT_TOKEN_ECONOMICS: TokenEconomics = {
+    providerTokensPerUsd: 100,
+    sellTokensPerUsd: 80,
+    updatedAt: new Date().toISOString(),
+    updatedBy: "system",
+};
+
+function loadTokenEconomics(): TokenEconomics {
+    if (typeof window === "undefined") {
+        return { ...DEFAULT_TOKEN_ECONOMICS };
+    }
+    try {
+        const raw = sessionStorage.getItem(TOKEN_ECONOMICS_KEY);
+        if (!raw) {
+            return { ...DEFAULT_TOKEN_ECONOMICS };
+        }
+        const parsed = JSON.parse(raw) as TokenEconomics;
+        if (
+            parsed &&
+            parsed.providerTokensPerUsd > 0 &&
+            parsed.sellTokensPerUsd > 0
+        ) {
+            return parsed;
+        }
+        return { ...DEFAULT_TOKEN_ECONOMICS };
+    } catch {
+        return { ...DEFAULT_TOKEN_ECONOMICS };
+    }
+}
 
 function loadAccessRequests(): AccessRequest[] {
     if (typeof window === "undefined") {
@@ -427,10 +479,19 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
     const [maintenanceMessage, setMaintenanceMessage] = useState(
         DEFAULT_MAINTENANCE_MESSAGE
     );
+    const [tokenEconomics, setTokenEconomics] = useState<TokenEconomics>(() => ({
+        ...DEFAULT_TOKEN_ECONOMICS,
+    }));
+    const [tokenEconomicsReady, setTokenEconomicsReady] = useState(false);
+    const [topUpRequests, setTopUpRequests] = useState<TopUpRequest[]>(() =>
+        SEED_TOP_UP_REQUESTS.map((request) => ({ ...request }))
+    );
 
     useEffect(() => {
         setAccessRequests(loadAccessRequests());
         setAccessRequestsReady(true);
+        setTokenEconomics(loadTokenEconomics());
+        setTokenEconomicsReady(true);
     }, []);
 
     useEffect(() => {
@@ -440,6 +501,14 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
             JSON.stringify(accessRequests)
         );
     }, [accessRequests, accessRequestsReady]);
+
+    useEffect(() => {
+        if (!tokenEconomicsReady) return;
+        sessionStorage.setItem(
+            TOKEN_ECONOMICS_KEY,
+            JSON.stringify(tokenEconomics)
+        );
+    }, [tokenEconomics, tokenEconomicsReady]);
 
     const pushAudit = useCallback(
         (
@@ -989,6 +1058,145 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
             return { ok: true };
         },
         [companies, pushAudit]
+    );
+
+    const updateTokenEconomics = useCallback(
+        (input: { providerTokensPerUsd: number; sellTokensPerUsd: number }) => {
+            if (
+                !Number.isFinite(input.providerTokensPerUsd) ||
+                !Number.isFinite(input.sellTokensPerUsd) ||
+                input.providerTokensPerUsd <= 0 ||
+                input.sellTokensPerUsd <= 0
+            ) {
+                return { ok: false, error: "Rates must be greater than zero" };
+            }
+
+            const previous = tokenEconomics;
+            const next: TokenEconomics = {
+                providerTokensPerUsd: input.providerTokensPerUsd,
+                sellTokensPerUsd: input.sellTokensPerUsd,
+                updatedAt: new Date().toISOString(),
+                updatedBy: "Super Admin",
+            };
+            setTokenEconomics(next);
+            pushAudit({
+                action: "tokens.rates_update",
+                targetType: "company",
+                targetId: "platform",
+                targetLabel: "Token rates",
+                detail: `Provider ${previous.providerTokensPerUsd}→${next.providerTokensPerUsd} tokens/$1; sell ${previous.sellTokensPerUsd}→${next.sellTokensPerUsd} tokens/$1`,
+            });
+            return { ok: true };
+        },
+        [tokenEconomics, pushAudit]
+    );
+
+    const setCompanySellRateOverride = useCallback(
+        (companyId: string, override?: number) => {
+            const company = companies.find((entry) => entry.id === companyId);
+            if (!company) {
+                return { ok: false, error: "Company not found" };
+            }
+            if (
+                override !== undefined &&
+                (!Number.isFinite(override) || override <= 0)
+            ) {
+                return { ok: false, error: "Override must be greater than zero" };
+            }
+
+            setCompanies((prev) =>
+                prev.map((entry) =>
+                    entry.id === companyId
+                        ? {
+                              ...entry,
+                              sellTokensPerUsdOverride:
+                                  override && override > 0 ? override : undefined,
+                          }
+                        : entry
+                )
+            );
+            pushAudit({
+                action: "tokens.sell_override",
+                targetType: "company",
+                targetId: companyId,
+                targetLabel: company.name,
+                detail: override
+                    ? `Sell rate override set to ${override} tokens/$1`
+                    : "Sell rate override cleared",
+            });
+            return { ok: true };
+        },
+        [companies, pushAudit]
+    );
+
+    const resolveTopUpRequest = useCallback(
+        (requestId: string, status: Exclude<TopUpStatus, "pending">) => {
+            const request = topUpRequests.find((entry) => entry.id === requestId);
+            if (!request) {
+                return { ok: false, error: "Top-up request not found" };
+            }
+            if (request.status !== "pending") {
+                return { ok: false, error: "Request already resolved" };
+            }
+
+            const company = companies.find(
+                (entry) => entry.id === request.companyId
+            );
+            if (!company) {
+                return { ok: false, error: "Company not found" };
+            }
+
+            const sellRate = effectiveSellRate(
+                tokenEconomics,
+                company.sellTokensPerUsdOverride
+            );
+            const pricing = marginForTokens(
+                request.tokensRequested,
+                tokenEconomics.providerTokensPerUsd,
+                sellRate
+            );
+            const amountUsd = chargeUsdForTokens(
+                request.tokensRequested,
+                sellRate
+            );
+            const resolvedAt = new Date().toISOString();
+
+            setTopUpRequests((prev) =>
+                prev.map((entry) =>
+                    entry.id === requestId
+                        ? { ...entry, status, amountUsd, resolvedAt }
+                        : entry
+                )
+            );
+
+            if (status === "approved") {
+                setCompanies((prev) =>
+                    prev.map((entry) =>
+                        entry.id === company.id
+                            ? {
+                                  ...entry,
+                                  tokenLimit:
+                                      entry.tokenLimit + request.tokensRequested,
+                              }
+                            : entry
+                    )
+                );
+            }
+
+            pushAudit({
+                action:
+                    status === "approved"
+                        ? "tokens.topup_approve"
+                        : "tokens.topup_deny",
+                targetType: "company",
+                targetId: company.id,
+                targetLabel: company.name,
+                detail: `${status === "approved" ? "Approved" : "Denied"} ${request.tokensRequested.toLocaleString()} tokens — charge $${pricing.chargeUsd.toFixed(2)}, cost $${pricing.providerCostUsd.toFixed(2)}, margin $${pricing.marginUsd.toFixed(2)}`,
+            });
+
+            return { ok: true };
+        },
+        [topUpRequests, companies, tokenEconomics, pushAudit]
     );
 
     const consumeUserTokens = useCallback(
@@ -1952,7 +2160,12 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
             maintenanceMessage,
             plans,
             companyWorkspaces,
+            tokenEconomics,
+            topUpRequests,
 
+            updateTokenEconomics,
+            setCompanySellRateOverride,
+            resolveTopUpRequest,
             createCompany,
             requestCompanyAccess,
             approveCompanyAccessRequest,
@@ -2032,7 +2245,12 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
             maintenanceMessage,
             plans,
             companyWorkspaces,
+            tokenEconomics,
+            topUpRequests,
 
+            updateTokenEconomics,
+            setCompanySellRateOverride,
+            resolveTopUpRequest,
             createCompany,
             requestCompanyAccess,
             approveCompanyAccessRequest,

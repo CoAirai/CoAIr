@@ -11,21 +11,16 @@ export const menu = [
     },
     {
         id: 2,
-        name: "Speech",
-        icon: "voice",
-    },
-    {
-        id: 3,
         name: "Theme",
         icon: "document",
     },
     {
-        id: 4,
+        id: 3,
         name: "Security",
         icon: "security",
     },
     {
-        id: 5,
+        id: 4,
         name: "Data Controls",
         icon: "database",
     },

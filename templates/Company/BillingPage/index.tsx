@@ -9,12 +9,12 @@ import CheckoutModal from "@/components/Company/CheckoutModal";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
 import type { ModuleId, PlanId } from "@/lib/admin/types";
+import {
+    chargeUsdForTokens,
+    effectiveSellRate,
+} from "@/lib/billing/tokenEconomics";
 
-const TOKEN_PACKS = [
-    { amount: 1000 as const, priceUsd: 15, label: "1,000 tokens" },
-    { amount: 5000 as const, priceUsd: 60, label: "5,000 tokens" },
-    { amount: 10000 as const, priceUsd: 100, label: "10,000 tokens" },
-];
+const TOKEN_AMOUNTS = [1000, 5000, 10000] as const;
 
 const STORAGE_PACKS = [
     { gb: 10 as const, priceUsd: 10, label: "10 GB" },
@@ -25,7 +25,7 @@ const STORAGE_PACKS = [
 const currencyFormatter = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
 });
 const numberFormatter = new Intl.NumberFormat("en-US");
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -66,9 +66,24 @@ const BillingPage = () => {
         upgradePlan,
         buyAddOn,
         plans,
+        tokenEconomics,
     } = useCompanyData();
 
     const [checkout, setCheckout] = useState<CheckoutState>(null);
+
+    const sellRate = effectiveSellRate(
+        tokenEconomics,
+        company.sellTokensPerUsdOverride
+    );
+    const tokenPacks = useMemo(
+        () =>
+            TOKEN_AMOUNTS.map((amount) => ({
+                amount,
+                priceUsd: chargeUsdForTokens(amount, sellRate),
+                label: `${amount.toLocaleString()} tokens`,
+            })),
+        [sellRate]
+    );
 
     const plan = getPlanById(company.planId, plans);
     const currentPlanIndex = PLAN_ORDER.indexOf(company.planId);
@@ -236,10 +251,12 @@ const BillingPage = () => {
                         Buy extra tokens
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        One-time packs added to your current token limit.
+                        One-time packs added to your current token limit. Priced
+                        at {sellRate} tokens per $1.
+                        Overage is billed at the same rate.
                     </p>
                     <div className="mt-4 space-y-3">
-                        {TOKEN_PACKS.map((pack) => (
+                        {tokenPacks.map((pack) => (
                             <div
                                 key={pack.amount}
                                 className="flex items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"

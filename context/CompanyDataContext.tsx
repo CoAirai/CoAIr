@@ -16,7 +16,7 @@ import {
     userRemainingInSlice,
 } from "@/lib/company/tokenMath";
 import { getPlanById } from "@/lib/admin/plans";
-import type { Company, ModuleId, Plan, PlanId, User, UserRole } from "@/lib/admin/types";
+import type { Company, ModuleId, Plan, PlanId, TokenEconomics, User, UserRole } from "@/lib/admin/types";
 import type { Invoice } from "@/lib/admin/billingTypes";
 import type { SupportTicket } from "@/lib/admin/wave2Types";
 import type {
@@ -34,6 +34,7 @@ type CompanyDataContextValue = {
     tickets: CompanyTicket[];
     activity: CompanyActivityItem[];
     plans: Plan[];
+    tokenEconomics: TokenEconomics;
 
     inviteUser: (input: {
         email: string;
@@ -115,6 +116,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
         createSupportTicket,
         plans,
         setCompanyAddOn,
+        tokenEconomics,
     } = useAdminData();
 
     const companyId = session?.companyId ?? "";
@@ -439,6 +441,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
             tickets,
             activity,
             plans,
+            tokenEconomics,
             inviteUser,
             resendInvite,
             setUserRole,
@@ -462,6 +465,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
         tickets,
         activity,
         plans,
+        tokenEconomics,
         inviteUser,
         resendInvite,
         setUserRole,

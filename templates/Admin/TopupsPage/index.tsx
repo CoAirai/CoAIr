@@ -1,45 +1,68 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import StatusBadge from "@/components/Admin/StatusBadge";
-import { TOP_UP_REQUESTS as TOPUP_REQUESTS } from "@/lib/admin/billingDemoData";
-import { resolveTopUp } from "@/lib/admin/billingSelectors";
+import { useAdminData } from "@/context/AdminDataContext";
 import type { TopUpStatus } from "@/lib/admin/billingTypes";
-import { COMPANIES } from "@/lib/admin/demoData";
+import {
+    chargeUsdForTokens,
+    effectiveSellRate,
+    marginForTokens,
+} from "@/lib/billing/tokenEconomics";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 const currencyFormatter = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
 });
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
 });
 
-const companyNameById = Object.fromEntries(
-    COMPANIES.map((company) => [company.id, company.name])
-);
-
 const formatDate = (date: string) => dateFormatter.format(new Date(date));
 
 const TopupsPage = () => {
-    const [requests, setRequests] = useState(TOPUP_REQUESTS);
+    const {
+        companies,
+        topUpRequests,
+        tokenEconomics,
+        resolveTopUpRequest,
+    } = useAdminData();
+
+    const companyNameById = useMemo(
+        () => Object.fromEntries(companies.map((company) => [company.id, company.name])),
+        [companies]
+    );
 
     const pendingRequests = useMemo(
-        () => requests.filter((request) => request.status === "pending"),
-        [requests]
+        () => topUpRequests.filter((request) => request.status === "pending"),
+        [topUpRequests]
     );
     const historyRequests = useMemo(
-        () => requests.filter((request) => request.status !== "pending"),
-        [requests]
+        () => topUpRequests.filter((request) => request.status !== "pending"),
+        [topUpRequests]
     );
 
-    const handleResolve = (id: string, status: Exclude<TopUpStatus, "pending">) => {
-        setRequests((current) =>
-            resolveTopUp(current, id, status, new Date().toISOString())
+    const pricingForRequest = (companyId: string, tokens: number) => {
+        const company = companies.find((entry) => entry.id === companyId);
+        const sellRate = effectiveSellRate(
+            tokenEconomics,
+            company?.sellTokensPerUsdOverride
         );
+        return marginForTokens(
+            tokens,
+            tokenEconomics.providerTokensPerUsd,
+            sellRate
+        );
+    };
+
+    const handleResolve = (
+        id: string,
+        status: Exclude<TopUpStatus, "pending">
+    ) => {
+        resolveTopUpRequest(id, status);
     };
 
     return (
@@ -47,8 +70,13 @@ const TopupsPage = () => {
             <div>
                 <h1 className="text-label-xl text-strong-950">Top-ups</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
-                    Review token top-up requests and their resolution history.
+                    Review token top-up requests priced from the current sell rate.
                 </p>
+            </div>
+
+            <div className="rounded-xl border border-stroke-soft-200 bg-weak-50 px-4 py-3 text-label-xs text-sub-600">
+                Global sell rate: {tokenEconomics.sellTokensPerUsd} tokens/$1 ·
+                Provider: {tokenEconomics.providerTokensPerUsd} tokens/$1
             </div>
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
@@ -60,59 +88,88 @@ const TopupsPage = () => {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px] text-left">
+                    <table className="w-full min-w-[1100px] text-left">
                         <thead className="bg-weak-50 text-label-xs text-sub-600">
                             <tr>
                                 <th className="px-5 py-3 font-medium">Company</th>
                                 <th className="px-5 py-3 font-medium">Tokens</th>
-                                <th className="px-5 py-3 font-medium">USD</th>
+                                <th className="px-5 py-3 font-medium">Charge</th>
+                                <th className="px-5 py-3 font-medium">Cost</th>
+                                <th className="px-5 py-3 font-medium">Margin</th>
                                 <th className="px-5 py-3 font-medium">Reason</th>
                                 <th className="px-5 py-3 font-medium">Requested</th>
                                 <th className="px-5 py-3 font-medium">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stroke-soft-200">
-                            {pendingRequests.map((request) => (
-                                <tr key={request.id} className="text-label-sm">
-                                    <td className="px-5 py-4 text-strong-950">
-                                        {companyNameById[request.companyId] ?? "Unknown"}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(request.tokensRequested)}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {currencyFormatter.format(request.amountUsd)}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {request.reason}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {formatDate(request.createdAt)}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    handleResolve(request.id, "approved")
-                                                }
-                                                className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
-                                            >
-                                                Approve
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    handleResolve(request.id, "denied")
-                                                }
-                                                className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
-                                            >
-                                                Deny
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {pendingRequests.map((request) => {
+                                const pricing = pricingForRequest(
+                                    request.companyId,
+                                    request.tokensRequested
+                                );
+                                return (
+                                    <tr key={request.id} className="text-label-sm">
+                                        <td className="px-5 py-4 text-strong-950">
+                                            {companyNameById[request.companyId] ??
+                                                "Unknown"}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(
+                                                request.tokensRequested
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {currencyFormatter.format(
+                                                pricing.chargeUsd
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {currencyFormatter.format(
+                                                pricing.providerCostUsd
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {currencyFormatter.format(
+                                                pricing.marginUsd
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {request.reason}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {formatDate(request.createdAt)}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        handleResolve(
+                                                            request.id,
+                                                            "approved"
+                                                        )
+                                                    }
+                                                    className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
+                                                >
+                                                    Approve
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        handleResolve(
+                                                            request.id,
+                                                            "denied"
+                                                        )
+                                                    }
+                                                    className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
+                                                >
+                                                    Deny
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -158,13 +215,29 @@ const TopupsPage = () => {
                             {historyRequests.map((request) => (
                                 <tr key={request.id} className="text-label-sm">
                                     <td className="px-5 py-4 text-strong-950">
-                                        {companyNameById[request.companyId] ?? "Unknown"}
+                                        {companyNameById[request.companyId] ??
+                                            "Unknown"}
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(request.tokensRequested)}
+                                        {numberFormatter.format(
+                                            request.tokensRequested
+                                        )}
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
-                                        {currencyFormatter.format(request.amountUsd)}
+                                        {currencyFormatter.format(
+                                            request.amountUsd ||
+                                                chargeUsdForTokens(
+                                                    request.tokensRequested,
+                                                    effectiveSellRate(
+                                                        tokenEconomics,
+                                                        companies.find(
+                                                            (c) =>
+                                                                c.id ===
+                                                                request.companyId
+                                                        )?.sellTokensPerUsdOverride
+                                                    )
+                                                )
+                                        )}
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
                                         {request.reason}

@@ -26,6 +26,13 @@ export type Plan = {
     modules: Record<ModuleId, ModuleRule>;
 };
 
+export type TokenEconomics = {
+    providerTokensPerUsd: number;
+    sellTokensPerUsd: number;
+    updatedAt: string;
+    updatedBy: string;
+};
+
 export type Company = {
     id: string;
     name: string;
@@ -41,6 +48,7 @@ export type Company = {
     addOns: ModuleId[];
     trialUsage: Partial<Record<ModuleId, number>>;
     needsCheckout?: boolean;
+    sellTokensPerUsdOverride?: number;
 };
 
 export type User = {
@@ -102,6 +110,10 @@ export type AuditAction =
     | "user.force_logout"
     | "tokens.credit"
     | "tokens.debit"
+    | "tokens.rates_update"
+    | "tokens.sell_override"
+    | "tokens.topup_approve"
+    | "tokens.topup_deny"
     | "billing.retry_invoice"
     | "billing.refund"
     | "billing.coupon_create"

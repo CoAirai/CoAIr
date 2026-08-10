@@ -10,6 +10,10 @@ import { useAdminData } from "@/context/AdminDataContext";
 import { getPlanById } from "@/lib/admin/plans";
 import { getStorageRemaining, getTokensRemaining } from "@/lib/admin/selectors";
 import type { ModuleId, PlanId, UserRole } from "@/lib/admin/types";
+import {
+    effectiveSellRate,
+    providerCostUsdForTokens,
+} from "@/lib/billing/tokenEconomics";
 
 type Props = {
     id: string;
@@ -30,6 +34,10 @@ const ROLE_OPTIONS: UserRole[] = ["admin", "member", "viewer"];
 const TOKEN_ACTION_LABELS: Record<string, string> = {
     "tokens.credit": "Tokens credited",
     "tokens.debit": "Tokens debited",
+    "tokens.rates_update": "Token rates updated",
+    "tokens.sell_override": "Sell rate override updated",
+    "tokens.topup_approve": "Top-up approved",
+    "tokens.topup_deny": "Top-up denied",
 };
 
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -68,6 +76,8 @@ const CompanyDetailPage = ({ id }: Props) => {
         refundInvoice,
         plans,
         setCompanyAddOn,
+        tokenEconomics,
+        setCompanySellRateOverride,
     } = useAdminData();
 
     const router = useRouter();
@@ -79,6 +89,8 @@ const CompanyDetailPage = ({ id }: Props) => {
     const [tokenNote, setTokenNote] = useState("");
     const [tokenMessage, setTokenMessage] = useState<string | null>(null);
     const [tokenError, setTokenError] = useState<string | null>(null);
+    const [sellOverride, setSellOverride] = useState("");
+    const [overrideMessage, setOverrideMessage] = useState<string | null>(null);
 
     const [refundTargetId, setRefundTargetId] = useState<string | null>(null);
     const [refundReason, setRefundReason] = useState("");
@@ -524,8 +536,90 @@ const CompanyDetailPage = ({ id }: Props) => {
                             />
                         </div>
                         <p className="mt-3 text-label-sm text-sub-600">
-                            Remaining: {numberFormatter.format(tokensRemaining)}
+                            Remaining: {numberFormatter.format(tokensRemaining)} ·
+                            Est. provider cost of usage:{" "}
+                            {currencyFormatter.format(
+                                providerCostUsdForTokens(
+                                    company.tokensUsed,
+                                    tokenEconomics.providerTokensPerUsd
+                                )
+                            )}
                         </p>
+                    </section>
+
+                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                        <h2 className="text-label-lg text-strong-950">
+                            Sell rate override
+                        </h2>
+                        <p className="mt-1 text-label-xs text-sub-600">
+                            Optional. Leave blank to use the global sell rate (
+                            {tokenEconomics.sellTokensPerUsd} tokens/$1). Effective
+                            rate:{" "}
+                            {effectiveSellRate(
+                                tokenEconomics,
+                                company.sellTokensPerUsdOverride
+                            )}{" "}
+                            tokens/$1.
+                        </p>
+                        <div className="mt-4 flex flex-wrap items-end gap-3">
+                            <label className="block">
+                                <span className="mb-1.5 block text-label-xs text-sub-600">
+                                    Sell tokens / $1
+                                </span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={
+                                        sellOverride ||
+                                        company.sellTokensPerUsdOverride?.toString() ||
+                                        ""
+                                    }
+                                    onChange={(event) =>
+                                        setSellOverride(event.target.value)
+                                    }
+                                    placeholder={String(
+                                        tokenEconomics.sellTokensPerUsd
+                                    )}
+                                    className="h-10 w-40 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                />
+                            </label>
+                            <button
+                                type="button"
+                                className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0"
+                                onClick={() => {
+                                    const value = sellOverride.trim();
+                                    const result = setCompanySellRateOverride(
+                                        company.id,
+                                        value ? Number(value) : undefined
+                                    );
+                                    setOverrideMessage(
+                                        result.ok
+                                            ? value
+                                                ? "Sell override saved"
+                                                : "Sell override cleared"
+                                            : (result.error ?? "Unable to save")
+                                    );
+                                }}
+                            >
+                                Save override
+                            </button>
+                            <button
+                                type="button"
+                                className="h-10 rounded-full border border-stroke-soft-200 px-4 text-label-sm text-strong-950"
+                                onClick={() => {
+                                    setSellOverride("");
+                                    setCompanySellRateOverride(company.id);
+                                    setOverrideMessage("Sell override cleared");
+                                }}
+                            >
+                                Clear
+                            </button>
+                            {overrideMessage ? (
+                                <p className="text-label-sm text-sub-600">
+                                    {overrideMessage}
+                                </p>
+                            ) : null}
+                        </div>
                     </section>
 
                     <form

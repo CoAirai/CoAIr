@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
+import { useAdminData } from "@/context/AdminDataContext";
 import { DEFAULT_OVERAGE_POLICY } from "@/lib/admin/billingDemoData";
 import type { OverageMode, OveragePolicy } from "@/lib/admin/billingTypes";
+import { overageUsdPer1kTokens } from "@/lib/billing/tokenEconomics";
 
 const MODES: Array<{
     value: OverageMode;
@@ -28,8 +30,14 @@ const MODES: Array<{
 ];
 
 const OveragePage = () => {
+    const { tokenEconomics } = useAdminData();
+    const derivedOverageRate = useMemo(
+        () => overageUsdPer1kTokens(tokenEconomics.sellTokensPerUsd),
+        [tokenEconomics.sellTokensPerUsd]
+    );
     const [policy, setPolicy] = useState<OveragePolicy>({
         ...DEFAULT_OVERAGE_POLICY,
+        overageRatePer1kTokensUsd: derivedOverageRate,
     });
     const [savedAt, setSavedAt] = useState<Date | null>(null);
 
@@ -51,6 +59,12 @@ const OveragePage = () => {
                     Configure the default response when a company exceeds its token
                     quota.
                 </p>
+            </div>
+
+            <div className="rounded-xl border border-stroke-soft-200 bg-weak-50 px-4 py-3 text-label-xs text-sub-600">
+                Sell rate: {tokenEconomics.sellTokensPerUsd} tokens/$1 · Overage
+                billing: ${derivedOverageRate.toFixed(2)} per 1,000 tokens (derived
+                from sell rate on Tokens page)
             </div>
 
             <form
@@ -126,18 +140,9 @@ const OveragePage = () => {
                             Overage rate per 1,000 tokens (USD)
                             <input
                                 type="number"
-                                min={0}
-                                step="0.01"
-                                value={policy.overageRatePer1kTokensUsd ?? ""}
-                                onChange={(event) =>
-                                    updatePolicy({
-                                        overageRatePer1kTokensUsd:
-                                            event.currentTarget.value === ""
-                                                ? undefined
-                                                : event.currentTarget.valueAsNumber,
-                                    })
-                                }
-                                className="mt-2 h-10 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                readOnly
+                                value={derivedOverageRate.toFixed(2)}
+                                className="mt-2 h-10 w-full rounded-xl border border-stroke-soft-200 bg-weak-50 px-3 text-label-sm text-strong-950 outline-none"
                             />
                         </label>
                     </div>

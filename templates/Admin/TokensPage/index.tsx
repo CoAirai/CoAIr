@@ -8,17 +8,47 @@ import { useAdminData } from "@/context/AdminDataContext";
 import { usagePercent } from "@/lib/admin/adminSelectors";
 import { getPlanById } from "@/lib/admin/plans";
 import { getTokensRemaining } from "@/lib/admin/selectors";
+import {
+    isNegativeMargin,
+    marginForTokens,
+    providerCostUsdForTokens,
+} from "@/lib/billing/tokenEconomics";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+});
 
 const TokensPage = () => {
-    const { companies, adjustTokens, plans } = useAdminData();
+    const { companies, adjustTokens, plans, tokenEconomics, updateTokenEconomics } =
+        useAdminData();
     const [companyId, setCompanyId] = useState(companies[0]?.id ?? "");
     const [amount, setAmount] = useState("1000");
     const [note, setNote] = useState("");
     const [mode, setMode] = useState<"credit" | "debit">("credit");
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [providerRate, setProviderRate] = useState(
+        String(tokenEconomics.providerTokensPerUsd)
+    );
+    const [sellRate, setSellRate] = useState(
+        String(tokenEconomics.sellTokensPerUsd)
+    );
+    const [ratesMessage, setRatesMessage] = useState<string | null>(null);
+    const [ratesError, setRatesError] = useState<string | null>(null);
+
+    const previewTokens = 8000;
+    const previewMargin = marginForTokens(
+        previewTokens,
+        Number(providerRate) || tokenEconomics.providerTokensPerUsd,
+        Number(sellRate) || tokenEconomics.sellTokensPerUsd
+    );
+    const negativeMargin = isNegativeMargin(
+        Number(providerRate) || tokenEconomics.providerTokensPerUsd,
+        Number(sellRate) || tokenEconomics.sellTokensPerUsd
+    );
 
     const sortedCompanies = useMemo(
         () =>
@@ -50,15 +80,97 @@ const TokensPage = () => {
         setNote("");
     };
 
+    const onSaveRates = (event: FormEvent) => {
+        event.preventDefault();
+        const result = updateTokenEconomics({
+            providerTokensPerUsd: Number(providerRate),
+            sellTokensPerUsd: Number(sellRate),
+        });
+        if (!result.ok) {
+            setRatesError(result.error ?? "Unable to save rates");
+            setRatesMessage(null);
+            return;
+        }
+        setRatesError(null);
+        setRatesMessage("Token rates saved");
+    };
+
     return (
         <div className="space-y-6">
             <div>
                 <h1 className="text-label-xl text-strong-950">Tokens</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
-                    Company token balances sorted by remaining quota. Manually
-                    credit or debit below.
+                    Company token balances sorted by remaining quota. Set wholesale
+                    and retail rates, then credit or debit below.
                 </p>
             </div>
+
+            <form
+                onSubmit={onSaveRates}
+                className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+            >
+                <h2 className="text-label-lg text-strong-950">Token rates</h2>
+                <p className="mt-1 text-label-xs text-sub-600">
+                    Provider cost vs customer sell rate (tokens per $1). Top-ups
+                    and overage use the sell rate.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="block">
+                        <span className="mb-1.5 block text-label-xs text-sub-600">
+                            Provider tokens / $1
+                        </span>
+                        <input
+                            type="number"
+                            min={1}
+                            value={providerRate}
+                            onChange={(e) => setProviderRate(e.target.value)}
+                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1.5 block text-label-xs text-sub-600">
+                            Sell tokens / $1
+                        </span>
+                        <input
+                            type="number"
+                            min={1}
+                            value={sellRate}
+                            onChange={(e) => setSellRate(e.target.value)}
+                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        />
+                    </label>
+                    <div className="rounded-xl bg-weak-50 p-3 text-label-xs text-sub-600 xl:col-span-2">
+                        <p className="text-label-sm text-strong-950">
+                            Preview ({numberFormatter.format(previewTokens)} tokens)
+                        </p>
+                        <p className="mt-1">
+                            Charge {currencyFormatter.format(previewMargin.chargeUsd)} ·
+                            Cost {currencyFormatter.format(previewMargin.providerCostUsd)} ·
+                            Margin {currencyFormatter.format(previewMargin.marginUsd)} (
+                            {(previewMargin.marginPct * 100).toFixed(1)}%)
+                        </p>
+                        {negativeMargin ? (
+                            <p className="mt-1 text-warning-base">
+                                Sell rate is above provider rate — margin will be negative.
+                            </p>
+                        ) : null}
+                    </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                        type="submit"
+                        className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
+                    >
+                        Save rates
+                    </button>
+                    {ratesMessage ? (
+                        <p className="text-label-sm text-green-600">{ratesMessage}</p>
+                    ) : null}
+                    {ratesError ? (
+                        <p className="text-label-sm text-red-500">{ratesError}</p>
+                    ) : null}
+                </div>
+            </form>
 
             <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
                 <div className="border-b border-stroke-soft-200 px-5 py-4">
@@ -81,6 +193,9 @@ const TokensPage = () => {
                                 <th className="px-5 py-3 font-medium">Limit</th>
                                 <th className="px-5 py-3 font-medium">
                                     Remaining
+                                </th>
+                                <th className="px-5 py-3 font-medium">
+                                    Est. provider cost
                                 </th>
                                 <th className="px-5 py-3 font-medium">Usage</th>
                                 <th className="px-5 py-3 font-medium">Status</th>
@@ -132,6 +247,14 @@ const TokensPage = () => {
                                             }`}
                                         >
                                             {numberFormatter.format(remaining)}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {currencyFormatter.format(
+                                                providerCostUsdForTokens(
+                                                    company.tokensUsed,
+                                                    tokenEconomics.providerTokensPerUsd
+                                                )
+                                            )}
                                         </td>
                                         <td className="px-5 py-4">
                                             <div className="min-w-[120px]">

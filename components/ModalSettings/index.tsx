@@ -3,7 +3,6 @@ import Modal from "@/components/Modal";
 import Icon from "@/components/Icon";
 import General from "./General";
 import Notifications from "./Notifications";
-import Speech from "./Speech";
 import Theme from "./Theme";
 import Security from "./Security";
 import DataControls from "./DataControls";
@@ -80,12 +79,11 @@ const Settings = ({ open, onClose, changePassword }: Props) => {
                             ))}
                         {activeId === 0 && <General />}
                         {activeId === 1 && <Notifications />}
-                        {activeId === 2 && <Speech />}
-                        {activeId === 3 && <Theme />}
-                        {activeId === 4 && (
+                        {activeId === 2 && <Theme />}
+                        {activeId === 3 && (
                             <Security changePassword={changePassword} />
                         )}
-                        {activeId === 5 && <DataControls />}
+                        {activeId === 4 && <DataControls />}
                     </div>
                 </div>
             </Modal>
