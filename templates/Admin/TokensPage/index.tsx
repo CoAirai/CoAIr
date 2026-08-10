@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 
+import PageHeader from "@/components/Admin/PageHeader";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAdminData } from "@/context/AdminDataContext";
 import { usagePercent } from "@/lib/admin/adminSelectors";
@@ -96,18 +97,15 @@ const TokensPage = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-label-xl text-strong-950">Tokens</h1>
-                <p className="mt-1 text-label-sm text-sub-600">
-                    Company token balances sorted by remaining quota. Set wholesale
-                    and retail rates, then credit or debit below.
-                </p>
-            </div>
+        <div className="page-stack">
+            <PageHeader
+                title="Tokens"
+                description="Company token balances, wholesale/retail rates, and manual adjustments."
+            />
 
             <form
                 onSubmit={onSaveRates}
-                className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+                className="surface-panel p-5"
             >
                 <h2 className="text-label-lg text-strong-950">Token rates</h2>
                 <p className="mt-1 text-label-xs text-sub-600">
@@ -172,8 +170,8 @@ const TokensPage = () => {
                 </div>
             </form>
 
-            <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 px-5 py-4">
+            <section className="surface-panel overflow-hidden">
+                <div className="surface-panel-header">
                     <h2 className="text-label-lg text-strong-950">
                         By company
                     </h2>
@@ -182,8 +180,8 @@ const TokensPage = () => {
                     </p>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[880px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
+                    <table className="surface-table w-full min-w-[880px] text-left">
+                        <thead>
                             <tr>
                                 <th className="px-5 py-3 font-medium">
                                     Company
@@ -290,7 +288,7 @@ const TokensPage = () => {
 
             <form
                 onSubmit={onSubmit}
-                className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+                className="surface-panel p-5"
             >
                 <h2 className="text-label-lg text-strong-950">
                     Manual token adjustment

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import {
@@ -87,15 +88,13 @@ const UsagePage = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-label-xl text-strong-950">Usage</h1>
-                <p className="mt-1 text-label-sm text-sub-600">
-                    Company quotas, per-user token shares, and overflow pool.
-                </p>
-            </div>
+        <div className="page-stack">
+            <PageHeader
+                title="Usage"
+                description="Company quotas, per-user token shares, and overflow pool."
+            />
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+            <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">Company quotas</h2>
                 <div className="mt-5 grid gap-5 lg:grid-cols-2">
                     <QuotaBar
@@ -123,7 +122,7 @@ const UsagePage = () => {
                 <p className="text-label-sm text-sub-600">{actionMessage}</p>
             )}
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+            <section className="surface-panel">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stroke-soft-200 p-5">
                     <div>
                         <h2 className="text-label-lg text-strong-950">

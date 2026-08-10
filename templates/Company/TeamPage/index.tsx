@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
+import PageHeader from "@/components/Admin/PageHeader";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import { isValidInviteEmail } from "@/lib/admin/wave2Helpers";
@@ -84,31 +85,29 @@ const TeamPage = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <h1 className="text-label-xl text-strong-950">Team</h1>
-                    <p className="mt-1 text-label-sm text-sub-600">
-                        Invite teammates, manage roles, and suspend access.
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => {
-                        setShowInvite((v) => !v);
-                        setInviteError(null);
-                        setInviteSuccess(null);
-                    }}
-                    className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0 transition-opacity hover:opacity-90"
-                >
-                    {showInvite ? "Cancel" : "Invite user"}
-                </button>
-            </div>
+        <div className="page-stack">
+            <PageHeader
+                title="Team"
+                description="Invite teammates, manage roles, and suspend access."
+                action={
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowInvite((v) => !v);
+                            setInviteError(null);
+                            setInviteSuccess(null);
+                        }}
+                        className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
+                    >
+                        {showInvite ? "Close invite" : "Invite teammate"}
+                    </button>
+                }
+            />
 
             {showInvite && (
                 <form
                     onSubmit={onInvite}
-                    className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+                    className="surface-panel p-5"
                 >
                     <h2 className="text-label-lg text-strong-950">
                         Invite user
@@ -187,7 +186,7 @@ const TeamPage = () => {
                 <p className="text-label-sm text-sub-600">{actionMessage}</p>
             )}
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+            <section className="surface-panel">
                 <div className="grid gap-3 border-b border-stroke-soft-200 p-5 md:grid-cols-[minmax(240px,1fr)_200px]">
                     <label className="block">
                         <span className="sr-only">Search team</span>

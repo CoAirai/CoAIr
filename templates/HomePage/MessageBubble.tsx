@@ -22,10 +22,10 @@ const MessageBubble = ({ message }: Props) => {
                 />
             )}
             <div
-                className={`max-w-[min(40rem,85%)] rounded-2xl px-4 py-3 text-p-md ${
+                className={`max-w-[min(40rem,85%)] rounded-2xl px-4 py-3 text-p-md leading-relaxed ${
                     isUser
                         ? "bg-strong-950 text-white-0"
-                        : "bg-white-0 border border-stroke-soft-200 text-strong-950"
+                        : "border border-stroke-soft-200 bg-white-0 text-strong-950 shadow-[0_1px_2px_rgba(14,18,27,0.04)]"
                 }`}
             >
                 {isUser &&

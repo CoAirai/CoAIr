@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import PageHeader from "@/components/Admin/PageHeader";
 import { useCompanyData } from "@/context/CompanyDataContext";
 
 const SettingsPage = () => {
@@ -27,15 +28,13 @@ const SettingsPage = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-label-xl text-strong-950">Settings</h1>
-                <p className="mt-1 text-label-sm text-sub-600">
-                    Manage your company profile.
-                </p>
-            </div>
+        <div className="page-stack">
+            <PageHeader
+                title="Settings"
+                description="Manage your company profile."
+            />
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+            <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">
                     Company profile
                 </h2>
@@ -96,7 +95,7 @@ const SettingsPage = () => {
                 </form>
             </section>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+            <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">
                     Password
                 </h2>

@@ -1,5 +1,7 @@
 "use client";
 
+import PageEnter from "@/components/Motion/PageEnter";
+import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import StatCard from "@/components/Admin/StatCard";
 import { useCompanyData } from "@/context/CompanyDataContext";
@@ -22,13 +24,11 @@ const DashboardPage = () => {
     const storageRemaining = getStorageRemaining(company);
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-label-xl text-strong-950">Dashboard</h1>
-                <p className="mt-1 text-label-sm text-sub-600">
-                    Plan, team size, and quota overview for {company.name}.
-                </p>
-            </div>
+        <PageEnter className="page-stack">
+            <PageHeader
+                title="Dashboard"
+                description={`Plan, team size, and quota overview for ${company.name}.`}
+            />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <StatCard
@@ -59,10 +59,8 @@ const DashboardPage = () => {
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
-                    <h2 className="text-label-lg text-strong-950">
-                        Quota usage
-                    </h2>
+                <section className="surface-panel p-5">
+                    <h2 className="text-label-lg text-strong-950">Quota usage</h2>
                     <div className="mt-5 grid gap-5 lg:grid-cols-2">
                         <QuotaBar
                             label="Tokens"
@@ -78,7 +76,7 @@ const DashboardPage = () => {
                     </div>
                 </section>
 
-                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
                         Recent activity
                     </h2>
@@ -105,7 +103,7 @@ const DashboardPage = () => {
                     )}
                 </section>
             </div>
-        </div>
+        </PageEnter>
     );
 };
 

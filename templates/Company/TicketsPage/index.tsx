@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 
+import PageHeader from "@/components/Admin/PageHeader";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import type { CompanyTicketPriority } from "@/lib/company/types";
 
@@ -55,31 +56,29 @@ const TicketsPage = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <h1 className="text-label-xl text-strong-950">Tickets</h1>
-                    <p className="mt-1 text-label-sm text-sub-600">
-                        Open a support ticket and track its status.
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => {
-                        setShowForm((v) => !v);
-                        setFormError(null);
-                        setFormSuccess(null);
-                    }}
-                    className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0 transition-opacity hover:opacity-90"
-                >
-                    {showForm ? "Cancel" : "New ticket"}
-                </button>
-            </div>
+        <div className="page-stack">
+            <PageHeader
+                title="Tickets"
+                description="Open a support ticket and track its status."
+                action={
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowForm((v) => !v);
+                            setFormError(null);
+                            setFormSuccess(null);
+                        }}
+                        className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
+                    >
+                        {showForm ? "Close form" : "New ticket"}
+                    </button>
+                }
+            />
 
             {showForm && (
                 <form
                     onSubmit={onSubmit}
-                    className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+                    className="surface-panel p-5"
                 >
                     <h2 className="text-label-lg text-strong-950">
                         New ticket
@@ -155,7 +154,7 @@ const TicketsPage = () => {
                 </form>
             )}
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+            <section className="surface-panel">
                 <div className="border-b border-stroke-soft-200 p-5">
                     <h2 className="text-label-lg text-strong-950">
                         Your tickets

@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @plugin "tailwind-scrollbar";
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
@@ -366,9 +366,36 @@
     button {
         @apply cursor-pointer;
     }
+    @media (prefers-reduced-motion: no-preference) {
+        button:active:not(:disabled),
+        a:active {
+            transform: translateY(0.5px);
+        }
+    }
 }
 
 @layer components {
+    .surface-panel {
+        @apply rounded-2xl border border-stroke-soft-200 bg-white-0 shadow-[0_1px_2px_rgba(14,18,27,0.04),0_8px_24px_-16px_rgba(14,18,27,0.08)];
+    }
+    .surface-panel-header {
+        @apply border-b border-stroke-soft-200 px-5 py-4;
+    }
+    .surface-table thead {
+        @apply bg-weak-50 text-label-xs text-sub-600;
+    }
+    .surface-table thead th {
+        @apply px-5 py-3 font-medium;
+    }
+    .surface-table tbody td {
+        @apply px-5 py-4;
+    }
+    .surface-table tbody tr {
+        @apply text-label-sm transition-colors hover:bg-weak-50/80;
+    }
+    .page-stack {
+        @apply space-y-6;
+    }
     .text-h3 {
         @apply font-inter-display;
     }

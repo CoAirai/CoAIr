@@ -49,11 +49,11 @@ const SignUpPage = () => {
         >
             <div>
                 {submitted ? (
-                    <div className="rounded-2xl bg-weak-50 px-4 py-5 text-center text-label-sm text-sub-600">
+                    <div className="surface-panel px-4 py-5 text-center text-label-sm text-sub-600">
                         <p className="font-medium text-strong-950">
                             Request sent to Super Admin
                         </p>
-                        <p className="mt-2">
+                        <p className="mt-2 leading-relaxed">
                             It appears under Tenants → Companies. Taking you to
                             sign in…
                         </p>

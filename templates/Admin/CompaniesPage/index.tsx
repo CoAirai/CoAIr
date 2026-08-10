@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 
 import StatusBadge from "@/components/Admin/StatusBadge";
+import ConfirmModal from "@/components/Admin/ConfirmModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { pendingAccessRequests } from "@/lib/admin/accessRequests";
 import { getPlanById } from "@/lib/admin/plans";
@@ -44,6 +45,10 @@ const CompaniesPage = () => {
     const [createSuccess, setCreateSuccess] = useState<string | null>(null);
     const [requestMessage, setRequestMessage] = useState<string | null>(null);
     const [requestError, setRequestError] = useState<string | null>(null);
+    const [suspendTarget, setSuspendTarget] = useState<{
+        id: string;
+        name: string;
+    } | null>(null);
 
     const canCreate =
         name.trim().length > 0 && isValidInviteEmail(ownerEmail);
@@ -513,10 +518,10 @@ const CompaniesPage = () => {
                                                 type="button"
                                                 className="text-label-sm text-red-500 hover:text-red-600"
                                                 onClick={() =>
-                                                    setCompanyStatus(
-                                                        company.id,
-                                                        "suspended"
-                                                    )
+                                                    setSuspendTarget({
+                                                        id: company.id,
+                                                        name: company.name,
+                                                    })
                                                 }
                                             >
                                                 Suspend
@@ -541,6 +546,23 @@ const CompaniesPage = () => {
                     Showing {filtered.length} of {companies.length} companies
                 </div>
             </section>
+
+            <ConfirmModal
+                open={suspendTarget !== null}
+                onClose={() => setSuspendTarget(null)}
+                title="Suspend company?"
+                description={
+                    suspendTarget
+                        ? `${suspendTarget.name} will lose workspace access until activated again.`
+                        : ""
+                }
+                confirmLabel="Suspend"
+                tone="danger"
+                onConfirm={() => {
+                    if (!suspendTarget) return;
+                    setCompanyStatus(suspendTarget.id, "suspended");
+                }}
+            />
         </div>
     );
 };

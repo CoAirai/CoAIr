@@ -162,7 +162,7 @@ const CompanyLayout = ({ children }: Props) => {
                 </div>
             </aside>
 
-            <div className="flex h-full flex-col pt-9.5 pb-5 max-2xl:pt-5 max-md:pt-3 max-md:pb-4">
+            <div className="flex h-full flex-col bg-weak-50/40 pt-9.5 pb-5 max-2xl:pt-5 max-md:pt-3 max-md:pb-4">
                 <header className="mb-3.5 flex shrink-0 items-center gap-4 max-md:mb-3 max-md:gap-2">
                     <button
                         type="button"
@@ -175,8 +175,13 @@ const CompanyLayout = ({ children }: Props) => {
                             name="burger"
                         />
                     </button>
-                    <div className="grow truncate text-label-xl max-md:text-label-md">
-                        {company.name}
+                    <div className="min-w-0 grow">
+                        <div className="truncate text-label-xl font-medium tracking-tight max-md:text-label-md">
+                            {company.name}
+                        </div>
+                        <div className="mt-0.5 truncate text-label-xs text-sub-600">
+                            Company admin
+                        </div>
                     </div>
                     <AvatarMenu
                         initials={initials}
@@ -190,7 +195,7 @@ const CompanyLayout = ({ children }: Props) => {
                         }}
                     />
                 </header>
-                <main className="min-h-0 grow overflow-y-auto pb-1">
+                <main className="min-h-0 grow overflow-y-auto rounded-3xl pb-1 max-md:rounded-2xl">
                     <PortalRouteGate skeleton={<CompanyContentSkeleton />}>
                         {children}
                     </PortalRouteGate>

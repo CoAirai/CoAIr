@@ -24,6 +24,10 @@ type AuthContextValue = {
         password: string
     ) => { ok: true; session: AuthSession } | { ok: false; error: string };
     signOut: () => void;
+    changePassword: (
+        current: string,
+        next: string
+    ) => { ok: boolean; error?: string };
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -65,9 +69,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
     }, []);
 
+    const changePassword = useCallback(
+        (current: string, next: string) => {
+            if (!session) {
+                return { ok: false, error: "Not signed in" };
+            }
+            if (!current.trim()) {
+                return { ok: false, error: "Current password required" };
+            }
+            if (next.length < 8) {
+                return {
+                    ok: false,
+                    error: "New password must be at least 8 characters",
+                };
+            }
+            // Mock auth: accept any non-empty current password; no server store yet.
+            return { ok: true };
+        },
+        [session]
+    );
+
     const value = useMemo(
-        () => ({ session, ready, signIn, signOut }),
-        [session, ready, signIn, signOut]
+        () => ({ session, ready, signIn, signOut, changePassword }),
+        [session, ready, signIn, signOut, changePassword]
     );
 
     return (

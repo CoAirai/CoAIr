@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Modal from "@/components/Modal";
 import Icon from "@/components/Icon";
+import { useAuth } from "@/context/AuthContext";
 import General from "./General";
 import Notifications from "./Notifications";
 import Theme from "./Theme";
@@ -18,8 +19,10 @@ type Props = {
     ) => { ok: boolean; error?: string };
 };
 
-const Settings = ({ open, onClose, changePassword }: Props) => {
+const Settings = ({ open, onClose, changePassword: changePasswordProp }: Props) => {
     const [activeId, setActiveId] = useState(0);
+    const { changePassword: authChangePassword } = useAuth();
+    const changePassword = changePasswordProp ?? authChangePassword;
 
     return (
         <>
@@ -32,10 +35,9 @@ const Settings = ({ open, onClose, changePassword }: Props) => {
                     <div className="text-label-xl max-md:text-label-lg">
                         Settings
                     </div>
-                    <div className="mt-2 text-label-md text-sub-600 max-md:hidden">
-                        People with link will be able to view conversations and
-                        ideas in this board.Changes you make after creating the
-                        link will remain private.
+                    <div className="mt-2 text-label-sm text-sub-600 max-md:hidden">
+                        Manage your profile, theme, notifications, and security
+                        preferences for this COAir workspace.
                     </div>
                 </div>
                 <div className="flex grow max-md:block">

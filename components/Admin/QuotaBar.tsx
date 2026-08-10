@@ -12,22 +12,30 @@ const QuotaBar = ({ label, used, limit, unit }: Props) => {
     const remaining = Math.max(0, limit - used);
     const percent =
         limit > 0 ? Math.min(100, Math.max(0, (used / limit) * 100)) : 0;
+    const barTone =
+        percent >= 90
+            ? "bg-error-base"
+            : percent >= 75
+              ? "bg-warning-base"
+              : "bg-blue-500";
 
     return (
         <div>
-            <div className="flex items-center justify-between gap-3 text-label-sm">
-                <span className="text-strong-950">{label}</span>
-                <span className="text-sub-600">
-                    {formatValue(used, unit)} / {formatValue(limit, unit)}{" "}
-                    (remaining {formatValue(remaining, unit)})
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-label-sm">
+                <span className="font-medium text-strong-950">{label}</span>
+                <span className="tabular-nums text-sub-600">
+                    {formatValue(used, unit)} / {formatValue(limit, unit)}
                 </span>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-weak-50">
                 <div
-                    className="h-full rounded-full bg-blue-500 transition-[width]"
+                    className={`h-full rounded-full transition-[width] duration-300 ${barTone}`}
                     style={{ width: `${percent}%` }}
                 />
             </div>
+            <p className="mt-1.5 text-label-xs tabular-nums text-sub-600">
+                {formatValue(remaining, unit)} remaining
+            </p>
         </div>
     );
 };

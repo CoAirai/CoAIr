@@ -28,7 +28,7 @@ const Layout = ({ children, onClickNew }: Props) => {
                     setVisibleSidebar(false);
                 }}
             />
-            <div className="pt-9.5 pb-5 max-2xl:pt-5 max-md:pt-3 max-md:pb-4">
+            <div className="bg-weak-50/40 pt-9.5 pb-5 max-2xl:pt-5 max-md:pt-3 max-md:pb-4">
                 <Header onOpenSidebar={() => setVisibleSidebar(true)} />
                 {children}
             </div>

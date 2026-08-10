@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
@@ -143,15 +144,13 @@ const BillingPage = () => {
               : "";
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-label-xl text-strong-950">Billing</h1>
-                <p className="mt-1 text-label-sm text-sub-600">
-                    View invoices, purchase add-ons, or upgrade your plan.
-                </p>
-            </div>
+        <div className="page-stack">
+            <PageHeader
+                title="Billing"
+                description="View invoices, purchase add-ons, or upgrade your plan."
+            />
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+            <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">Current plan</h2>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <StatCard
@@ -190,36 +189,36 @@ const BillingPage = () => {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 p-5">
+            <section className="surface-panel overflow-hidden">
+                <div className="surface-panel-header">
                     <h2 className="text-label-lg text-strong-950">Invoices</h2>
                     <p className="mt-1 text-label-xs text-sub-600">
                         View-only billing history for your company.
                     </p>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[640px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
+                    <table className="surface-table w-full min-w-[640px] text-left">
+                        <thead>
                             <tr>
-                                <th className="px-5 py-3 font-medium">Invoice</th>
-                                <th className="px-5 py-3 font-medium">Amount</th>
-                                <th className="px-5 py-3 font-medium">Status</th>
-                                <th className="px-5 py-3 font-medium">Issued</th>
-                                <th className="px-5 py-3 font-medium">Due</th>
+                                <th>Invoice</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Issued</th>
+                                <th>Due</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stroke-soft-200">
                             {invoices.map((invoice) => (
-                                <tr key={invoice.id} className="text-label-sm">
-                                    <td className="px-5 py-4 text-strong-950">
+                                <tr key={invoice.id}>
+                                    <td className="text-strong-950">
                                         {invoice.id}
                                     </td>
-                                    <td className="px-5 py-4 text-sub-600">
+                                    <td className="tabular-nums text-sub-600">
                                         {currencyFormatter.format(
                                             invoice.amountUsd
                                         )}
                                     </td>
-                                    <td className="px-5 py-4">
+                                    <td>
                                         <StatusBadge
                                             status={invoice.status.replaceAll(
                                                 "_",
@@ -227,10 +226,10 @@ const BillingPage = () => {
                                             )}
                                         />
                                     </td>
-                                    <td className="px-5 py-4 text-sub-600">
+                                    <td className="text-sub-600">
                                         {formatDate(invoice.issuedAt)}
                                     </td>
-                                    <td className="px-5 py-4 text-sub-600">
+                                    <td className="text-sub-600">
                                         {formatDate(invoice.dueAt)}
                                     </td>
                                 </tr>
@@ -246,7 +245,7 @@ const BillingPage = () => {
             </section>
 
             <div className="grid gap-6 xl:grid-cols-2">
-                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
                         Buy extra tokens
                     </h2>
@@ -286,7 +285,7 @@ const BillingPage = () => {
                     </div>
                 </section>
 
-                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
                         Buy extra storage
                     </h2>
@@ -325,7 +324,7 @@ const BillingPage = () => {
                 </section>
             </div>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+            <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">
                     Upgrade plan
                 </h2>
@@ -376,7 +375,7 @@ const BillingPage = () => {
                 )}
             </section>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+            <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">
                     Module add-ons
                 </h2>

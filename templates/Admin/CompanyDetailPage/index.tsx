@@ -6,6 +6,7 @@ import { FormEvent, Fragment, useMemo, useState } from "react";
 
 import QuotaBar from "@/components/Admin/QuotaBar";
 import StatusBadge from "@/components/Admin/StatusBadge";
+import ConfirmModal from "@/components/Admin/ConfirmModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { getPlanById } from "@/lib/admin/plans";
 import { getStorageRemaining, getTokensRemaining } from "@/lib/admin/selectors";
@@ -94,6 +95,7 @@ const CompanyDetailPage = ({ id }: Props) => {
 
     const [refundTargetId, setRefundTargetId] = useState<string | null>(null);
     const [refundReason, setRefundReason] = useState("");
+    const [suspendConfirmOpen, setSuspendConfirmOpen] = useState(false);
 
     const company = companies.find((item) => item.id === id);
 
@@ -226,9 +228,7 @@ const CompanyDetailPage = ({ id }: Props) => {
                         <button
                             type="button"
                             className="h-10 rounded-full border border-red-200 px-4 text-label-sm text-red-500"
-                            onClick={() =>
-                                setCompanyStatus(company.id, "suspended")
-                            }
+                            onClick={() => setSuspendConfirmOpen(true)}
                         >
                             Suspend
                         </button>
@@ -958,6 +958,15 @@ const CompanyDetailPage = ({ id }: Props) => {
                     </div>
                 </section>
             )}
+            <ConfirmModal
+                open={suspendConfirmOpen}
+                onClose={() => setSuspendConfirmOpen(false)}
+                title="Suspend company?"
+                description={`${company.name} will lose workspace access until activated again.`}
+                confirmLabel="Suspend"
+                tone="danger"
+                onConfirm={() => setCompanyStatus(company.id, "suspended")}
+            />
         </div>
     );
 };

@@ -2,7 +2,6 @@
 
 import { useState, type KeyboardEvent } from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import Icon from "@/components/Icon";
 import Image from "@/components/Image";
 import { useChat } from "@/context/ChatContext";
 
@@ -23,54 +22,43 @@ const PanelMessage = () => {
         }
     };
 
+    const canSend = !isReplying && Boolean(message.trim());
+
     return (
-        <div className="relative z-3 mx-7.5 mb-5.5 shrink-0 rounded-xl border border-stroke-soft-200 bg-white-0 max-md:m-0">
-            <div className="px-3 py-3.5 max-md:px-4 max-md:py-2.5">
-                <div className="min-h-12 text-0 mb-3">
+        <div className="relative z-3 mx-7.5 mb-5.5 shrink-0 rounded-2xl border border-stroke-soft-200 bg-white-0 shadow-[0_1px_2px_rgba(14,18,27,0.04)] max-md:mx-0 max-md:mb-0 max-md:rounded-xl">
+            <div className="flex items-end gap-3 px-4 py-3.5 max-md:px-3 max-md:py-3">
+                <div className="min-h-12 min-w-0 flex-1 text-0">
                     <TextareaAutosize
-                        className="w-full h-12 text-p-md text-strong-950 outline-none resize-none placeholder:text-soft-400"
+                        className="w-full h-12 text-p-md text-strong-950 outline-none resize-none placeholder:text-soft-400 disabled:opacity-60"
                         maxRows={5}
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
                         onKeyDown={onKeyDown}
-                        placeholder="Ask anything..."
+                        placeholder="Ask anything about your project data…"
                         disabled={isReplying}
+                        aria-label="Message"
                     />
-                    {sendError && (
-                        <div className="mt-2 text-label-sm text-red-500 transition-opacity duration-200">
+                    {sendError ? (
+                        <div className="mt-2 text-label-sm text-red-500">
                             {sendError}
                         </div>
-                    )}
+                    ) : null}
                 </div>
-                <div className="flex items-center gap-2.5">
-                    <button
-                        type="button"
-                        className="group text-0"
-                        onClick={() => {}}
-                        aria-label="Attach"
-                    >
-                        <Icon
-                            className="fill-icon-soft-400 transition-colors group-hover:fill-blue-500"
-                            name="link"
-                        />
-                    </button>
-                    <div className="ml-auto" />
-                    <button
-                        type="button"
-                        className="group text-0 disabled:opacity-40"
-                        disabled={isReplying || !message.trim()}
-                        onClick={() => void submit()}
-                        aria-label="Send"
-                    >
-                        <Image
-                            className="w-5 opacity-100"
-                            src="/images/sent.svg"
-                            width={20}
-                            height={20}
-                            alt="Send"
-                        />
-                    </button>
-                </div>
+                <button
+                    type="button"
+                    className="mb-1 flex size-10 shrink-0 items-center justify-center rounded-xl bg-strong-950 text-0 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+                    disabled={!canSend}
+                    onClick={() => void submit()}
+                    aria-label="Send message"
+                >
+                    <Image
+                        className="w-4 opacity-100 invert"
+                        src="/images/sent.svg"
+                        width={16}
+                        height={16}
+                        alt=""
+                    />
+                </button>
             </div>
         </div>
     );

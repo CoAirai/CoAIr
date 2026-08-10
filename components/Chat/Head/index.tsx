@@ -2,21 +2,21 @@ import { useState } from "react";
 import Icon from "@/components/Icon";
 import ModalShare from "@/components/ModalShare";
 import Actions from "@/components/Actions";
-
-const actions = [
-    { name: "New chat", onClick: () => {} },
-    { name: "Move to folder", onClick: () => {} },
-    { name: "Clear chat", onClick: () => {} },
-    { name: "Delete chat", onClick: () => {} },
-];
+import { useChat } from "@/context/ChatContext";
 
 type ButtonProps = {
     icon: string;
     onClick: () => void;
+    label: string;
 };
 
-const Button = ({ icon, onClick }: ButtonProps) => (
-    <button className="group text-0" onClick={onClick}>
+const Button = ({ icon, onClick, label }: ButtonProps) => (
+    <button
+        type="button"
+        className="group text-0"
+        onClick={onClick}
+        aria-label={label}
+    >
         <Icon
             className="fill-strong-950 transition-colors group-hover:fill-blue-500"
             name={icon}
@@ -30,24 +30,44 @@ type Props = {
 
 const Head = ({ title }: Props) => {
     const [visible, setVisible] = useState(false);
+    const { clearChat } = useChat();
+
+    const actions = [
+        {
+            name: "New chat",
+            onClick: () => {
+                clearChat();
+            },
+        },
+        {
+            name: "Clear chat",
+            onClick: () => {
+                clearChat();
+            },
+        },
+    ];
 
     return (
         <>
-            <div className="flex items-center shrink-0 h-13 px-3 border-b border-stroke-soft-200">
+            <div className="flex h-13 shrink-0 items-center border-b border-stroke-soft-200 px-4">
                 {title ? (
                     title
                 ) : (
-                    <div className="flex items-center gap-2 mr-auto">
-                        <Icon className="fill-strong-950" name="chat" />
-                        <div className="text-label-sm">Ask your AI</div>
-                        <div className="px-3 py-0.5 bg-strong-950 rounded-md text-label-xs text-white-0">
-                            Beta
+                    <div className="mr-auto min-w-0">
+                        <div className="truncate text-label-sm font-medium text-strong-950">
+                            Chat
+                        </div>
+                        <div className="truncate text-label-xs text-sub-600">
+                            Ask with citations from your company documents
                         </div>
                     </div>
                 )}
-                <div className="flex items-center gap-2 ml-auto">
-                    <Button icon="share" onClick={() => setVisible(true)} />
-                    <Button icon="link-1" onClick={() => {}} />
+                <div className="ml-auto flex items-center gap-2">
+                    <Button
+                        icon="share"
+                        label="Share"
+                        onClick={() => setVisible(true)}
+                    />
                     <Actions
                         classNameButton="[&_svg]:fill-strong-950"
                         items={actions}

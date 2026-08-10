@@ -15,10 +15,10 @@ const HomePage = () => {
 
     return (
         <Layout>
-            <div className="chat-wrapper relative">
+            <div className="chat-wrapper relative border border-stroke-soft-200 shadow-[0_1px_2px_rgba(14,18,27,0.04),0_8px_24px_-16px_rgba(14,18,27,0.08)]">
                 <div className="flex min-h-0 flex-1">
                     <div className="flex min-w-0 flex-1 flex-col">
-                        <div className="-mb-3 grow overflow-auto pt-18 px-7.5 pb-12 scrollbar-none max-md:pt-4 max-md:px-4 max-md:pb-8">
+                        <div className="-mb-3 grow overflow-auto px-7.5 pb-12 pt-18 scrollbar-none max-md:px-4 max-md:pb-8 max-md:pt-4">
                             <AnimatePresence mode="wait" initial={false}>
                                 {isEmpty ? (
                                     <motion.div
@@ -36,12 +36,12 @@ const HomePage = () => {
                                             height={64}
                                             alt="COAir"
                                         />
-                                        <div className="mb-3 text-h3 max-md:mb-1.5 max-md:text-[1.6rem]">
+                                        <div className="mb-2 text-h3 tracking-tight max-md:mb-1.5 max-md:text-[1.6rem]">
                                             COAir
                                         </div>
-                                        <div className="max-w-120 mx-auto text-p-xl text-sub-600 max-md:text-p-sm">
-                                            chat · cite · verify — your project
-                                            data, on demand
+                                        <div className="mx-auto max-w-120 text-p-xl leading-relaxed text-sub-600 max-md:text-p-sm">
+                                            Chat, cite, and verify against your
+                                            project documents.
                                         </div>
                                     </motion.div>
                                 ) : (

@@ -72,19 +72,20 @@ const SignInPage = () => {
                         Sign in
                     </Button>
                 </form>
-                <div className="mt-5 rounded-2xl bg-weak-50 px-4 py-3 text-label-sm text-sub-600">
-                    <p className="mb-1 font-medium text-strong-950">
+                <div className="mt-5 surface-panel px-4 py-3 text-label-sm text-sub-600">
+                    <p className="mb-1.5 font-medium text-strong-950">
                         Demo workspaces
                     </p>
-                    <p>admin@coair.ai — Super Admin</p>
-                    <p>ada@acmebuilders.com — Company admin</p>
-                    <p>elena@betalabs.io — Demo company admin</p>
-                    <p>ben.carter@acmebuilders.com — Member</p>
-                    <p className="mt-1">
-                        Approved access requests sign in with the same email,
-                        then choose a package.
+                    <div className="space-y-1 tabular-nums">
+                        <p>admin@coair.ai — Super Admin</p>
+                        <p>ada@acmebuilders.com — Company admin</p>
+                        <p>elena@betalabs.io — Demo company admin</p>
+                        <p>ben.carter@acmebuilders.com — Member</p>
+                    </div>
+                    <p className="mt-2 text-label-xs">
+                        Any non-empty password works. Approved access requests
+                        sign in with the same email, then choose a package.
                     </p>
-                    <p className="mt-1">Any non-empty password works.</p>
                 </div>
                 <div className="mt-5 text-center">
                     <Link

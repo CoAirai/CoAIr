@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 
+import PageEnter from "@/components/Motion/PageEnter";
+import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
-import { ACTIVITIES } from "@/lib/admin/demoData";
+import { formatAuditHeadline } from "@/lib/admin/auditLabels";
 import { getPlanById } from "@/lib/admin/plans";
 import {
     getPlatformTotals,
@@ -15,22 +18,27 @@ import {
 import { useAdminData } from "@/context/AdminDataContext";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
+    timeStyle: "short",
 });
 
+const RECENT_ACTIVITY_LIMIT = 8;
+
 const DashboardPage = () => {
-    const { companies, plans } = useAdminData();
+    const { companies, plans, auditLog } = useAdminData();
     const totals = getPlatformTotals(companies);
+    const recentActivity = useMemo(
+        () => auditLog.slice(0, RECENT_ACTIVITY_LIMIT),
+        [auditLog]
+    );
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-label-xl text-strong-950">Dashboard</h1>
-                <p className="mt-1 text-label-sm text-sub-600">
-                    Platform-wide company, user, storage, and token usage.
-                </p>
-            </div>
+        <PageEnter className="page-stack">
+            <PageHeader
+                title="Dashboard"
+                description="Platform-wide company, user, storage, and token usage."
+            />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
@@ -56,8 +64,8 @@ const DashboardPage = () => {
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-                <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
-                    <div className="flex items-center justify-between gap-4 border-b border-stroke-soft-200 px-5 py-4">
+                <section className="surface-panel overflow-hidden">
+                    <div className="surface-panel-header flex items-center justify-between gap-4">
                         <div>
                             <h2 className="text-label-lg text-strong-950">
                                 Company usage
@@ -74,8 +82,8 @@ const DashboardPage = () => {
                         </Link>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[760px] text-left">
-                            <thead className="bg-weak-50 text-label-xs text-sub-600">
+                        <table className="surface-table w-full min-w-[760px] text-left">
+                            <thead>
                                 <tr>
                                     <th className="px-5 py-3 font-medium">Company</th>
                                     <th className="px-5 py-3 font-medium">Plan</th>
@@ -123,19 +131,52 @@ const DashboardPage = () => {
                     </div>
                 </section>
 
-                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
-                    <h2 className="text-label-lg text-strong-950">Recent activity</h2>
+                <section className="surface-panel p-5">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-label-lg text-strong-950">
+                                Recent activity
+                            </h2>
+                            <p className="mt-1 text-label-xs text-sub-600">
+                                From this session’s audit log
+                            </p>
+                        </div>
+                        <Link
+                            href="/admin/audit"
+                            className="shrink-0 text-label-sm text-blue-500 hover:text-blue-600"
+                        >
+                            Audit log
+                        </Link>
+                    </div>
                     <div className="mt-4 divide-y divide-stroke-soft-200">
-                        {ACTIVITIES.map((activity) => (
-                            <div key={activity.id} className="py-4 first:pt-0 last:pb-0">
-                                <p className="text-label-sm text-strong-950">
-                                    {activity.text}
-                                </p>
-                                <p className="mt-1 text-label-xs text-sub-600">
-                                    {dateFormatter.format(new Date(activity.at))}
-                                </p>
-                            </div>
-                        ))}
+                        {recentActivity.length === 0 ? (
+                            <p className="py-2 text-label-sm text-sub-600">
+                                No admin actions yet. Create a company, approve
+                                access, or change status to see activity here.
+                            </p>
+                        ) : (
+                            recentActivity.map((entry) => (
+                                <div
+                                    key={entry.id}
+                                    className="py-4 first:pt-0 last:pb-0"
+                                >
+                                    <p className="text-label-sm text-strong-950">
+                                        {formatAuditHeadline(entry)}
+                                    </p>
+                                    {entry.detail ? (
+                                        <p className="mt-1 text-label-xs text-sub-600">
+                                            {entry.detail}
+                                        </p>
+                                    ) : null}
+                                    <p className="mt-1 text-label-xs text-sub-600">
+                                        {dateTimeFormatter.format(
+                                            new Date(entry.at)
+                                        )}{" "}
+                                        · {entry.actor}
+                                    </p>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </section>
             </div>
@@ -156,7 +197,7 @@ const DashboardPage = () => {
                     />
                 </div>
             </section>
-        </div>
+        </PageEnter>
     );
 };
 

@@ -1,10 +1,12 @@
 "use client";
 
+import { motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import Image from "@/components/Image";
+import PageEnter from "@/components/Motion/PageEnter";
 import UpgradePackageModal from "@/components/Workspace/UpgradePackageModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
@@ -55,166 +57,181 @@ const HubPage = () => {
     const lockedGate = lockedModule
         ? getModuleGate(plan, company, lockedModule)
         : null;
+    const reduceMotion = useReducedMotion();
 
     return (
         <PortalRouteGate skeleton={<WorkspaceHubSkeleton />}>
-        <div className="min-h-screen bg-weak-50 text-strong-950">
-            <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-5">
-                <div className="min-w-40">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-soft-400">
-                        Active project
-                    </p>
-                    <p className="mt-1 truncate text-label-sm text-strong-950">
-                        {company.name}
-                    </p>
-                </div>
+            <div className="min-h-screen bg-weak-50/80 text-strong-950">
+                <header className="border-b border-stroke-soft-200 bg-white-0/80 backdrop-blur-sm">
+                    <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
+                        <div className="min-w-40">
+                            <p className="truncate text-label-sm font-medium tracking-tight text-strong-950">
+                                {company.name}
+                            </p>
+                            <p className="mt-0.5 truncate text-label-xs text-sub-600">
+                                {plan.name} plan · Workspace
+                            </p>
+                        </div>
 
-                <Image
-                    className="h-8 w-auto rounded-xl object-contain opacity-100"
-                    src="/images/coair-logo.png"
-                    width={120}
-                    height={32}
-                    alt="COAir"
-                />
+                        <Image
+                            className="h-8 w-auto rounded-xl object-contain opacity-100"
+                            src="/images/coair-logo.png"
+                            width={120}
+                            height={32}
+                            alt="COAir"
+                        />
 
-                <div className="flex min-w-40 items-center justify-end gap-3">
-                    <span className="hidden text-[11px] uppercase tracking-[0.18em] text-soft-400 sm:block">
-                        {plan.name}
-                    </span>
-                    <Menu as="div" className="relative">
-                        <MenuButton
-                            className="flex size-10 items-center justify-center rounded-xl border-2 border-stroke-soft-200 bg-white-0 text-label-sm font-medium text-strong-950 outline-0 hover:border-stroke-sub-300 hover:bg-soft-200"
-                            aria-label="Open account menu"
-                        >
-                            {initials || "U"}
-                        </MenuButton>
-                        <MenuItems
-                            transition
-                            anchor="bottom end"
-                            modal={false}
-                            className="z-30 w-56 origin-top-right rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-xl outline-0 [--anchor-gap:0.5rem]"
-                        >
-                            <div className="border-b border-stroke-soft-200 px-3 py-2">
-                                <div className="truncate text-label-sm text-strong-950">
-                                    {session?.name}
-                                </div>
-                                <div className="truncate text-label-xs text-sub-600">
-                                    {session?.email}
-                                </div>
-                            </div>
-                            {session?.role === "company_admin" ? (
-                                <MenuItem>
-                                    <Link href="/company" className={menuItemClass}>
-                                        Company admin
-                                    </Link>
-                                </MenuItem>
-                            ) : null}
-                            <MenuItem
-                                as="button"
-                                type="button"
-                                className={menuItemClass}
-                                onClick={() => {
-                                    signOut();
-                                    router.replace("/auth/sign-in");
-                                }}
-                            >
-                                Sign out
-                            </MenuItem>
-                        </MenuItems>
-                    </Menu>
-                </div>
-            </header>
-
-            <main className="mx-auto max-w-6xl px-6 pb-16 pt-10">
-                <p className="text-center text-[11px] uppercase tracking-[0.28em] text-soft-400">
-                    Select · Module
-                </p>
-                <h1 className="mt-3 text-center text-4xl font-medium tracking-tight text-strong-950 max-md:text-3xl">
-                    Where are you working?
-                </h1>
-                <p className="mx-auto mt-3 max-w-2xl text-center text-label-sm leading-6 text-sub-600">
-                    Three ways into the same project record. The one you pick
-                    opens with your session intact.
-                </p>
-
-                <div className="mt-5 flex justify-center">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-label-xs text-green-700 dark:text-green-300">
-                        <span className="size-1.5 rounded-full bg-green-500" />
-                        Active project · {company.name}
+                        <div className="flex min-w-40 items-center justify-end">
+                            <Menu as="div" className="relative">
+                                <MenuButton
+                                    className="flex size-10 items-center justify-center rounded-xl border border-stroke-soft-200 bg-white-0 text-label-sm font-medium text-strong-950 outline-0 transition-colors hover:border-stroke-sub-300 hover:bg-weak-50"
+                                    aria-label="Open account menu"
+                                >
+                                    {initials || "U"}
+                                </MenuButton>
+                                <MenuItems
+                                    transition
+                                    anchor="bottom end"
+                                    modal={false}
+                                    className="z-30 w-56 origin-top-right rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-xl outline-0 [--anchor-gap:0.5rem]"
+                                >
+                                    <div className="border-b border-stroke-soft-200 px-3 py-2">
+                                        <div className="truncate text-label-sm text-strong-950">
+                                            {session?.name}
+                                        </div>
+                                        <div className="truncate text-label-xs text-sub-600">
+                                            {session?.email}
+                                        </div>
+                                    </div>
+                                    {session?.role === "company_admin" ? (
+                                        <MenuItem>
+                                            <Link
+                                                href="/company"
+                                                className={menuItemClass}
+                                            >
+                                                Company admin
+                                            </Link>
+                                        </MenuItem>
+                                    ) : null}
+                                    <MenuItem
+                                        as="button"
+                                        type="button"
+                                        className={menuItemClass}
+                                        onClick={() => {
+                                            signOut();
+                                            router.replace("/auth/sign-in");
+                                        }}
+                                    >
+                                        Sign out
+                                    </MenuItem>
+                                </MenuItems>
+                            </Menu>
+                        </div>
                     </div>
-                </div>
+                </header>
 
-                <div className="mt-12 grid gap-5 md:grid-cols-3">
-                    {MODULES.map((module) => {
-                        const gate = getModuleGate(plan, company, module.id);
-                        const locked = gate.state === "locked";
-                        return (
-                            <button
-                                key={module.id}
-                                type="button"
-                                onClick={() => {
-                                    if (locked) {
-                                        setLockedModule(module.id);
-                                        return;
+                <PageEnter className="mx-auto max-w-6xl px-6 pb-16 pt-12">
+                    <div className="text-center">
+                        <h1 className="text-4xl font-medium tracking-tight text-strong-950 max-md:text-3xl">
+                            Where are you working?
+                        </h1>
+                        <p className="mx-auto mt-3 max-w-xl text-label-sm leading-relaxed text-sub-600">
+                            Choose a module for this project. Your company
+                            session carries through.
+                        </p>
+                    </div>
+
+                    <div className="mt-10 grid gap-5 md:grid-cols-3">
+                        {MODULES.map((module, index) => {
+                            const gate = getModuleGate(plan, company, module.id);
+                            const locked = gate.state === "locked";
+                            return (
+                                <motion.button
+                                    key={module.id}
+                                    type="button"
+                                    initial={
+                                        reduceMotion
+                                            ? false
+                                            : { opacity: 0, y: 16 }
                                     }
-                                    router.push(module.href);
-                                }}
-                                className={`group flex min-h-[22rem] flex-col rounded-[1.75rem] border p-6 text-left transition-all ${
-                                    locked
-                                        ? "border-stroke-soft-200 bg-white-0 hover:border-stroke-sub-300"
-                                        : "border-stroke-soft-200 bg-white-0 hover:-translate-y-1 hover:border-stroke-sub-300 hover:shadow-xl"
-                                }`}
-                            >
-                                <ModuleArt id={module.id} locked={locked} />
-                                <div className="mt-8 flex items-start justify-between gap-3">
-                                    <div>
-                                        <p className="text-[11px] uppercase tracking-[0.22em] text-soft-400">
-                                            {module.keywords}
-                                        </p>
-                                        <h2 className="mt-2 text-2xl font-medium text-strong-950">
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{
+                                        duration: 0.36,
+                                        delay: reduceMotion
+                                            ? 0
+                                            : 0.06 + index * 0.07,
+                                        ease: [0.16, 1, 0.3, 1],
+                                    }}
+                                    whileTap={
+                                        reduceMotion
+                                            ? undefined
+                                            : { scale: 0.985 }
+                                    }
+                                    onClick={() => {
+                                        if (locked) {
+                                            setLockedModule(module.id);
+                                            return;
+                                        }
+                                        router.push(module.href);
+                                    }}
+                                    className={`group flex min-h-[22rem] flex-col rounded-2xl border border-stroke-soft-200 bg-white-0 p-6 text-left shadow-[0_1px_2px_rgba(14,18,27,0.04),0_8px_24px_-16px_rgba(14,18,27,0.08)] transition-[border-color,box-shadow,transform] duration-200 ${
+                                        locked
+                                            ? "hover:border-stroke-sub-300"
+                                            : "hover:-translate-y-0.5 hover:border-blue-500/25 hover:shadow-[0_12px_32px_-16px_rgba(51,92,255,0.16)]"
+                                    }`}
+                                >
+                                    <ModuleArt id={module.id} locked={locked} />
+                                    <div className="mt-8 flex items-start justify-between gap-3">
+                                        <h2 className="text-2xl font-medium tracking-tight text-strong-950">
                                             {module.title}
                                         </h2>
+                                        <span
+                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-label-xs font-medium ${
+                                                locked
+                                                    ? "bg-weak-50 text-sub-600"
+                                                    : gate.kind === "trial"
+                                                      ? "bg-away-lighter text-away-dark"
+                                                      : "bg-success-lighter text-success-dark"
+                                            }`}
+                                        >
+                                            {moduleStatusLabel(gate)}
+                                        </span>
                                     </div>
-                                    <span
-                                        className={`shrink-0 rounded-md border px-2 py-1 text-[11px] uppercase tracking-wide ${
-                                            locked
-                                                ? "border-stroke-soft-200 text-sub-600"
-                                                : gate.kind === "trial"
-                                                  ? "border-away-base/40 text-away-dark dark:text-away-base"
-                                                  : "border-green-500/40 text-green-700 dark:text-green-300"
-                                        }`}
-                                    >
-                                        {moduleStatusLabel(gate)}
-                                    </span>
-                                </div>
-                                <p className="mt-4 text-label-sm leading-6 text-sub-600">
-                                    {module.description}
-                                </p>
-                                <p className="mt-auto pt-6 text-label-xs uppercase tracking-[0.18em] text-soft-400">
-                                    Module {module.number}
-                                    {locked ? " · Upgrade to open" : ""}
-                                </p>
-                            </button>
-                        );
-                    })}
-                </div>
-            </main>
+                                    <p className="mt-4 text-label-sm leading-relaxed text-sub-600">
+                                        {module.description}
+                                    </p>
+                                    {locked ? (
+                                        <p className="mt-auto pt-6 text-label-xs text-sub-600">
+                                            Upgrade to unlock this module
+                                        </p>
+                                    ) : (
+                                        <p className="mt-auto pt-6 text-label-xs font-medium text-blue-500 opacity-0 transition-opacity group-hover:opacity-100">
+                                            Open module →
+                                        </p>
+                                    )}
+                                </motion.button>
+                            );
+                        })}
+                    </div>
+                </PageEnter>
 
-            <UpgradePackageModal
-                open={Boolean(lockedMeta && lockedGate?.state === "locked")}
-                moduleTitle={lockedMeta?.title ?? ""}
-                reason={
-                    lockedGate?.state === "locked"
-                        ? lockedGate.reason
-                        : "addon"
-                }
-                isCompanyAdmin={session?.role === "company_admin"}
-                onClose={() => {
-                    setLockedModule(null);
-                    router.replace("/workspace");
-                }}
-            />
-        </div>
+                <UpgradePackageModal
+                    open={Boolean(
+                        lockedMeta && lockedGate?.state === "locked"
+                    )}
+                    moduleTitle={lockedMeta?.title ?? ""}
+                    reason={
+                        lockedGate?.state === "locked"
+                            ? lockedGate.reason
+                            : "addon"
+                    }
+                    isCompanyAdmin={session?.role === "company_admin"}
+                    onClose={() => {
+                        setLockedModule(null);
+                        router.replace("/workspace");
+                    }}
+                />
+            </div>
         </PortalRouteGate>
     );
 };

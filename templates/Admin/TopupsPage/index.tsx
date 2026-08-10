@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 
+import PageHeader from "@/components/Admin/PageHeader";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAdminData } from "@/context/AdminDataContext";
 import type { TopUpStatus } from "@/lib/admin/billingTypes";
@@ -66,21 +67,19 @@ const TopupsPage = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-label-xl text-strong-950">Top-ups</h1>
-                <p className="mt-1 text-label-sm text-sub-600">
-                    Review token top-up requests priced from the current sell rate.
-                </p>
-            </div>
+        <div className="page-stack">
+            <PageHeader
+                title="Top-ups"
+                description="Review token top-up requests priced from the current sell rate."
+            />
 
-            <div className="rounded-xl border border-stroke-soft-200 bg-weak-50 px-4 py-3 text-label-xs text-sub-600">
+            <div className="surface-panel px-4 py-3 text-label-xs text-sub-600">
                 Global sell rate: {tokenEconomics.sellTokensPerUsd} tokens/$1 ·
                 Provider: {tokenEconomics.providerTokensPerUsd} tokens/$1
             </div>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 p-5">
+            <section className="surface-panel overflow-hidden">
+                <div className="surface-panel-header">
                     <h2 className="text-label-lg text-strong-950">Pending</h2>
                     <p className="mt-1 text-label-xs text-sub-600">
                         Approve or deny requests waiting for review.
@@ -88,8 +87,8 @@ const TopupsPage = () => {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1100px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
+                    <table className="surface-table w-full min-w-[1100px] text-left">
+                        <thead>
                             <tr>
                                 <th className="px-5 py-3 font-medium">Company</th>
                                 <th className="px-5 py-3 font-medium">Tokens</th>
@@ -191,8 +190,8 @@ const TopupsPage = () => {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 p-5">
+            <section className="surface-panel overflow-hidden">
+                <div className="surface-panel-header">
                     <h2 className="text-label-lg text-strong-950">History</h2>
                     <p className="mt-1 text-label-xs text-sub-600">
                         Previously approved and denied top-up requests.
@@ -200,8 +199,8 @@ const TopupsPage = () => {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[980px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
+                    <table className="surface-table w-full min-w-[980px] text-left">
+                        <thead>
                             <tr>
                                 <th className="px-5 py-3 font-medium">Company</th>
                                 <th className="px-5 py-3 font-medium">Tokens</th>
