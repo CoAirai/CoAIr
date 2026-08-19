@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
@@ -14,7 +14,9 @@ import { MFA_CHALLENGE_KEY } from "@/lib/coair/liveLogin";
 
 const SignInPage = () => {
     const router = useRouter();
-    const { session, ready, signIn } = useAuth();
+    const searchParams = useSearchParams();
+    const signedOut = searchParams.get("signedOut") === "1";
+    const { session, ready, signIn, signOut } = useAuth();
     const { companies } = useAdminData();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -22,10 +24,14 @@ const SignInPage = () => {
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
-        if (!ready || !session) return;
-        if (sessionStorage.getItem("coair.signedOut")) return;
+        if (!signedOut) return;
+        void signOut();
+    }, [signedOut, signOut]);
+
+    useEffect(() => {
+        if (!ready || !session || signedOut) return;
         portalNavigate(router, postLoginUrl(session, companies));
-    }, [ready, session, router, companies]);
+    }, [ready, session, signedOut, router, companies]);
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();

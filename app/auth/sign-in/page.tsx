@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import SignInPage from "@/templates/Auth/SignInPage";
 
 export default function Page() {
-    return <SignInPage />;
+    return (
+        <Suspense>
+            <SignInPage />
+        </Suspense>
+    );
 }

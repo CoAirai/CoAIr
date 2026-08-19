@@ -89,10 +89,13 @@ export function portalKindFromHost(
     return null;
 }
 
-export function signInUrl(nextPath?: string): string {
+export function signInUrl(nextPath?: string, signedOut = false): string {
     const base = `${loginOrigin()}/auth/sign-in`;
-    if (!nextPath) return base;
-    return `${base}?next=${encodeURIComponent(nextPath)}`;
+    const params = new URLSearchParams();
+    if (nextPath) params.set("next", nextPath);
+    if (signedOut) params.set("signedOut", "1");
+    const query = params.toString();
+    return query ? `${base}?${query}` : base;
 }
 
 /** Auth routes live on login.coair.ai in production; stay relative locally. */

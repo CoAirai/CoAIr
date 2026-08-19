@@ -42,6 +42,9 @@ describe("portal hosts", () => {
         expect(adminOrigin()).toBe("https://admin.coair.ai");
         expect(userOrigin()).toBe("https://user.coair.ai");
         expect(signInUrl()).toBe("https://login.coair.ai/auth/sign-in");
+        expect(signInUrl(undefined, true)).toBe(
+            "https://login.coair.ai/auth/sign-in?signedOut=1"
+        );
         expect(authHref("/auth/sign-up")).toBe("https://login.coair.ai/auth/sign-up");
     });
 

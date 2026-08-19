@@ -32,7 +32,7 @@ export function portalNavigate(router: AppRouterInstance, url: string) {
 }
 
 export function redirectToSignIn(router: AppRouterInstance, nextPath?: string) {
-    portalNavigate(router, signInUrl(nextPath));
+    portalNavigate(router, signInUrl(nextPath, true));
 }
 
 export function portalPush(router: AppRouterInstance, url: string) {
