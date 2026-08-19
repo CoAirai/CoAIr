@@ -75,19 +75,32 @@ async function handler(
     const body = hasBody ? await request.arrayBuffer() : undefined;
 
     try {
-        const res = await fetch(url.toString(), {
-            method,
-            headers: outgoingHeaders(request),
-            body: body && body.byteLength > 0 ? body : undefined,
-            redirect: "manual",
-            cache: "no-store",
-        });
+        let res: Response | null = null;
+        let payload: ArrayBuffer | null = null;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            res = await fetch(url.toString(), {
+                method,
+                headers: outgoingHeaders(request),
+                body: body && body.byteLength > 0 ? body : undefined,
+                redirect: "manual",
+                cache: "no-store",
+            });
+            payload = await res.arrayBuffer();
+            const preview = new TextDecoder().decode(payload.slice(0, 200));
+            const busy =
+                /tunnel is busy/i.test(preview) ||
+                res.status === 429 ||
+                res.status === 503;
+            if (!busy || method !== "GET" || attempt === 3) {
+                break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+        }
 
-        const payload = await res.arrayBuffer();
         return new NextResponse(payload, {
-            status: res.status,
-            statusText: res.statusText,
-            headers: incomingHeaders(res),
+            status: res?.status ?? 502,
+            statusText: res?.statusText ?? "Bad Gateway",
+            headers: res ? incomingHeaders(res) : undefined,
         });
     } catch (error) {
         const message =

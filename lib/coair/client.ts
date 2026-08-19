@@ -21,9 +21,34 @@ type CoairFetchOptions = {
     timeoutMs?: number;
 };
 
-export async function coairFetch<T>(
+export function isApiUnreachable(error: unknown): boolean {
+    if (!(error instanceof CoairApiError)) return false;
+    if (error.status === 0) return true;
+    if (error.status === 429 || error.status === 502 || error.status === 503 || error.status === 504) {
+        return true;
+    }
+    const body = error.body.toLowerCase();
+    const message = error.message.toLowerCase();
+    return (
+        body.includes("tunnel unavailable") ||
+        body.includes("tunnel website ahead") ||
+        body.includes("tunnel is busy") ||
+        message.includes("tunnel is busy")
+    );
+}
+
+function shouldRetry(error: CoairApiError, method: string): boolean {
+    if (method !== "GET" && method !== "HEAD") return false;
+    return isApiUnreachable(error) || error.message.toLowerCase().includes("busy");
+}
+
+async function sleep(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function once<T>(
     path: string,
-    options: CoairFetchOptions = {}
+    options: CoairFetchOptions
 ): Promise<T> {
     const {
         method = "GET",
@@ -62,8 +87,9 @@ export async function coairFetch<T>(
 
         if (!response.ok) {
             const text = await response.text().catch(() => "");
+            const clean = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
             throw new CoairApiError(
-                text || response.statusText || "Request failed",
+                clean || response.statusText || "Request failed",
                 response.status,
                 text
             );
@@ -75,6 +101,10 @@ export async function coairFetch<T>(
 
         const contentType = response.headers.get("content-type") ?? "";
         if (!contentType.includes("application/json")) {
+            const text = await response.text().catch(() => "");
+            if (/tunnel is busy/i.test(text)) {
+                throw new CoairApiError("Tunnel is busy, try again later", 429, text);
+            }
             return undefined as T;
         }
 
@@ -95,15 +125,22 @@ export async function coairFetch<T>(
     }
 }
 
-export function isApiUnreachable(error: unknown): boolean {
-    if (!(error instanceof CoairApiError)) return false;
-    if (error.status === 0) return true;
-    if (error.status === 502 || error.status === 503 || error.status === 504) {
-        return true;
+export async function coairFetch<T>(
+    path: string,
+    options: CoairFetchOptions = {}
+): Promise<T> {
+    const method = (options.method ?? "GET").toUpperCase();
+    let lastError: CoairApiError | null = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+            return await once<T>(path, options);
+        } catch (error) {
+            if (!(error instanceof CoairApiError) || !shouldRetry(error, method)) {
+                throw error;
+            }
+            lastError = error;
+            await sleep(600 * (attempt + 1));
+        }
     }
-    const body = error.body.toLowerCase();
-    return (
-        body.includes("tunnel unavailable") ||
-        body.includes("tunnel website ahead")
-    );
+    throw lastError ?? new CoairApiError("Request failed", 0);
 }
