@@ -154,8 +154,8 @@ const Header = ({ onOpenSidebar }: Props) => {
                         name={session?.name}
                         email={session?.email}
                         onSettings={() => setOpenSettings(true)}
-                        onSignOut={() => {
-                            signOut();
+                        onSignOut={async () => {
+                            await signOut();
                             redirectToSignIn(router);
                         }}
                     />

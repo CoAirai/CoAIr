@@ -38,8 +38,8 @@ const PlansPage = () => {
                     <button
                         type="button"
                         className="text-label-sm text-sub-600 hover:text-strong-950"
-                        onClick={() => {
-                            signOut();
+                        onClick={async () => {
+                            await signOut();
                             redirectToSignIn(router);
                         }}
                     >

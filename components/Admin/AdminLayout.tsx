@@ -218,8 +218,8 @@ const AdminLayout = ({ children }: Props) => {
                         name={session?.name ?? "Super Admin"}
                         email={session?.email ?? "admin@coair.ai"}
                         onSettings={() => setOpenSettings(true)}
-                        onSignOut={() => {
-                            signOut();
+                        onSignOut={async () => {
+                            await signOut();
                             redirectToSignIn(router);
                         }}
                     />

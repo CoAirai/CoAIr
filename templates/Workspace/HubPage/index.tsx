@@ -119,8 +119,8 @@ const HubPage = () => {
                                         as="button"
                                         type="button"
                                         className={menuItemClass}
-                                        onClick={() => {
-                                            signOut();
+                                        onClick={async () => {
+                                            await signOut();
                                             redirectToSignIn(router);
                                         }}
                                     >

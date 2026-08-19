@@ -23,6 +23,7 @@ const SignInPage = () => {
 
     useEffect(() => {
         if (!ready || !session) return;
+        if (sessionStorage.getItem("coair.signedOut")) return;
         portalNavigate(router, postLoginUrl(session, companies));
     }, [ready, session, router, companies]);
 

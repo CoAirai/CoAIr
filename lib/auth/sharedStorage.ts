@@ -50,15 +50,51 @@ export function writeSharedItem(key: string, value: string): void {
     }
 }
 
+function expireCookie(key: string, domain?: string): void {
+    const parts = ["path=/", "max-age=0", "SameSite=Lax"];
+    if (typeof window !== "undefined" && window.location.protocol === "https:") {
+        parts.push("Secure");
+    }
+    if (domain) {
+        parts.push(`domain=${domain}`);
+    }
+    document.cookie = `${key}=; ${parts.join("; ")}`;
+}
+
 export function removeSharedItem(key: string): void {
     if (typeof window === "undefined") return;
+    expireCookie(key);
     const domain = cookieDomain();
-    document.cookie = `${key}=; path=/; max-age=0`;
     if (domain) {
-        document.cookie = `${key}=; path=/; domain=${domain}; max-age=0`;
+        expireCookie(key, domain);
     }
     try {
         localStorage.removeItem(key);
+    } catch {
+        /* ignore */
+    }
+}
+
+export function clearSharedAuth(): void {
+    if (typeof window === "undefined") return;
+    const names = document.cookie
+        .split(";")
+        .map((part) => part.split("=")[0]?.trim())
+        .filter(Boolean);
+    for (const name of names) {
+        if (name.startsWith("coair.") || name.startsWith("sb-")) {
+            removeSharedItem(name);
+        }
+    }
+    try {
+        const keys: string[] = [];
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith("coair.") || key.startsWith("sb-"))) {
+                keys.push(key);
+            }
+        }
+        keys.forEach((key) => localStorage.removeItem(key));
     } catch {
         /* ignore */
     }

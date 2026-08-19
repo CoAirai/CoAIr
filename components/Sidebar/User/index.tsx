@@ -83,8 +83,8 @@ const User = () => {
                     as="button"
                     type="button"
                     className={itemClassName}
-                    onClick={() => {
-                        signOut();
+                    onClick={async () => {
+                        await signOut();
                         redirectToSignIn(router);
                     }}
                 >

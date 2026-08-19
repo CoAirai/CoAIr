@@ -17,6 +17,7 @@ import {
     resolveLogin,
 } from "@/lib/auth/resolveLogin";
 import {
+    clearSharedAuth,
     readSharedItem,
     removeSharedItem,
     writeSharedItem,
@@ -46,7 +47,7 @@ type AuthContextValue = {
     ready: boolean;
     signIn: (email: string, password: string) => Promise<SignInResult>;
     applySession: (session: AuthSession) => void;
-    signOut: () => void;
+    signOut: () => Promise<void>;
     updateSession: (patch: Partial<AuthSession>) => void;
     changePassword: (
         current: string,
@@ -62,6 +63,7 @@ function persist(session: AuthSession | null) {
     }
     if (!session) {
         removeSharedItem(AUTH_SESSION_KEY);
+        clearSharedAuth();
         sessionStorage.removeItem(AUTH_SESSION_KEY);
         return;
     }
@@ -96,7 +98,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         let cancelled = false;
-        let ignoreSignOut = true;
 
         async function adoptToken(token: string, fallback: AuthSession | null) {
             try {
@@ -146,6 +147,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
 
                 const stored = readStoredSession();
+                if (sessionStorage.getItem("coair.signedOut")) {
+                    persist(null);
+                    if (!cancelled) {
+                        setSession(null);
+                        setReady(true);
+                    }
+                    return;
+                }
                 if (stored && !cancelled) {
                     setSession(stored);
                     setReady(true);
@@ -162,7 +171,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } catch {
                 /* keep whatever session we already restored */
             }
-            ignoreSignOut = false;
             if (!cancelled) {
                 setReady(true);
             }
@@ -176,18 +184,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return;
             }
             if (event === "SIGNED_OUT") {
-                if (ignoreSignOut) {
-                    return;
-                }
-                const still = await getSupabaseBrowser()?.auth.getSession();
-                if (still?.data.session?.access_token) {
-                    return;
-                }
                 persist(null);
                 setSession(null);
                 return;
             }
             if (next?.access_token) {
+                if (sessionStorage.getItem("coair.signedOut")) {
+                    return;
+                }
                 patchToken(next.access_token);
             }
         }) ?? { data: { subscription: { unsubscribe() {} } } };
@@ -202,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         async (email: string, password: string): Promise<SignInResult> => {
             const live = await tryLiveLogin(email, password);
             if (live.ok) {
+                sessionStorage.removeItem("coair.signedOut");
                 persist(live.session);
                 setSession(live.session);
                 return live;
@@ -240,11 +245,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(next);
     }, []);
 
-    const signOut = useCallback(() => {
+    const signOut = useCallback(async () => {
         persist(null);
         sessionStorage.removeItem(ADMIN_BACKUP_KEY);
+        sessionStorage.setItem("coair.signedOut", "1");
         setSession(null);
-        void getSupabaseBrowser()?.auth.signOut();
+        const supabase = getSupabaseBrowser();
+        if (supabase) {
+            await supabase.auth.signOut({ scope: "local" });
+        }
+        persist(null);
     }, []);
 
     const updateSession = useCallback((patch: Partial<AuthSession>) => {

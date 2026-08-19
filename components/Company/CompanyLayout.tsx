@@ -194,8 +194,8 @@ const CompanyLayout = ({ children }: Props) => {
                         email={session?.email ?? adminUser?.email ?? ""}
                         workspaceHref="/workspace"
                         onSettings={() => setOpenSettings(true)}
-                        onSignOut={() => {
-                            signOut();
+                        onSignOut={async () => {
+                            await signOut();
                             redirectToSignIn(router);
                         }}
                     />
