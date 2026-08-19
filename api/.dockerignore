@@ -1,0 +1,52 @@
+# Git
+.git/
+.gitignore
+
+# Environment (secrets go via Cloud Run env vars)
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Data (uploaded at runtime, not baked into image)
+data/
+storage/*
+!storage/schemas/
+cache/
+.cache/
+logs/
+
+# Frontend build artifacts (rebuilt in Docker)
+frontend/node_modules/
+frontend/dist/
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docs & misc
+docs/
+nul
+*.log
+
+# Downloaded data folders
+Questions*/
+Real Life*/
+Sample Contract*/
+Sample Manpower*/
+Sample Progress*/
+Weekly Progress*/

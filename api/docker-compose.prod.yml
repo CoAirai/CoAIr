@@ -1,0 +1,160 @@
+# ConstructionIQ — Deployed compose for AWS Lightsail (prod + dev)
+# Usage on server (in /opt/mvp-api):
+#   sudo docker compose -f docker-compose.prod.yml up -d
+#
+# Two environments run side by side on the same host from this one file. The
+# environment is decided entirely by $APP_DIR (which every bind mount is
+# relative to) plus the STACK_* variables the deploy writes into $APP_DIR/.env.
+# Every default below is production's current value, so an unset variable —
+# a manual `docker compose up` included — still produces exactly the prod stack.
+#
+#   prod  /opt/mvp-api      mvp-*       :8000 :8501 :6333
+#   dev   /opt/mvp-api-dev  coair-dev-* :8100  (no toolkit) :6433
+#
+# Deploys are automated: the GitHub Actions pipeline (.github/workflows/deploy.yml)
+# builds the image, pushes it to GHCR, then sets API_IMAGE=ghcr.io/kadir-sen/rag:<sha>
+# and runs `docker compose pull api && up -d` over SSH. For a manual/local build,
+# API_IMAGE is unset so it falls back to the locally-built mvp-api:latest.
+# The dev-side docker-compose.yml is independent (Streamlit legacy) and not used in production.
+
+services:
+  api:
+    image: ${API_IMAGE:-mvp-api:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${STACK_PREFIX:-mvp}-api
+    restart: unless-stopped
+    # Bound to loopback only — host nginx fronts traffic and proxy_passes here.
+    # See /etc/nginx/sites-available/default on the Lightsail host (prod) and
+    # /etc/nginx/sites-available/coair-dev (dev, deploy/nginx/coair-dev.conf).
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    env_file:
+      - .env.production
+    environment:
+      - APP_MODE=api
+      - PORT=8000
+      # Versioned runtime policy. Keep these outside the persistent server env
+      # so an older MAX_LLM_CALLS value cannot silently disable the rollout.
+      - GEMINI_MODEL=gemini-3.6-flash
+      - GEMINI_MODEL_LITE=gemini-2.5-flash-lite
+      - GEMINI_INGESTION_MODEL=gemini-2.5-flash-lite
+      # Document and query vectors use the same local 768d BGE model. This is
+      # both cheaper and required for compatibility with the existing corpus.
+      - EMBEDDING_PROVIDER=fastembed
+      - MAX_LLM_CALLS=12
+      - LLM_MAX_RETRIES=3
+      - CHRONOLOGY_PIPELINE_VERSION=v2
+      # Forensic programme analysis is served by the `toolkit` service below —
+      # the upstream Streamlit app, unchanged. The native React re-rendering of
+      # the same engines stays in the tree but is closed to users: it was a
+      # different product (React charts, different exports, different session
+      # model) and the ask was for the toolkit exactly as its author built it.
+      # Admins can still validate the parity APIs; flipping this back to `true`
+      # is the whole rollback.
+      - FORENSIC_NATIVE_UI_V1=false
+    # 0 means unlimited, which is production's historical behaviour. The dev
+    # stack sets a real cap so a second API on the same box cannot squeeze the
+    # customer-facing one out of memory.
+    mem_limit: ${API_MEM_LIMIT:-0}
+    volumes:
+      - ./storage:/app/storage
+      - ./data:/app/data
+      # Per-user provider keys live on the host, outside Git and the image.
+      # A billing account stores only the matching filename/alias.
+      - ./secrets/google_keys:/run/secrets/google_keys:ro
+    depends_on:
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # The Delay Analysis Toolkit's own Streamlit app, served at /toolkit/ by the
+  # host nginx (deploy/nginx/coair-toolkit.conf). Upstream source, untouched.
+  #
+  # It shares the box but nothing else: no COAir secrets, no COAir data, no
+  # dependency on the API. That is deliberate — the toolkit is reachable
+  # without a COAir session, so anything mounted here would be public too.
+  toolkit:
+    image: ${TOOLKIT_IMAGE:-mvp-toolkit:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.toolkit
+    container_name: ${STACK_PREFIX:-mvp}-toolkit
+    restart: unless-stopped
+    # Loopback only — nginx fronts it, same as the API.
+    ports:
+      - "127.0.0.1:${TOOLKIT_HOST_PORT:-8501}:8501"
+    environment:
+      # The toolkit's managed AI credential. It lives in $APP_DIR/.env.toolkit
+      # on the host — the deploy creates that file empty if it is missing and
+      # never overwrites it, so setting the key is a one-line edit plus
+      # `docker compose up -d toolkit`: no deploy, no code change, and the
+      # secret never passes through Git or CI.
+      #
+      # Set, it runs every AI panel with no key entry at all and the value is
+      # never rendered back to the page (views/_shared.py: managed_ai_key).
+      # Left empty, the toolkit just asks each analyst for a key of their own.
+      #
+      # Upstream also falls back to GOOGLE_API_KEY for this provider and we
+      # deliberately do NOT forward it: that is the exact variable name COAir
+      # uses, so an operator with it exported would silently hand COAir's
+      # billed key to an app that has no login. GEMINI_API_KEY is checked
+      # first and is toolkit-specific, so nothing is lost.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Renders the "← Back to COAir" link in the toolkit sidebar. Relative
+      # because the toolkit is served from this same origin under /toolkit/;
+      # unset, the link is not drawn at all.
+      - COAIR_URL=/
+    # A parsed XER expands several times over in memory. Cap the toolkit so a
+    # large upload here can never starve the API or Qdrant.
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8501/toolkit/_stcore/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Self-hosted vector store (replaces Pinecone). Reachable only on the internal
+  # compose network as http://qdrant:6333 — NOT published to the host/public.
+  # On-disk vectors + int8 quantization (set at collection-create in document_rag.py)
+  # keep RAM use small enough for the 2 GB Lightsail box.
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    container_name: ${STACK_PREFIX:-mvp}-qdrant
+    restart: unless-stopped
+    environment:
+      # Exported by the deploy workflow from .env.production. Only this secret
+      # reaches Qdrant; LLM/provider credentials stay in the API container.
+      - QDRANT__SERVICE__API_KEY=${QDRANT_SERVER_API_KEY:?QDRANT_SERVER_API_KEY must be set}
+    # Bound to loopback only (for SSH-tunnel ingestion); the API talks to it over
+    # the internal compose network, so no public exposure.
+    ports:
+      - "127.0.0.1:${QDRANT_HOST_PORT:-6333}:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+      # Qdrant writes collection snapshots outside /qdrant/storage. Keep that
+      # path on the host too, otherwise a container recreation discards the
+      # rollback snapshot even though the live collection data survives.
+      - ./qdrant_snapshots:/qdrant/snapshots
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

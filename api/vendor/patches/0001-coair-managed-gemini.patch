@@ -1,0 +1,193 @@
+diff --git a/vendor/delay-analysis-toolkit/app.py b/vendor/delay-analysis-toolkit/app.py
+index 75404dd..72f2cf7 100644
+--- a/vendor/delay-analysis-toolkit/app.py
++++ b/vendor/delay-analysis-toolkit/app.py
+@@ -157,6 +157,14 @@ def main() -> None:
+     }
+ 
+     with st.sidebar:
++        # COAir local patch: a way back to the host app. Gated on COAIR_URL so
++        # a standalone deployment (upstream, Streamlit Cloud) does not grow a
++        # button pointing at an app that is not there. COAir sets it to "/" —
++        # the toolkit is served from the same origin under /toolkit/.
++        coair_url = os.environ.get("COAIR_URL", "").strip()
++        if coair_url:
++            st.link_button("← Back to COAir", coair_url,
++                           use_container_width=True)
+         st.caption("Uploaded programmes are shared across every group.")
+ 
+     header = st.container()          # reserve the top slot
+diff --git a/vendor/delay-analysis-toolkit/dcma/narrative.py b/vendor/delay-analysis-toolkit/dcma/narrative.py
+index 11953aa..cace9df 100644
+--- a/vendor/delay-analysis-toolkit/dcma/narrative.py
++++ b/vendor/delay-analysis-toolkit/dcma/narrative.py
+@@ -37,39 +37,30 @@ PROVIDERS: dict[str, dict] = {
+     # Gemini first: it is the DEFAULT and managed provider for COAir. When a
+     # managed key is configured (st.secrets / env) the app uses it silently
+     # and never renders it — see ai_credentials_panel / ai_provider_block.
+-    # models[0] is what the model dropdown preselects, so 2.5 Flash leads.
++    #
++    # models[0] is what the dropdown preselects and default_model is what
++    # resolve_ai_credentials returns; they must agree, or the panel shows one
++    # model and runs another.
++    #
++    # A pinned "gemini-2.5-flash" was rejected on 2026-08-06 —"no longer
++    # available to new users" — so the alias leads instead: it always
++    # resolves to the newest Flash the account can actually reach, which is
++    # the failure this list should never repeat.
+     "gemini": {
+         "label": "Google (Gemini)",
+-        "default_model": "gemini-2.5-flash",
+-        "models": ["gemini-2.5-flash", "gemini-flash-latest",
+-                   "gemini-flash-lite-latest", "gemini-pro-latest",
+-                   "gemini-3-flash-preview", "gemini-3-pro-preview"],
++        "default_model": "gemini-flash-latest",
++        "models": ["gemini-flash-latest", "gemini-flash-lite-latest",
++                   "gemini-pro-latest", "gemini-3-flash-preview",
++                   "gemini-3-pro-preview"],
+         "env_var": "GEMINI_API_KEY",
+         "key_hint": "aistudio.google.com",
+         "managed": True,
+     },
+-    # Its endpoint speaks the OpenAI protocol, so it reuses that streamer
+-    # with a base_url.
+-    "nvidia": {
+-        # COAir local patch: the "(managed — no key needed)" suffix moved to
+-        # the Gemini label's role; NVIDIA now needs a key like the others.
+-        "label": "NVIDIA",
+-        "default_model": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+-        # A CURATED three, one per profile: NVIDIA's tuned default, a
+-        # large general model, a fast one. The endpoint's catalogue runs
+-        # to dozens of models — most of them irrelevant to drafting a
+-        # forensic narrative — so the dropdown offers these, validated
+-        # against the live catalogue (a retired model drops off by
+-        # itself; qwen3-next-80b died mid-engagement on 2026-07-27 and
+-        # took every AI panel with it). Anything else: Custom….
+-        "models": ["nvidia/llama-3.3-nemotron-super-49b-v1.5",
+-                   "openai/gpt-oss-120b",
+-                   "deepseek-ai/deepseek-v4-flash"],
+-        "env_var": "NVIDIA_API_KEY",
+-        "key_hint": "build.nvidia.com/settings/api-keys",
+-        "base_url": "https://integrate.api.nvidia.com/v1",
+-        # COAir local patch: `"managed": True` moved to the gemini entry.
+-    },
++    # COAir local patch: upstream's "nvidia" entry is removed entirely. We
++    # hold no NVIDIA credential, so leaving it in the dropdown only offered a
++    # dead end to whoever picked it. It was also upstream's only provider with
++    # a "base_url", which is why refresh_models' live-catalogue path is now
++    # exercised by a synthetic pinfo in test_qa.py rather than by a real one.
+     "anthropic": {
+         "label": "Anthropic (Claude)",
+         "default_model": "claude-opus-4-8",
+diff --git a/vendor/delay-analysis-toolkit/state.py b/vendor/delay-analysis-toolkit/state.py
+index 7f20eff..bc861d9 100644
+--- a/vendor/delay-analysis-toolkit/state.py
++++ b/vendor/delay-analysis-toolkit/state.py
+@@ -27,8 +27,8 @@ INVENTORY = "inventory"          # ProgrammeInventory (roles + data dates)
+ AI_KEY = "tia_key"               # historical names kept for session
+ AI_PROVIDER = "tia_provider"     # continuity; treat as the ONE canonical
+ AI_MODEL = "tia_model"
+-AI_MANAGED = "ai_managed"  # True = using the deployment's own
+-#                            NVIDIA key (never displayed)           # credential set for the whole app
++AI_MANAGED = "ai_managed"  # True = using the deployment's own managed-provider
++#                            key (never displayed)                  # credential set for the whole app
+ 
+ # --- shared analysis records --------------------------------------------
+ EVENT_REGISTER = "tia_register"  # dict[event_id, event_to_dict(...)] —
+diff --git a/vendor/delay-analysis-toolkit/test_qa.py b/vendor/delay-analysis-toolkit/test_qa.py
+index 282600a..5ae8149 100644
+--- a/vendor/delay-analysis-toolkit/test_qa.py
++++ b/vendor/delay-analysis-toolkit/test_qa.py
+@@ -2353,28 +2353,39 @@ try:
+ except ImportError as _n14exc:
+     print(f"  [SKIP] N14e-h figure pipeline ({_n14exc})")
+ 
+-# N14i. The NVIDIA dropdown is a CURATED shortlist; the live catalogue
++# N14i. A provider dropdown is a CURATED shortlist; the live catalogue
+ # may only REMOVE from it (a retired model), never bury it under the
+ # endpoint's dozens of models.
++#
++# COAir local patch: upstream drove these checks through PROVIDERS["nvidia"],
++# its only entry with a "base_url". COAir removed that provider, so the
++# catalogue behaviour is exercised through a synthetic pinfo instead — same
++# coverage of refresh_models, no dependence on which providers ship.
++from dcma.narrative import MANAGED_PROVIDER as _n14managed
+ from dcma.narrative import PROVIDERS as _n14prov
+-_n14nv = _n14prov["nvidia"]["models"]
+-check("N14i EOL'd qwen3-next-80b no longer offered statically",
+-      "qwen/qwen3-next-80b-a3b-instruct" not in _n14nv)
+-check("N14k NVIDIA offers a curated three, default among them",
+-      len(_n14nv) == 3
+-      and _n14prov["nvidia"]["default_model"] in _n14nv)
++_n14nv = ["a/one", "b/two", "c/three"]
++_n14fake = {"models": list(_n14nv), "default_model": _n14nv[0],
++            "base_url": "https://example.invalid/v1"}
++check("N14i the managed provider leads an alias, never a pinned model",
++      _n14prov[_n14managed]["default_model"].endswith("-latest"))
++check("N14k the managed default is offered in its own dropdown",
++      _n14prov[_n14managed]["default_model"]
++      == _n14prov[_n14managed]["models"][0])
+ import views._shared as _n14sh
+ _n14sh._live_models = lambda base, fp, key: [       # fake catalogue
+     _n14nv[0], _n14nv[2], "some/other-model", "and/another"]
+-_n14ref = _n14sh.refresh_models(_n14prov["nvidia"], "k")
++_n14ref = _n14sh.refresh_models(_n14fake, "k")
+ check("N14l live catalogue REMOVES retired models, never adds",
+       _n14ref["models"] == [_n14nv[0], _n14nv[2]]
+       and _n14ref["default_model"] == _n14nv[0])
+ _n14sh._live_models = lambda base, fp, key: ["nothing/known"]
+ check("N14m no overlap with the catalogue keeps the curated list",
+-      _n14sh.refresh_models(_n14prov["nvidia"], "k")["models"] == _n14nv)
++      _n14sh.refresh_models(_n14fake, "k")["models"] == _n14nv)
+ check("N14n the static list is never mutated in place",
+-      _n14prov["nvidia"]["models"] == _n14nv)
++      _n14fake["models"] == _n14nv)
++check("N14o no provider offers a model COAir cannot reach",
++      "gemini-2.5-flash" not in _n14prov[_n14managed]["models"]
++      and "nvidia" not in _n14prov)
+ 
+ # N15. Completion impact attribution — which changes actually moved
+ # completion, measured by one-at-a-time reversion + kernel re-schedule.
+diff --git a/vendor/delay-analysis-toolkit/views/_umbrella.py b/vendor/delay-analysis-toolkit/views/_umbrella.py
+index a038e90..4bb5a25 100644
+--- a/vendor/delay-analysis-toolkit/views/_umbrella.py
++++ b/vendor/delay-analysis-toolkit/views/_umbrella.py
+@@ -17,7 +17,8 @@ import pandas as pd
+ import streamlit as st
+ 
+ import state as sk
+-from dcma.narrative import NarrativeError, stream_narrative
++from dcma.narrative import (MANAGED_PROVIDER, NarrativeError, PROVIDERS,
++                            stream_narrative)
+ from programme import (
+     UMBRELLA_SYSTEM_PROMPT, build_rollup, critique_grouping,
+     merge_grouping, refine_grouping,
+@@ -86,10 +87,14 @@ def umbrella_editor(rows: list[dict], path_codes: set[str],
+                     st.warning("No usable groups were returned — try "
+                                "again, or type groups in the table.")
+             except NarrativeError as exc:
++                # COAir local patch: name the managed provider's own env var
++                # rather than NVIDIA's — telling an operator to rotate a
++                # credential this deployment does not use sends them nowhere.
++                _managed_var = PROVIDERS[MANAGED_PROVIDER]["env_var"]
+                 st.error(
+                     f"{exc.message}\n\nIf this is the managed endpoint "
+                     "returning 403, its key has likely been rotated — "
+-                    "update NVIDIA_API_KEY in the secrets, or open the "
++                    f"update {_managed_var} in the secrets, or open the "
+                     "AI settings above and use your own key. Grouping "
+                     "by hand in the table below works regardless.")
+ 
+diff --git a/vendor/delay-analysis-toolkit/views/sequence.py b/vendor/delay-analysis-toolkit/views/sequence.py
+index 771154d..f80884a 100644
+--- a/vendor/delay-analysis-toolkit/views/sequence.py
++++ b/vendor/delay-analysis-toolkit/views/sequence.py
+@@ -70,7 +70,7 @@ def sequence_tab() -> None:
+                     "every activity and proposes corrections; they land "
+                     "in the table below marked *AI review* and still "
+                     "require your confirmation.")
+-        # THE shared provider block — managed NVIDIA default, model
++        # THE shared provider block — managed-provider default, model
+         # dropdown, own-key switch. The same function every other AI
+         # feature renders; the page-local block it replaces read only
+         # environment variables, so the managed key never reached it.

@@ -1,0 +1,516 @@
+"""
+Hybrid Executor - Multi-source query orchestrator.
+Integrates QueryPlanner with all data sources (SQL, Document RAG, Light Graph)
+to handle complex multi-step queries.
+
+Architecture:
+  Router -> Hybrid Executor -> Planner -> [Step1, Step2, ...] -> Combined Answer
+"""
+import re
+from typing import Dict, List, Optional, Any
+
+from llama_index.llms.gemini import Gemini
+
+from .config import GOOGLE_API_KEY, GEMINI_MODEL
+from .logger import logger, log_separator
+from .query_planner import (
+    QueryPlanner, PlanExecutor, QueryPlan, PlanStep, StepType,
+    get_planner, get_executor,
+)
+
+
+class HybridExecutor:
+    """
+    Orchestrates multi-source query execution.
+    Wraps QueryPlanner + PlanExecutor with context-gathering and result formatting.
+    """
+
+    def __init__(self):
+        """Initialize hybrid executor with lazy-loaded components."""
+        self._planner = None
+        self._executor = None
+        self._data_analyzer = None
+        self._document_rag = None
+        self._light_graph = None
+        self._jargon = None
+
+    @property
+    def planner(self) -> QueryPlanner:
+        if self._planner is None:
+            self._planner = get_planner()
+        return self._planner
+
+    @property
+    def executor(self) -> PlanExecutor:
+        if self._executor is None:
+            self._executor = get_executor()
+        return self._executor
+
+    @property
+    def data_analyzer(self):
+        if self._data_analyzer is None:
+            from .data_analyzer_sql import get_data_analyzer
+            self._data_analyzer = get_data_analyzer()
+        return self._data_analyzer
+
+    @property
+    def document_rag(self):
+        if self._document_rag is None:
+            from .document_rag import get_document_rag
+            self._document_rag = get_document_rag()
+        return self._document_rag
+
+    @property
+    def light_graph(self):
+        if self._light_graph is None:
+            from .light_graph import get_light_graph
+            self._light_graph = get_light_graph()
+        return self._light_graph
+
+    @property
+    def jargon(self):
+        if self._jargon is None:
+            from .jargon_manager import get_jargon_manager
+            self._jargon = get_jargon_manager()
+        return self._jargon
+
+    def _build_table_context(self, query: str = "") -> str:
+        """L2 — query-relevant, RELIABLE data tables only (no OCR junk pseudo-
+        tables). Scales: only the top-N tables relevant to the query are listed,
+        so prompt size stays bounded as the corpus grows."""
+        da = self.data_analyzer
+        # select_tables is heuristic (no LLM) and already drops junk tables.
+        names = da.select_tables(query, max_tables=8) if query else da.sql_table_names()[:12]
+        if not names:
+            return "No reliable data tables loaded."
+
+        lines = []
+        for name in names:
+            info = da.get_table_summary(name) or {}
+            cols = info.get('columns', [])
+            col_str = ', '.join(cols[:8])
+            if len(cols) > 8:
+                col_str += f'... (+{len(cols) - 8} more)'
+            schema = (info.get('header_metadata', {}) or {}).get('target_schema', '')
+            tag = f" [schema: {schema}]" if schema else ""
+            lines.append(f"- {name}: {info.get('row_count', 0)} rows{tag} | Columns: {col_str}")
+            jargon_ctx = self.jargon.build_column_context(cols)
+            if jargon_ctx:
+                lines.append(f"  {jargon_ctx}")
+        return '\n'.join(lines)
+
+    def _build_doc_context(self, query: str = "") -> str:
+        """L0+L1 — document corpus TOPICS (compressed cluster labels) + the
+        query-relevant documents' one-line summaries, so the planner knows what
+        the documents are ABOUT (not just filenames) and routes prose/person/
+        date/correspondence sub-questions to DOCUMENT/TIMELINE, not SQL.
+
+        Scales: cluster labels compress 100s of docs into ~12 topics; only the
+        top-N query-relevant per-doc summaries are added.
+        """
+        lines = []
+
+        # L1a — corpus topic inventory (compressed: cluster labels, ~12).
+        try:
+            from .document_clusterer import get_clusterer, UNCATEGORIZED_LABEL
+            topics = []
+            for c in get_clusterer().list_clusters():
+                label = (c.get("label") or "").strip()
+                if label and label != UNCATEGORIZED_LABEL:
+                    topics.append(f"{label} ({c.get('doc_count', 0)})")
+                if len(topics) >= 12:
+                    break
+            if topics:
+                lines.append("DOCUMENT TOPICS (corpus covers): " + "; ".join(topics))
+        except Exception:
+            pass
+
+        # L0+L1b — query-relevant per-document summaries (top-N).
+        try:
+            from .document_registry import get_document_registry
+            q_tokens = {t for t in re.findall(r"\b\w{3,}\b", (query or "").lower())}
+            scored = []
+            for rec in get_document_registry().get_completed():
+                if rec.file_type == "data":
+                    continue  # data files are covered by the table context
+                hay = " ".join([
+                    rec.file_name or "",
+                    rec.llm_summary or "",
+                    " ".join(getattr(rec, "llm_topics", None) or []),
+                    rec.cluster_label or "",
+                ]).lower()
+                score = sum(1 for t in q_tokens if t in hay)
+                scored.append((score, rec))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            picked = [r for s, r in scored if s > 0][:6] or [r for _, r in scored[:6]]
+            for rec in picked:
+                summary = (rec.llm_summary or "").strip()
+                topics = ", ".join((getattr(rec, "llm_topics", None) or [])[:4])
+                meta = f" — {summary[:140]}" if summary else (f" — topics: {topics}" if topics else "")
+                lines.append(f"- {rec.file_name} ({rec.file_type}){meta}")
+        except Exception:
+            pass
+
+        # L3 — lightweight relationship signal (parties), for timeline routing.
+        try:
+            stats = self.light_graph.get_statistics()
+            if stats.get('node_count', 0) > 0:
+                parties = self.light_graph.get_all_parties()
+                if parties:
+                    party_str = ', '.join(p['party'] for p in parties[:5])
+                    lines.append(f"Correspondence parties: {party_str}")
+        except Exception:
+            pass
+
+        return '\n'.join(lines) if lines else "No documents loaded."
+
+    def execute(self, query: str, doc_ids: Optional[List[str]] = None,
+                allowed_tables: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Execute a query using the planner for complex queries, or directly for simple ones.
+
+        Args:
+            query: User query
+            doc_ids: Optional list of document IDs to scope document searches
+            allowed_tables: Optional list of allowed table names to scope SQL queries
+
+        Returns:
+            Dict with answer, sources, plan details, and optional SQL/data
+        """
+        log_separator("Hybrid Executor")
+        logger.info(f"[HybridExecutor] Query: {query[:100]}...")
+
+        # Expand jargon
+        expanded = self.jargon.expand_query(query)
+        if expanded != query:
+            logger.info(f"[HybridExecutor] Expanded: {expanded[:100]}...")
+
+        # Gather query-relevant, content-aware context (bounded by query relevance,
+        # not corpus size).
+        table_context = self._build_table_context(expanded)
+        doc_context = self._build_doc_context(expanded)
+
+        # Plan
+        plan = self.planner.plan(expanded, table_context, doc_context)
+        logger.info(f"[HybridExecutor] Plan: {len(plan.steps)} steps, simple={plan.is_simple}")
+
+        # Execute
+        result = self.executor.execute(plan, doc_ids=doc_ids, allowed_tables=allowed_tables)
+
+        # Enrich result
+        result['query'] = query
+        result['expanded_query'] = expanded if expanded != query else None
+        result['query_type'] = self._determine_query_type(plan)
+
+        logger.info(f"[HybridExecutor] Done. Steps: {len(plan.steps)}, Sources: {len(result.get('sources', []))}")
+        return result
+
+    def execute_multi_step_sql(self, query: str) -> Dict[str, Any]:
+        """
+        Execute a multi-step SQL query that may require chaining.
+        For queries like: "Group by X, then find max in each group, then filter where > threshold"
+
+        Args:
+            query: SQL-focused multi-step query
+
+        Returns:
+            Result dict with answer, SQL chain, and data
+        """
+        log_separator("Multi-Step SQL")
+        logger.info(f"[HybridExecutor] Multi-step SQL: {query[:100]}...")
+
+        expanded = self.jargon.expand_query(query)
+        table_context = self._build_table_context(expanded)
+
+        # Force planning even for seemingly simple queries
+        plan = self.planner.plan(expanded, table_context, "")
+
+        # If planner returns simple, try to decompose via SQL-specific heuristics
+        if plan.is_simple and self._needs_sql_chain(query):
+            plan = self._create_sql_chain_plan(expanded)
+
+        result = self.executor.execute(plan)
+        result['query'] = query
+        result['query_type'] = 'data'
+        return result
+
+    def _needs_sql_chain(self, query: str) -> bool:
+        """Check if a query needs SQL chaining."""
+        q = query.lower()
+        chain_indicators = [
+            'then', 'after that', 'group by',
+            'outlier', 'compare',
+            'top', 'bottom',
+            'above average', 'below average',
+        ]
+        return any(ind in q for ind in chain_indicators)
+
+    def _create_sql_chain_plan(self, query: str) -> QueryPlan:
+        """Create a SQL chain plan from heuristic analysis."""
+        q = query.lower()
+        steps = []
+
+        # Pattern: group by + aggregate
+        if 'group' in q and any(agg in q for agg in ['max', 'min', 'avg', 'average', 'sum', 'count']):
+            steps.append(PlanStep(
+                step_id=0,
+                step_type=StepType.SQL.value,
+                description="Group and aggregate",
+                instruction=query,
+            ))
+            steps.append(PlanStep(
+                step_id=1,
+                step_type=StepType.COMBINE.value,
+                description="Format results",
+                instruction=("Present the grouped aggregation results as a GitHub-flavoured "
+                             "markdown table, with every row on its own line"),
+                depends_on=[0],
+            ))
+
+        # Pattern: outlier detection
+        elif 'outlier' in q:
+            steps.append(PlanStep(
+                step_id=0,
+                step_type=StepType.SQL.value,
+                description="Calculate statistics",
+                instruction=f"Calculate mean and standard deviation for the relevant numeric column in: {query}",
+            ))
+            steps.append(PlanStep(
+                step_id=1,
+                step_type=StepType.SQL.value,
+                description="Find outliers",
+                instruction=f"Find records where values exceed mean +/- 2 standard deviations for: {query}",
+            ))
+            steps.append(PlanStep(
+                step_id=2,
+                step_type=StepType.COMBINE.value,
+                description="Present outliers",
+                instruction="Combine statistics and outlier records into a clear analysis",
+                depends_on=[0, 1],
+            ))
+
+        # Pattern: compare / top-N
+        elif any(kw in q for kw in ['compare', 'top', 'bottom']):
+            steps.append(PlanStep(
+                step_id=0,
+                step_type=StepType.SQL.value,
+                description="Execute comparison query",
+                instruction=query,
+            ))
+            steps.append(PlanStep(
+                step_id=1,
+                step_type=StepType.COMBINE.value,
+                description="Format comparison",
+                instruction="Present the comparison results clearly",
+                depends_on=[0],
+            ))
+
+        # Pattern: above/below average
+        elif any(kw in q for kw in ['above average', 'below average']):
+            steps.append(PlanStep(
+                step_id=0,
+                step_type=StepType.SQL.value,
+                description="Calculate average",
+                instruction=f"Calculate the average for the relevant column in: {query}",
+            ))
+            steps.append(PlanStep(
+                step_id=1,
+                step_type=StepType.SQL.value,
+                description="Filter by average",
+                instruction=f"Find records above/below the average for: {query}",
+            ))
+            steps.append(PlanStep(
+                step_id=2,
+                step_type=StepType.COMBINE.value,
+                description="Present filtered results",
+                instruction="Show the average value and the filtered records",
+                depends_on=[0, 1],
+            ))
+
+        # Default: single SQL step
+        else:
+            steps.append(PlanStep(
+                step_id=0,
+                step_type=StepType.SQL.value,
+                description="Execute query",
+                instruction=query,
+            ))
+
+        return QueryPlan(
+            original_query=query,
+            is_simple=len(steps) <= 1,
+            steps=steps,
+            plan_rationale="Heuristic SQL chain",
+        )
+
+    def execute_multi_table(self, query: str, provider: str = "gemini",
+                            allowed_tables: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Execute a query that requires data from multiple tables.
+        Identifies relevant tables, queries each separately, then combines results via LLM.
+        """
+        from . import llm_client
+        from .prompt_security import build_system_prompt
+
+        log_separator("Multi-Table Query")
+        logger.info(f"[HybridExecutor] Multi-table: {query[:100]}...")
+
+        expanded = self.jargon.expand_query(query)
+        relevant_tables = self.data_analyzer.select_tables(expanded, max_tables=3, allowed_tables=allowed_tables)
+
+        if not relevant_tables:
+            return {"answer": "No relevant tables found.", "sources": [], "sql": None, "result_data": None}
+        if len(relevant_tables) == 1:
+            return self.data_analyzer.query(expanded, allowed_tables=allowed_tables)
+
+        # If the selected tables all share ONE target_schema, aggregate across
+        # ALL same-schema files via a single UNION view → one correct total
+        # (instead of per-file partial results). Falls back to per-table below.
+        try:
+            schemas = {
+                self.data_analyzer.tables.get(t, {}).get("header_metadata", {}).get("target_schema", "")
+                for t in relevant_tables
+            }
+            schemas.discard("")
+            if len(schemas) == 1:
+                only_schema = next(iter(schemas))
+                unified = self.data_analyzer.query_unified_schema(
+                    expanded, only_schema, allowed_tables=allowed_tables, provider=provider,
+                )
+                if unified and unified.get("sources"):
+                    logger.info(
+                        f"[HybridExecutor] Unified-schema aggregation over "
+                        f"{unified.get('unified_table_count')} {only_schema} tables"
+                    )
+                    return unified
+        except Exception as e:
+            logger.warning(f"[HybridExecutor] Unified-schema path skipped: {e}")
+
+        logger.info(f"[HybridExecutor] Querying {len(relevant_tables)} tables: {relevant_tables}")
+
+        # Query each table independently
+        table_results = {}
+        all_sources = []
+        for tname in relevant_tables:
+            try:
+                result = self.data_analyzer.query(expanded, table_name=tname, allowed_tables=allowed_tables)
+                table_results[tname] = result
+                all_sources.extend(result.get("sources", []))
+            except Exception as e:
+                logger.warning(f"[HybridExecutor] Table {tname} query failed: {e}")
+                table_results[tname] = {"answer": f"Error: {e}", "sources": []}
+
+        # Combine results via LLM
+        combine_parts = []
+        for tname, result in table_results.items():
+            combine_parts.append(f"TABLE: {tname}\nAnswer: {result.get('answer', 'No result')}")
+
+        combine_prompt = (
+            f"The user asked: {expanded}\n\n"
+            f"Results from multiple data tables:\n\n"
+            + "\n\n".join(combine_parts)
+            + "\n\nCombine these results into a single comprehensive construction project analysis:\n"
+            "1. Present data from each source with specific numbers\n"
+            "2. Cross-reference: if equipment hours are high, do manpower numbers support that activity level?\n"
+            "3. If IPC progress data exists alongside production data, compare planned vs actual\n"
+            "4. Highlight any mismatches (e.g., high manpower but low production = productivity concern)\n"
+            "5. Conclude with an actionable summary for the project manager\n"
+            "6. Where the combined answer is a ranking or a per-item breakdown, give it as a "
+            "GitHub-flavoured markdown table — header row, then the |---|---| separator row, "
+            "then EVERY row on its own line — with a short reading of it above the table"
+        )
+
+        try:
+            system = build_system_prompt("You are a construction project data analyst.")
+            resp = llm_client.generate_text(
+                combine_prompt, system=system, provider=provider,
+                task_type="answer_synthesis",
+            )
+            combined_answer = resp.text
+        except Exception as e:
+            logger.error(f"[HybridExecutor] Combine failed: {e}")
+            combined_answer = "\n\n".join(
+                f"**{tname}**: {r.get('answer', 'No result')}" for tname, r in table_results.items()
+            )
+
+        return {
+            "answer": combined_answer,
+            "sources": all_sources,
+            "sql": {tname: r.get("sql") for tname, r in table_results.items()},
+            "result_data": None,
+            "query_type": "data",
+            "multi_table": True,
+        }
+
+    def execute_dual(self, query: str, doc_ids: Optional[List[str]] = None,
+                     allowed_tables: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Execute a complex query with both OpenAI and Claude in parallel.
+        Plans once, then executes the plan with each provider independently.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from .config import LLM_PROVIDERS
+        from .llm_client import effective_providers
+        import contextvars
+        providers = effective_providers(LLM_PROVIDERS)
+
+        log_separator("Hybrid Executor (Dual-LLM)")
+        logger.info(f"[HybridExecutor] Dual query: {query[:100]}...")
+
+        expanded = self.jargon.expand_query(query)
+        table_context = self._build_table_context(expanded)
+        doc_context = self._build_doc_context(expanded)
+
+        # Plan once (plan structure is provider-independent)
+        plan = self.planner.plan(expanded, table_context, doc_context)
+        logger.info(f"[HybridExecutor] Plan: {len(plan.steps)} steps, executing with both providers...")
+
+        results = {}
+
+        def _execute_for_provider(provider: str):
+            result = self.executor.execute_with_provider(plan, provider, doc_ids=doc_ids, allowed_tables=allowed_tables)
+            result['query'] = query
+            result['query_type'] = self._determine_query_type(plan)
+            return provider, result
+
+        with ThreadPoolExecutor(max_workers=len(providers)) as executor:
+            futures = {executor.submit(contextvars.copy_context().run,
+                                       _execute_for_provider, p): p for p in providers}
+            for future in as_completed(futures):
+                prov = futures[future]
+                try:
+                    _, result = future.result()
+                    results[prov] = result
+                except Exception as e:
+                    logger.error(f"[HybridExecutor] [{prov}] Failed: {e}")
+                    results[prov] = {
+                        "answer": f"Error from {prov}: {e}",
+                        "sources": [], "sql": None, "result_data": None,
+                    }
+
+        return results
+
+    def _determine_query_type(self, plan: QueryPlan) -> str:
+        """Determine the overall query type from a plan."""
+        types = set()
+        for step in plan.steps:
+            if step.step_type == StepType.COMBINE.value:
+                continue
+            types.add(step.step_type)
+
+        if len(types) > 1:
+            return 'hybrid'
+        if types:
+            return types.pop()
+        return 'unknown'
+
+
+# Singleton
+_hybrid_executor: Optional[HybridExecutor] = None
+
+
+def get_hybrid_executor() -> HybridExecutor:
+    """Get or create HybridExecutor singleton."""
+    global _hybrid_executor
+    if _hybrid_executor is None:
+        _hybrid_executor = HybridExecutor()
+    return _hybrid_executor

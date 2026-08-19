@@ -1,0 +1,124 @@
+# Environment
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+/secrets/
+
+# SSH keys / certificates (never commit)
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data directories (exclude uploaded files)
+data/
+uploads/
+storage/
+
+# OCR cache
+.cache/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker (keep Dockerfile, ignore runtime)
+docker-compose.override.yml
+
+# Runtime caches
+cache/
+
+# Claude Code
+.claude/
+
+# Test/sample documents (large files)
+26.02.07 - New Docs/
+
+# Frontend dependencies
+frontend/node_modules/
+
+# Frontend test artifacts
+frontend/playwright-report/
+frontend/playwright-report-projects/
+frontend/playwright-report-production/
+frontend/playwright-report-forensic/
+frontend/playwright-report-mobile/
+frontend/test-results/
+
+# Windows artifacts
+NUL
+
+# Local vector DB data (1GB+, never commit)
+qdrant_storage/
+
+# MCP / tooling artifacts
+.playwright-mcp/
+
+# Design asset bundles (large binaries — share out-of-band, not in git)
+designer-pack/
+designer-pack.zip
+
+# The platform portal is deliberately NOT tracked here. Its
+# assets/js/config.js ships a live COAir username and password in plain text
+# (its own README says so), so committing it as-is would put working
+# credentials in the history. Strip them — set signIn:'none' and drop the
+# credentials block — before deciding to version it.
+delay-disputes-portal/
+
+# Stray screenshots from local UI runs.
+/*.png
+
+# The six authored chronologies live in content/chronologies/ under stable
+# numbered names. This folder is the same six files under their original titles
+# (md5-identical) — a handover copy, not a second source of truth.
+Sample Chronologies/
+
+# Personal agent config, wherever it appears (it was once tracked under vendor/).
+**/.claude/settings.local.json

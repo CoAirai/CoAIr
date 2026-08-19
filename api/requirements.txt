@@ -1,0 +1,90 @@
+# Core Framework
+llama-index>=0.10.0
+llama-index-llms-gemini>=0.1.0
+llama-index-llms-openai>=0.1.0
+# anthropic SDK used directly (no llama_index wrapper needed)
+llama-index-embeddings-google-genai>=0.1.0
+llama-index-vector-stores-pinecone>=0.1.0
+# Local (free) embeddings, lightweight server default — EMBEDDING_PROVIDER=fastembed
+# runs bge-base-en-v1.5 via ONNX (no torch) so it fits a 2 GB box. Wire-compatible
+# with the sentence-transformers bge corpus (same model + query instruction).
+fastembed>=0.4.0
+# EMBEDDING_PROVIDER=local (torch + sentence-transformers, used for fast M4 bulk
+# ingestion) is NOT installed in the lean server image. For local ingestion:
+#   uv pip install sentence-transformers llama-index-embeddings-huggingface
+
+# Dual-LLM Providers
+openai>=1.10.0
+anthropic>=0.18.0
+# Native Gemini SDK: required for Gemini 3.x thinking and selective multimodal
+# OCR fallback. Current dependency resolution is compatible with the image.
+google-genai>=2.16.0,<3.0.0
+
+# Document Processing
+pymupdf>=1.23.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+
+# Table Extraction
+pdfplumber>=0.10.0
+pyarrow>=14.0.0
+numpy>=1.24.0
+
+# OCR Support
+pytesseract>=0.3.10
+Pillow>=10.0.0
+
+# Vector Database
+pinecone-client>=3.0.0
+# Optional secondary backend (activated via VECTOR_STORE_BACKEND=qdrant).
+# Keep this pair locked together: qdrant-client 1.19 removed
+# IDF_EMBEDDING_MODELS while llama-index-vector-stores-qdrant 0.10.2 still
+# imports it, causing every chat request to fail while constructing QueryRouter.
+qdrant-client==1.18.0
+llama-index-vector-stores-qdrant==0.10.2
+
+# Data Analysis (SQL-based - safe execution)
+duckdb>=0.9.0
+pandas>=2.0.0
+altair>=6.2,<7
+vl-convert-python>=1.9,<2
+
+# UI (legacy)
+
+# API Server
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# Caching
+diskcache>=5.6.0
+
+# Fuzzy Matching (OCR label recovery)
+rapidfuzz>=3.0.0
+
+# Document clustering (topic groups in library sidebar)
+scikit-learn>=1.3.0
+hdbscan>=0.8.33
+
+# Authentication
+bcrypt>=4.0.0
+PyJWT>=2.8.0
+cryptography>=42.0.0
+
+# Cloud Storage (table persistence)
+google-cloud-storage>=2.14.0
+# Canonical master-event memory (Cloud SQL PostgreSQL in production).  The pool
+# extra is used by Cloud Run workers so a model call never holds a DB connection.
+psycopg[binary,pool]>=3.2.0
+
+# Email parsing
+extract-msg>=0.47.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Browser-impersonating HTTP client (scripts/download_edinburgh_tram.py — the
+# inquiry site's WAF filters non-browser TLS fingerprints, so plain
+# requests/urllib get a 403; curl_cffi presents a real Chrome handshake).
+curl_cffi>=0.7.0

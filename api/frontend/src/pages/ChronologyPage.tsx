@@ -1,0 +1,92 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { generateReport, listReports } from '../api/reportApi';
+import type { ReportJob } from '../api/reportApi';
+import { getEventIndexStatus } from '../api/fileApi';
+import type { EventIndexStatus } from '../api/fileApi';
+import { useProjectStore } from '../stores/projectStore';
+
+function message(error: unknown) {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (detail === 'project_has_no_ready_documents') return 'No searchable documents were found in this project.';
+  if (typeof detail === 'object' && detail && 'error' in detail) return String((detail as { error: string }).error).replaceAll('_', ' ');
+  return typeof detail === 'string' ? detail.replaceAll('_', ' ') : 'The chronology could not be queued.';
+}
+
+export default function ChronologyPage() {
+  const navigate = useNavigate();
+  const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
+  const project = useProjectStore((state) => state.projects.find((item) => item.project_id === state.selectedProjectId));
+  const [topic, setTopic] = useState('');
+  const [parties, setParties] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [jobs, setJobs] = useState<ReportJob[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [eventIndex, setEventIndex] = useState<EventIndexStatus | null>(null);
+
+  useEffect(() => {
+    setJobs([]);
+    setEventIndex(null);
+    if (selectedProjectId) {
+      void listReports('chronology').then(setJobs).catch(() => setError('Report history could not be loaded.'));
+      void getEventIndexStatus().then(setEventIndex).catch(() => setEventIndex(null));
+    }
+  }, [selectedProjectId]);
+
+  const requestPayload = () => ({
+    topic: topic.trim(), date_from: dateFrom, date_to: dateTo,
+    parties: parties.split(',').map((value) => value.trim()).filter(Boolean),
+  });
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!topic.trim()) return;
+    setSubmitting(true); setError('');
+    try {
+      const job = await generateReport('chronology', {
+        ...requestPayload(),
+      });
+      navigate(job.report_url || `/chronology/reports/${job.job_id}`);
+    } catch (caught) { setError(message(caught)); }
+    finally { setSubmitting(false); }
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-5xl mx-auto px-3 py-5 sm:px-4 md:px-8 md:py-8">
+        <p className="font-mono text-[10px] uppercase tracking-[.18em] text-[var(--text-muted)]">Module · Chronology</p>
+        <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">Build a new chronology</h1>
+        <p className="mt-2 text-[13px] text-[var(--text-secondary)]">Research any issue across <strong>{project?.name}</strong>. Every request creates a permanent, English Word report with verified project sources.</p>
+
+        {eventIndex && !eventIndex.complete && <section role="status" className="mt-5 border border-[var(--warning)] bg-[var(--wash)] p-4 text-[11px] leading-5 text-[var(--text-secondary)]"><p className="font-semibold text-[var(--text-primary)]">Event memory is still building</p><p className="mt-1">The project remains searchable. Chronology will use focused document fallback for incomplete or failed event-index coverage.</p>{eventIndex.partial_reasons.length > 0 && <p className="mt-1 font-mono text-[9px] uppercase text-[var(--text-muted)]">{eventIndex.partial_reasons.map((reason) => reason.replaceAll('_', ' ')).join(' · ')}</p>}</section>}
+        {eventIndex?.complete && <p className="mt-4 font-mono text-[9px] uppercase tracking-[.1em] text-[var(--text-muted)]">Event memory ready · {eventIndex.observation_count} observations · {eventIndex.cluster_count} clusters</p>}
+
+        <section className="mt-5 border border-[var(--border)] bg-[var(--wash)] p-4 md:mt-7 md:p-7">
+          <form onSubmit={submit} className="grid md:grid-cols-2 gap-3">
+            <label className="md:col-span-2 text-[11px] text-[var(--text-secondary)]">Topic or research question
+              <textarea required minLength={3} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Describe the issue, event or subject to investigate…" className="mt-2 block min-h-28 w-full border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-base text-[var(--text-primary)] md:text-[14px]" />
+            </label>
+            <label className="text-[11px] text-[var(--text-secondary)]">Start date (optional)<input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-2 block min-h-11 w-full border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-base md:text-[12px]" /></label>
+            <label className="text-[11px] text-[var(--text-secondary)]">End date (optional)<input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-2 block min-h-11 w-full border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-base md:text-[12px]" /></label>
+            <label className="md:col-span-2 text-[11px] text-[var(--text-secondary)]">Parties (optional, comma separated)<input value={parties} onChange={(e) => setParties(e.target.value)} placeholder="Employer, Contractor, Engineer" className="mt-2 block min-h-11 w-full border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-base md:text-[12px]" /></label>
+            <div className="flex flex-col items-stretch gap-3 pt-2 md:col-span-2 md:flex-row md:items-center md:justify-between">
+              <p className="text-[10px] text-[var(--text-muted)]">COAir will identify overview, primary and counter-party records automatically.</p>
+              <button disabled={submitting || !topic.trim() || project?.role === 'viewer'} className="min-h-11 w-full bg-[var(--accent)] px-6 py-3 font-mono text-[10px] uppercase tracking-[.14em] text-[var(--accent-ink)] disabled:opacity-40 md:w-auto">{submitting ? 'Queuing…' : 'Generate chronology →'}</button>
+            </div>
+          </form>
+          {error && <p role="alert" className="mt-4 text-[11px] text-[var(--danger)]">{error}</p>}
+        </section>
+
+        <section className="mt-8">
+          <div className="flex items-baseline justify-between"><h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Project chronology reports</h2><span className="font-mono text-[9px] text-[var(--text-muted)]">{jobs.length} total</span></div>
+          <div className="mt-3 border border-[var(--border)] bg-[var(--wash)]">
+            {jobs.map((job) => <button type="button" key={job.job_id} onClick={() => navigate(job.report_url || `/chronology/reports/${job.job_id}`)} className="grid min-h-11 w-full items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-primary)] px-4 py-3 text-left last:border-b-0 hover:bg-[var(--wash)] sm:grid-cols-[90px_1fr_140px_90px] sm:gap-3"><span className="font-mono text-[10px] text-[var(--accent)]">6.{job.sequence_number}.x</span><span className="break-words text-[12px] text-[var(--text-primary)] sm:truncate">{job.title}</span><span className="font-mono text-[9px] text-[var(--text-muted)]">{new Date(job.created_at).toLocaleDateString('en-GB')}</span><span className={`font-mono text-[9px] uppercase ${job.status === 'failed' || job.status === 'credit_balance_exhausted' ? 'text-[var(--danger)]' : 'text-[var(--text-muted)]'}`}>{job.status.replaceAll('_', ' ')}</span></button>)}
+            {jobs.length === 0 && <p className="p-5 text-[11px] text-[var(--text-muted)]">No chronology reports have been created for this project.</p>}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}

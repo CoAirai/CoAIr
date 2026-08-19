@@ -46,3 +46,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local agent/tooling artifacts
+.impeccable/
+.superpowers/
+.mcp.json
+
+# API runtime data (when using /api subfolder)
+api/data/
+api/storage/
+api/cache/
+api/logs/
+api/qdrant_storage/
+api/qdrant_snapshots/
+api/.env
+api/.env.local
+api/.env.production

@@ -1,0 +1,683 @@
+name: CI/CD — test, build, deploy to Lightsail
+
+# Two long-lived branches, two environments on the same Lightsail host:
+#
+#   dev  → development  /opt/mvp-api-dev   coair-dev-*  :8100  tag :dev
+#   main → production   /opt/mvp-api       mvp-*        :8000  tag :latest
+#
+# Merge to either  → run fast tests → build image → push to GHCR → deploy over SSH.
+# Pull requests    → run fast tests only (no build/deploy), for both branches.
+# Manual run       → same as a merge for whichever branch it is dispatched on.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+# Never let two deploys of the same branch run at once (a running deploy is not
+# cancelled — we let it finish, then the newer commit deploys after). The deploy
+# job carries a second, host-wide lock so main and dev cannot mutate the shared
+# Docker daemon at the same time.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── 0. Which environment is this ref going to? ──────────────────────────
+  # Kept as a job (not per-job expressions) so the whole branch→environment
+  # mapping is one reviewable block, and so a missing GitHub variable can never
+  # silently point a dev deploy at production's directory or ports.
+  resolve:
+    name: Resolve target environment
+    runs-on: ubuntu-latest
+    outputs:
+      env_name: ${{ steps.map.outputs.env_name }}
+      stack_prefix: ${{ steps.map.outputs.stack_prefix }}
+      project_name: ${{ steps.map.outputs.project_name }}
+      api_port: ${{ steps.map.outputs.api_port }}
+      toolkit_port: ${{ steps.map.outputs.toolkit_port }}
+      qdrant_port: ${{ steps.map.outputs.qdrant_port }}
+      api_mem_limit: ${{ steps.map.outputs.api_mem_limit }}
+      deploy_toolkit: ${{ steps.map.outputs.deploy_toolkit }}
+      run_backup: ${{ steps.map.outputs.run_backup }}
+      moving_tag: ${{ steps.map.outputs.moving_tag }}
+      is_deployable: ${{ steps.map.outputs.is_deployable }}
+    steps:
+      - id: map
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # On pull_request, ref_name is "<n>/merge" and never matches a branch
+          # below — that is what keeps PRs to tests-only for both targets.
+          if [ "$EVENT_NAME" = "pull_request" ]; then REF_NAME="pull-request"; fi
+          case "$REF_NAME" in
+            main)
+              env_name=production;  stack_prefix=mvp;       project_name=mvp-api
+              api_port=8000; toolkit_port=8501; qdrant_port=6333; api_mem_limit=0
+              deploy_toolkit=true;  run_backup=true;  moving_tag=latest; deployable=true ;;
+            dev)
+              env_name=development; stack_prefix=coair-dev; project_name=mvp-api-dev
+              api_port=8100; toolkit_port=8601; qdrant_port=6433; api_mem_limit=2g
+              # No toolkit and no pre-deploy backup on dev: the toolkit is a
+              # production surface, and dev backups would fill a disk that is
+              # already 86% full with production's own archives.
+              deploy_toolkit=false; run_backup=false; moving_tag=dev; deployable=true ;;
+            *)
+              env_name=none; stack_prefix=; project_name=
+              api_port=0; toolkit_port=0; qdrant_port=0; api_mem_limit=0
+              deploy_toolkit=false; run_backup=false; moving_tag=""; deployable=false ;;
+          esac
+          for kv in env_name stack_prefix project_name api_port toolkit_port \
+                    qdrant_port api_mem_limit deploy_toolkit run_backup moving_tag; do
+            printf '%s=%s\n' "$kv" "${!kv}" >> "$GITHUB_OUTPUT"
+          done
+          printf 'is_deployable=%s\n' "$deployable" >> "$GITHUB_OUTPUT"
+          echo "$REF_NAME → $env_name (deployable=$deployable)"
+
+  # ── 1. Frontend build + isolated Projects/Forensic E2E gates ─────────────
+  frontend:
+    name: Frontend build & Projects/Forensic E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build production frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright Chromium and WebKit
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Run isolated Projects and module tests
+        working-directory: frontend
+        run: npm run e2e:projects
+
+      - name: Run authenticated responsive workflow matrix
+        working-directory: frontend
+        run: npm run e2e:mobile
+
+      - name: Run isolated native forensic parity tests
+        working-directory: frontend
+        run: npm run e2e:forensic
+
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: projects-playwright-diagnostics
+          path: |
+            frontend/playwright-report-projects
+            frontend/playwright-report-forensic
+            frontend/playwright-report-mobile
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ── 2. Fast offline unit tests (the deploy gate) ─────────────────────────
+  test:
+    name: Fast tests
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run fast test suite
+        # Offline unit tests that gate the deploy — routing + response building.
+        # Add more files here as coverage grows; keep them network/key-free so the
+        # gate stays fast and deterministic.
+        run: |
+          python scripts/verify_forensic_vendor.py
+          pytest -q \
+            tests/test_sql_security.py \
+            tests/test_document_registry_load.py \
+            tests/test_json_repair.py \
+            tests/test_doc_viewer_filename_fallback.py \
+            tests/test_project_document_viewer_resolution.py \
+            tests/test_conversation_store_recovery.py \
+            tests/test_path_normalizer.py \
+            tests/test_chronology_library.py \
+            tests/test_chronology_docx.py \
+            tests/test_chronology_original_docx.py \
+            tests/test_markdown_blocks.py \
+            tests/test_answer_docx.py \
+            tests/test_chronology_evidence.py \
+            tests/test_router_document_listing.py \
+            tests/test_router_intent_doc_list.py \
+            tests/test_router_rebalance.py \
+            tests/test_negative_escalation.py \
+            tests/test_semantic_cache_routing.py \
+            tests/test_search_topic_extraction.py \
+            tests/test_response_builder.py \
+            tests/test_response_builder_dedupe.py \
+            tests/test_api_embedding.py \
+            tests/test_ai_report_footnotes.py \
+            tests/test_chronology_v2.py \
+            tests/test_chronology_v3.py \
+            tests/test_durable_job_stores.py \
+            tests/test_billing_store.py \
+            tests/test_provider_credentials.py \
+            tests/test_configure_demo_account.py \
+            tests/test_provision_mobile_smoke_workspace.py \
+            tests/test_demo_model_policy.py \
+            tests/test_ingestion_model_routing.py \
+            tests/test_vector_runtime.py \
+            tests/test_deploy_data_safety.py \
+            tests/test_project_store.py \
+            tests/test_project_file_deletion.py \
+            tests/test_forensic_store.py \
+            tests/test_forensic_programme_service.py \
+            tests/test_forensic_engines.py \
+            tests/test_forensic_api_models.py \
+            tests/test_forensic_actions.py \
+            tests/test_run_store.py
+
+  # ── 3. Require the read-only production smoke configuration up front ────
+  production-smoke-preflight:
+    name: Production UI smoke preflight
+    needs: [resolve, test]
+    if: needs.resolve.outputs.env_name == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Verify required read-only smoke configuration
+        env:
+          PROD_BASE_URL: ${{ secrets.PROD_BASE_URL }}
+          PROD_E2E_USERNAME: ${{ secrets.PROD_E2E_USERNAME }}
+          PROD_E2E_PASSWORD: ${{ secrets.PROD_E2E_PASSWORD }}
+          PROD_E2E_PROJECT_ID: ${{ secrets.PROD_E2E_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$PROD_BASE_URL"
+          test -n "$PROD_E2E_USERNAME"
+          test -n "$PROD_E2E_PASSWORD"
+          test -n "$PROD_E2E_PROJECT_ID"
+
+  # ── 4. Build the Docker image and push it to GHCR ────────────────────────
+  build-and-push:
+    name: Build & push image
+    needs: [resolve, test, production-smoke-preflight]
+    # The preflight is *skipped* on the dev path, and a skipped `needs` would
+    # otherwise skip this job too — hence always() plus explicit result checks.
+    if: >-
+      always()
+      && needs.test.result == 'success'
+      && needs.production-smoke-preflight.result != 'failure'
+      && needs.resolve.outputs.is_deployable == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.imgref.outputs.image }}
+      toolkit_image: ${{ steps.imgref.outputs.toolkit_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute lowercase image name
+        run: echo "IMAGE_LOWER=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          build-args: |
+            COAIR_COMMIT_SHA=${{ github.sha }}
+          # The moving tag is per-environment: :latest only ever points at a
+          # main build (compose's local fallback and the rollback docs depend on
+          # that), dev gets :dev. The deploy itself always consumes the
+          # immutable :<sha>.
+          tags: |
+            ghcr.io/${{ env.IMAGE_LOWER }}:${{ needs.resolve.outputs.moving_tag }}
+            ghcr.io/${{ env.IMAGE_LOWER }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The Delay Analysis Toolkit's Streamlit app — a second, independent
+      # image. It contains only the vendored upstream tree and that tree's own
+      # requirements, so it changes when the vendor pin changes, not when COAir
+      # does; the layer cache makes it near-free on an ordinary deploy.
+      - name: Build and push toolkit image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.toolkit
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_LOWER }}/toolkit:${{ needs.resolve.outputs.moving_tag }}
+            ghcr.io/${{ env.IMAGE_LOWER }}/toolkit:${{ github.sha }}
+          cache-from: type=gha,scope=toolkit
+          cache-to: type=gha,mode=max,scope=toolkit
+
+      - name: Export image ref for deploy job
+        id: imgref
+        run: |
+          echo "image=ghcr.io/${IMAGE_LOWER}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image=ghcr.io/${IMAGE_LOWER}/toolkit:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  # ── 5. Deploy to the AWS Lightsail host over SSH ─────────────────────────
+  deploy:
+    name: Deploy to Lightsail
+    needs: [resolve, build-and-push]
+    # `production-smoke-preflight` is skipped on the dev path, and a skip
+    # propagates down the whole graph — past build-and-push's own always(), which
+    # is why the first dev deploy was skipped while production deployed fine.
+    # !cancelled() opts out of that inheritance; the explicit result check keeps
+    # the original meaning (deploy only after a real build).
+    if: >-
+      !cancelled()
+      && needs.build-and-push.result == 'success'
+      && needs.resolve.outputs.is_deployable == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve.outputs.env_name }}
+    # Both environments share one Docker daemon, one image store and one prune.
+    # Serialize the SSH mutation host-wide so a dev deploy cannot delete the
+    # image a concurrent production deploy just pulled.
+    concurrency:
+      group: lightsail-host-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ship the (parametrized) compose file to the server's home, then move it
+      # into APP_DIR inside the SSH script (handles root-owned dirs via sudo).
+      - name: Copy deploy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          port: ${{ secrets.LIGHTSAIL_SSH_PORT || 22 }}
+          # deploy/ carries the nginx snippet and its installer. The pipeline
+          # never touches nginx itself — that is a deliberate one-time manual
+          # step — but shipping the files means the operator does not need a
+          # repository checkout on the server to run it.
+          source: docker-compose.prod.yml,scripts/create_deploy_backup.sh,scripts/prune_deploy_backups.sh,scripts/bootstrap_env_dir.sh,deploy/nginx/coair-toolkit.conf,deploy/nginx/coair-dev.conf,deploy/install_toolkit_nginx.sh,deploy/install_dev_nginx.sh
+          target: coair-deploy
+
+      - name: Pull new image and restart
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+          TOOLKIT_IMAGE: ${{ needs.build-and-push.outputs.toolkit_image }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          APP_DIR: ${{ secrets.LIGHTSAIL_APP_DIR || '/opt/mvp-api' }}
+          DEMO_GOOGLE_API_KEY: ${{ secrets.DEMO_GOOGLE_API_KEY }}
+          DEMO_ACCOUNT_PASSWORD: ${{ secrets.DEMO_ACCOUNT_PASSWORD }}
+          # Stack identity — everything that distinguishes this environment's
+          # containers, ports and behaviour from the other one on the same host.
+          ENV_NAME: ${{ needs.resolve.outputs.env_name }}
+          STACK_PREFIX: ${{ needs.resolve.outputs.stack_prefix }}
+          PROJECT_NAME: ${{ needs.resolve.outputs.project_name }}
+          API_HOST_PORT: ${{ needs.resolve.outputs.api_port }}
+          TOOLKIT_HOST_PORT: ${{ needs.resolve.outputs.toolkit_port }}
+          QDRANT_HOST_PORT: ${{ needs.resolve.outputs.qdrant_port }}
+          API_MEM_LIMIT: ${{ needs.resolve.outputs.api_mem_limit }}
+          DEPLOY_TOOLKIT: ${{ needs.resolve.outputs.deploy_toolkit }}
+          RUN_BACKUP: ${{ needs.resolve.outputs.run_backup }}
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          port: ${{ secrets.LIGHTSAIL_SSH_PORT || 22 }}
+          # This list is an allow-list: a name missing here arrives unset and
+          # aborts the script under `set -u`.
+          envs: IMAGE,TOOLKIT_IMAGE,GHCR_TOKEN,GHCR_USER,APP_DIR,DEMO_GOOGLE_API_KEY,DEMO_ACCOUNT_PASSWORD,ENV_NAME,STACK_PREFIX,PROJECT_NAME,API_HOST_PORT,TOOLKIT_HOST_PORT,QDRANT_HOST_PORT,API_MEM_LIMIT,DEPLOY_TOOLKIT,RUN_BACKUP
+          command_timeout: 60m
+          script: |
+            set -euo pipefail
+
+            # Use sudo for docker only if the login user can't reach the daemon.
+            SUDO=""
+            docker info >/dev/null 2>&1 || SUDO="sudo"
+
+            cd "$APP_DIR"
+
+            echo "Deploying $ENV_NAME into $APP_DIR (stack $STACK_PREFIX, api port $API_HOST_PORT)"
+
+            # APP_DIR falls back to production's directory when the environment
+            # secret is missing. For anything but production that fallback would
+            # point a second API at production's databases — refuse instead.
+            if [ "$ENV_NAME" != "production" ] && [ "$APP_DIR" = "/opt/mvp-api" ]; then
+              echo "LIGHTSAIL_APP_DIR is not set for the $ENV_NAME environment; it fell back to the production directory. Set it in the GitHub environment before deploying." >&2
+              exit 1
+            fi
+
+            API_CONTAINER="${STACK_PREFIX}-api"
+            QDRANT_CONTAINER="${STACK_PREFIX}-qdrant"
+
+            # Dedicated demo credentials are mandatory for this rollout. Keep
+            # the Google key outside Git, SQLite, the image and container env.
+            if [ -z "${DEMO_GOOGLE_API_KEY:-}" ] || [ -z "${DEMO_ACCOUNT_PASSWORD:-}" ]; then
+              echo "DEMO_GOOGLE_API_KEY and DEMO_ACCOUNT_PASSWORD production secrets are required." >&2
+              exit 1
+            fi
+            $SUDO install -d -m 700 "$APP_DIR/secrets/google_keys"
+            $SUDO install -m 600 /dev/null "$APP_DIR/secrets/google_keys/demo"
+            printf '%s' "$DEMO_GOOGLE_API_KEY" | $SUDO tee "$APP_DIR/secrets/google_keys/demo" >/dev/null
+            $SUDO chmod 600 "$APP_DIR/secrets/google_keys/demo"
+
+            # Keep the exact image reference so a failed native/API health gate
+            # can restore the previously running release.
+            PREVIOUS_IMAGE="$($SUDO docker inspect --format '{{.Config.Image}}' "$API_CONTAINER" 2>/dev/null || true)"
+
+            # Refresh the compose file with the version shipped this run.
+            $SUDO cp "$HOME/coair-deploy/docker-compose.prod.yml" "$APP_DIR/docker-compose.prod.yml"
+
+            # Compose reads API_IMAGE from a .env file in the project dir for the
+            # ${API_IMAGE} substitution. This does NOT affect container env, which
+            # still comes from env_file: .env.production.
+            #
+            # Both image refs are written together, including on the rollback
+            # paths below: leaving a stale TOOLKIT_IMAGE behind would make the
+            # next manual `docker compose up -d` fall back to the local-build
+            # default, which does not exist on this host.
+            #
+            # The stack identity is written alongside the image refs, on every
+            # path including rollback: without it a later manual
+            # `docker compose up -d` in this directory would fall back to the
+            # production defaults and collide with the other stack's container
+            # names and ports.
+            write_release_env() {
+              printf 'API_IMAGE=%s\nTOOLKIT_IMAGE=%s\nCOMPOSE_PROJECT_NAME=%s\nSTACK_PREFIX=%s\nAPI_HOST_PORT=%s\nTOOLKIT_HOST_PORT=%s\nQDRANT_HOST_PORT=%s\nAPI_MEM_LIMIT=%s\n' \
+                "$1" "$TOOLKIT_IMAGE" "$PROJECT_NAME" "$STACK_PREFIX" \
+                "$API_HOST_PORT" "$TOOLKIT_HOST_PORT" "$QDRANT_HOST_PORT" "$API_MEM_LIMIT" \
+                | $SUDO tee "$APP_DIR/.env" >/dev/null
+            }
+            write_release_env "$IMAGE"
+
+            # The toolkit's managed Gemini credential lives here, on the host,
+            # in a file this pipeline creates empty and never overwrites. Put
+            # GEMINI_API_KEY=... in it and restart the toolkit container to turn
+            # on managed AI; no deploy or code change is involved.
+            if [ ! -f "$APP_DIR/.env.toolkit" ]; then
+              $SUDO install -m 600 /dev/null "$APP_DIR/.env.toolkit"
+            fi
+
+            # Compose interpolation cannot read another service's env_file.
+            # Export only the Qdrant key for the qdrant container definition;
+            # never pass the API container's other provider secrets to Qdrant.
+            QDRANT_SERVER_API_KEY="$($SUDO sed -n 's/^QDRANT_API_KEY=//p' "$APP_DIR/.env.production" | tail -1)"
+            if [ -z "$QDRANT_SERVER_API_KEY" ]; then
+              echo "QDRANT_API_KEY must be non-empty in $APP_DIR/.env.production" >&2
+              exit 1
+            fi
+            export QDRANT_SERVER_API_KEY
+
+            # Deploy invariant: user data must remain on the host, outside the
+            # replaceable API image. The host directories are asserted first
+            # because that part holds even on a brand-new environment whose
+            # containers do not exist yet.
+            for d in storage data qdrant_storage qdrant_snapshots secrets/google_keys; do
+              if [ ! -d "$APP_DIR/$d" ]; then
+                echo "Missing persistent directory $APP_DIR/$d — run scripts/bootstrap_env_dir.sh first." >&2
+                exit 1
+              fi
+            done
+
+            # Then the live containers, when there are any. The Source check is
+            # the cross-stack guard: it makes it impossible for one environment's
+            # deploy to act on the other environment's containers.
+            FIRST_DEPLOY=false
+            assert_mounts() {
+              container="$1"; shift
+              if ! $SUDO docker inspect "$container" >/dev/null 2>&1; then
+                echo "No existing $container — first deploy into $APP_DIR."
+                FIRST_DEPLOY=true
+                return 0
+              fi
+              mounts="$($SUDO docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$container")"
+              for dest in "$@"; do
+                printf '%s\n' "$mounts" | grep -qx "$dest"
+              done
+              if ! $SUDO docker inspect --format '{{range .Mounts}}{{println .Source}}{{end}}' "$container" \
+                | grep -q "^$APP_DIR/"; then
+                echo "$container is not backed by $APP_DIR — wrong stack, refusing to deploy." >&2
+                exit 1
+              fi
+            }
+            assert_mounts "$API_CONTAINER" /app/storage /app/data
+            assert_mounts "$QDRANT_CONTAINER" /qdrant/storage /qdrant/snapshots
+
+            # Reclaim only images that no running/stopped container references.
+            # The current API image is protected by mvp-api and remains available
+            # for rollback; user data, volumes, snapshots and deploy backups are
+            # outside Docker images and are never touched. Do this before pulling
+            # the candidate image so that candidate cannot be pruned as unused.
+            #
+            # The daemon is shared with the other environment, and an image that
+            # is merely *stopped-container-less* over there is still that
+            # environment's rollback target. The age filter keeps a day of them.
+            $SUDO docker image prune -a -f --filter "until=24h"
+
+            # Authenticate to GHCR to pull the private image (token is ephemeral).
+            printf '%s' "$GHCR_TOKEN" | $SUDO docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            $SUDO env QDRANT_SERVER_API_KEY="$QDRANT_SERVER_API_KEY" docker compose -f docker-compose.prod.yml pull api
+
+            # Quiesce writes, create a checksummed application-data archive and
+            # a native Qdrant snapshot. The backup script restarts the unchanged
+            # API automatically if any safety check fails. It never deletes old
+            # data, snapshots, backups, containers or volumes.
+            QDRANT_COLLECTION="$(sed -n 's/^QDRANT_COLLECTION=//p' "$APP_DIR/.env.production" | tail -1)"
+            QDRANT_COLLECTION="${QDRANT_COLLECTION:-coair}"
+            # Docker-group access does not imply permission to read files owned
+            # by Qdrant's container UID. Run the backup itself as root so its
+            # snapshot can be copied and checksum-verified. Lightsail's deploy
+            # user is provisioned with passwordless sudo; fail closed otherwise.
+            if [ "$(id -u)" -eq 0 ]; then
+              BACKUP_RUNNER=""
+            elif sudo -n true >/dev/null 2>&1; then
+              BACKUP_RUNNER="sudo"
+            else
+              echo "Passwordless sudo is required for a complete Qdrant backup." >&2
+              exit 1
+            fi
+            #
+            # Development deliberately skips this: its data is disposable, and
+            # the archives are large enough that a second environment writing
+            # them would threaten production's own disk. A first deploy has
+            # nothing to back up yet.
+            if [ "$RUN_BACKUP" = true ] && [ "$FIRST_DEPLOY" != true ]; then
+              $BACKUP_RUNNER env \
+                APP_DIR="$APP_DIR" \
+                BACKUP_ROOT="$APP_DIR/.deploy-backups" \
+                API_CONTAINER="$API_CONTAINER" \
+                QDRANT_CONTAINER="$QDRANT_CONTAINER" \
+                QDRANT_HTTP="http://127.0.0.1:$QDRANT_HOST_PORT" \
+                QDRANT_API_KEY="$QDRANT_SERVER_API_KEY" \
+                QDRANT_COLLECTION="$QDRANT_COLLECTION" \
+                bash "$HOME/coair-deploy/scripts/create_deploy_backup.sh"
+            else
+              echo "Skipping pre-deploy backup (env=$ENV_NAME first_deploy=$FIRST_DEPLOY)."
+            fi
+
+            # From this point onwards the old API is stopped. Any unexpected
+            # shell/build/compose failure must restore the exact previous image,
+            # not merely rely on the explicit health-timeout branch below.
+            DEPLOY_SWITCH_ACTIVE=true
+            restore_previous_release() {
+              status=$?
+              if [ "$status" -ne 0 ] && [ "$DEPLOY_SWITCH_ACTIVE" = true ]; then
+                echo "Deploy interrupted; restoring $PREVIOUS_IMAGE"
+                if [ -n "$PREVIOUS_IMAGE" ]; then
+                  # Pull first: the shared daemon's prune may have reclaimed the
+                  # previous image while this environment was not running it.
+                  $SUDO docker pull "$PREVIOUS_IMAGE" >/dev/null 2>&1 || true
+                  write_release_env "$PREVIOUS_IMAGE"
+                  $SUDO env QDRANT_SERVER_API_KEY="$QDRANT_SERVER_API_KEY" docker compose -f docker-compose.prod.yml up -d api || true
+                else
+                  $SUDO docker start "$API_CONTAINER" >/dev/null 2>&1 || true
+                fi
+              fi
+              exit "$status"
+            }
+            trap restore_previous_release EXIT INT TERM
+
+            # Only the services COAir itself depends on. The toolkit is brought
+            # up after the health gate below, so a problem with that separate
+            # Streamlit app can never roll back a healthy COAir release.
+            $SUDO env QDRANT_SERVER_API_KEY="$QDRANT_SERVER_API_KEY" docker compose -f docker-compose.prod.yml up -d api qdrant
+
+            # Health gate: fail the deploy (and surface logs) if the API is unhealthy.
+            echo "Waiting for API health..."
+            # 240s: cold startup on this box regularly exceeds 100s (registry +
+            # catalog + graph load) — the app was healthy but the old 100s gate
+            # marked the deploy failed.
+            for i in $(seq 1 48); do
+              if curl -fsS "http://127.0.0.1:$API_HOST_PORT/api/health" >/dev/null 2>&1; then
+                echo "Health OK"
+                # Idempotently convert the existing legacy admin named demo to
+                # the controlled external demo account. The command validates
+                # the mounted key before changing role, password or billing.
+                $SUDO docker exec \
+                  -e DEMO_ACCOUNT_PASSWORD="$DEMO_ACCOUNT_PASSWORD" \
+                  "$API_CONTAINER" python scripts/configure_demo_account.py \
+                  --username demo --key-ref demo --credits 5000 \
+                  --storage-limit-bytes 30000000000 \
+                  --password-env DEMO_ACCOUNT_PASSWORD
+                # COAir is up. Now the Delay Analysis Toolkit — deliberately
+                # non-fatal: it is a separate app behind /toolkit/, and its
+                # failure is a missing link, not a broken COAir.
+                #
+                # The toolkit's credential is read from the host rather than
+                # shipped from CI: it belongs to the operator. Absent or empty
+                # is a supported state — the toolkit then asks each analyst for
+                # a key, which is upstream's default.
+                toolkit_secret() {
+                  # The secret file is intentionally root-owned 0600. Docker
+                  # access may not require sudo on this host, so $SUDO can be
+                  # empty; use the already-verified privileged runner instead
+                  # of weakening the file permissions.
+                  $BACKUP_RUNNER sed -n "s/^$1=//p" "$APP_DIR/.env.toolkit" | tail -1
+                }
+                TOOLKIT_GEMINI_KEY="$(toolkit_secret GEMINI_API_KEY)"
+                # QDRANT_SERVER_API_KEY is required by the compose file itself,
+                # so every compose invocation needs it, and sudo drops the
+                # exported copy — hence the `env` prefix used throughout.
+                COMPOSE="$SUDO env QDRANT_SERVER_API_KEY=$QDRANT_SERVER_API_KEY GEMINI_API_KEY=$TOOLKIT_GEMINI_KEY docker compose -f docker-compose.prod.yml"
+                if [ "$DEPLOY_TOOLKIT" != true ]; then
+                  echo "Toolkit is production-only — not deployed for env=$ENV_NAME."
+                elif $COMPOSE pull toolkit && $COMPOSE up -d toolkit; then
+                  for t in $(seq 1 24); do
+                    curl -fsS "http://127.0.0.1:$TOOLKIT_HOST_PORT/toolkit/_stcore/health" >/dev/null 2>&1 && break
+                    sleep 5
+                  done
+                  if curl -fsS "http://127.0.0.1:$TOOLKIT_HOST_PORT/toolkit/_stcore/health" >/dev/null 2>&1; then
+                    echo "Toolkit OK"
+                  else
+                    echo "WARNING: toolkit did not become healthy — /toolkit/ may be down."
+                    $COMPOSE logs --tail=50 toolkit || true
+                  fi
+                else
+                  echo "WARNING: toolkit image could not be started — COAir is unaffected."
+                fi
+
+                # Only unreachable image layers are pruned. Persistent volumes,
+                # bind mounts, Qdrant snapshots and deploy backups are untouched.
+                $SUDO docker image prune -f
+                DEPLOY_SWITCH_ACTIVE=false
+                trap - EXIT INT TERM
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "Health check FAILED after ~240s — last logs:"
+            $SUDO docker compose -f docker-compose.prod.yml logs --tail=100 api
+            if [ -n "$PREVIOUS_IMAGE" ] && [ "$PREVIOUS_IMAGE" != "$IMAGE" ]; then
+              echo "Rolling back to $PREVIOUS_IMAGE"
+              $SUDO docker pull "$PREVIOUS_IMAGE" >/dev/null 2>&1 || true
+              write_release_env "$PREVIOUS_IMAGE"
+              $SUDO env QDRANT_SERVER_API_KEY="$QDRANT_SERVER_API_KEY" docker compose -f docker-compose.prod.yml up -d api
+              for i in $(seq 1 24); do
+                curl -fsS "http://127.0.0.1:$API_HOST_PORT/api/health" >/dev/null 2>&1 && break
+                sleep 5
+              done
+            fi
+            DEPLOY_SWITCH_ACTIVE=false
+            trap - EXIT INT TERM
+            exit 1
+
+  # ── 6. Public, read-only Projects/mobile smoke ───────────────────────────
+  production-ui-smoke:
+    name: Production read-only UI smoke
+    needs: [resolve, deploy]
+    # Production only. Development's gate is the API health check inside the
+    # deploy script — a dev regression is expected and must not need secrets,
+    # a seeded project or a public login to be reported.
+    if: >-
+      !cancelled()
+      && needs.deploy.result == 'success'
+      && needs.resolve.outputs.env_name == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install production smoke dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run read-only production smoke
+        working-directory: frontend
+        env:
+          PROD_BASE_URL: ${{ secrets.PROD_BASE_URL }}
+          PROD_E2E_USERNAME: ${{ secrets.PROD_E2E_USERNAME }}
+          PROD_E2E_PASSWORD: ${{ secrets.PROD_E2E_PASSWORD }}
+          PROD_E2E_PROJECT_ID: ${{ secrets.PROD_E2E_PROJECT_ID }}
+        run: npm run e2e:projects:production
+
+      - name: Upload production smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-projects-playwright-diagnostics
+          path: |
+            frontend/playwright-report-production
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,232 @@
+### COAir API — runnable examples
+###
+### Works in VS Code (REST Client extension) and JetBrains HTTP Client.
+### Run them top to bottom: the login response feeds every later request.
+### Equivalent curl for each call is in the comment above it.
+
+@host = https://your-api-host.example.com
+@username = replace-me
+@password = replace-me
+@projectId = paste-a-project-id-from-step-11
+
+
+### 1. Health — no auth. Confirms you can reach the API at all.
+# curl -s $host/api/health
+GET {{host}}/api/health
+
+
+### 2. Log in. Everything below reuses {{login.response.body.access_token}}.
+# curl -sX POST $host/api/auth/login -H 'Content-Type: application/json' \
+#   -d '{"username":"...","password":"..."}'
+# @name login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}"
+}
+
+@token = {{login.response.body.access_token}}
+
+
+### 3. Who am I — validates a stored token on app boot.
+# curl -s $host/api/auth/me -H "Authorization: Bearer $TOKEN"
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+
+### 4. List every account, with usage and billing state.
+GET {{host}}/api/admin/users
+Authorization: Bearer {{token}}
+
+
+### 5. Create a metered (demo-plan) customer account.
+POST {{host}}/api/admin/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "acme",
+  "password": "choose-a-strong-one",
+  "display_name": "Acme Ltd",
+  "role": "user",
+  "token_limit": 2000000,
+  "features": { "correspondence": true },
+  "plan_type": "demo",
+  "initial_credits": 1000,
+  "markup_percent": 30,
+  "storage_limit_bytes": 30000000000
+}
+
+
+### 6. Update it. Omitted fields are left alone; `features` replaces the whole map.
+PATCH {{host}}/api/admin/users/acme
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "display_name": "Acme Construction Ltd",
+  "token_limit": 5000000,
+  "features": { "correspondence": true, "provider_compare": true }
+}
+
+
+### 7. Top up credits. `credits` is signed; a negative value claws back.
+### Reuse the same idempotency_key on a retry and it will not double-credit.
+POST {{host}}/api/admin/users/acme/credits
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "credits": 250,
+  "reason": "Pilot extension agreed 2026-08-12",
+  "idempotency_key": "acme-topup-2026-08-12"
+}
+
+
+### 8. Zero the token counters (credits and storage are untouched).
+POST {{host}}/api/admin/users/acme/reset-usage
+Authorization: Bearer {{token}}
+
+
+### 9. Global spend against the configured budget.
+### remaining_pct is a fraction (0.9982), not a percentage.
+GET {{host}}/api/usage
+Authorization: Bearer {{token}}
+
+
+### 10. Billing breakdown. All four filters are optional.
+GET {{host}}/api/admin/usage?username=acme&date_from=2026-08-01&date_to=2026-08-31
+Authorization: Bearer {{token}}
+
+
+### === Company SuperAdmin walkthrough ===
+### Log in as a company owner (an ordinary account whose org role is `owner`);
+### everything below is then scoped to that company automatically.
+
+### C1. Which company am I, and what may I do in it?
+GET {{host}}/api/org
+Authorization: Bearer {{token}}
+
+
+### C2. My company's users.
+GET {{host}}/api/org/users
+Authorization: Bearer {{token}}
+
+
+### C3. Create a user inside my company.
+### role / plan / credits / quota are NOT accepted here — they come from the
+### company policy. Only `correspondence` and `provider_compare` are assignable.
+POST {{host}}/api/org/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "site-surveyor",
+  "password": "choose-a-strong-one",
+  "display_name": "Site Surveyor",
+  "features": { "correspondence": true }
+}
+
+
+### C4. My company's projects — including ones I never joined.
+GET {{host}}/api/org/projects
+Authorization: Bearer {{token}}
+
+
+### C5. Who can reach one project.
+GET {{host}}/api/org/projects/{{projectId}}/members
+Authorization: Bearer {{token}}
+
+
+### C6. Grant that user access to a project.
+### A username outside my company answers 422 user_not_in_organization.
+PUT {{host}}/api/org/projects/{{projectId}}/members/site-surveyor
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "role": "editor" }
+
+
+### C7. Revoke it again.
+DELETE {{host}}/api/org/projects/{{projectId}}/members/site-surveyor
+Authorization: Bearer {{token}}
+
+
+### C8. Promote someone to co-SuperAdmin (or demote with "member").
+### You cannot change your own role, and the last owner cannot step down.
+PATCH {{host}}/api/org/users/site-surveyor
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "org_role": "owner" }
+
+
+### === Platform operator: creating a company ===
+
+### P1. Create the company and appoint its SuperAdmin in one call.
+### The account must already exist (step 5 above).
+POST {{host}}/api/admin/orgs
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Acme Ltd",
+  "owner_username": "acme",
+  "default_plan_type": "demo",
+  "default_credits": 1000,
+  "default_token_limit": 2000000,
+  "project_limit": 10,
+  "allow_member_projects": false
+}
+
+
+### P2. Every company, with member and project counts.
+GET {{host}}/api/admin/orgs
+Authorization: Bearer {{token}}
+
+
+### P3. Act inside a customer's company. Operators only — the header is ignored
+### when anyone else sends it.
+GET {{host}}/api/org/users
+Authorization: Bearer {{token}}
+X-Org-ID: paste-an-org-id-from-P2
+
+
+### P4. Attach an existing project to a company. Answers 409 with the offending
+### usernames when its members are not all in that company; add ?force=true only
+### once you have resolved them.
+POST {{host}}/api/admin/orgs/paste-an-org-id/projects/{{projectId}}
+Authorization: Bearer {{token}}
+
+
+### 11. Projects. An admin sees every project; this is the source of project ids.
+GET {{host}}/api/projects
+Authorization: Bearer {{token}}
+
+
+### 12. A content endpoint — note the extra header.
+### Without X-Project-ID this returns 428 project_required.
+GET {{host}}/api/library
+Authorization: Bearer {{token}}
+X-Project-ID: paste-a-project-id-from-step-11
+
+
+### 13. Deactivate an account (soft delete → is_active=false, data retained).
+DELETE {{host}}/api/admin/users/acme
+Authorization: Bearer {{token}}
+
+
+### 14. Superadmin only — create another operator.
+### An `admin` caller gets 403 superadmin_required:create_operator.
+POST {{host}}/api/admin/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "ops2",
+  "password": "choose-a-strong-one",
+  "display_name": "Second Operator",
+  "role": "admin"
+}

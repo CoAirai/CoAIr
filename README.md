@@ -1,6 +1,17 @@
 # COAir
 
-Next.js 15 app for COAir — Super Admin, company workspaces, chat, chronology, and forensic modules (mock data until live APIs are connected).
+Next.js 15 app for COAir — Super Admin, company workspaces, chat, chronology, and forensic modules.
+
+This repo also includes the **FastAPI backend** in [`api/`](api/) (Docker + Qdrant).
+
+**Production deployment:** see **[docs/DEPLOY.md](docs/DEPLOY.md)** — Vercel (frontend) + VPS (API).
+
+## Monorepo layout
+
+| Path | Deploy to |
+| --- | --- |
+| `/` (this folder) | Vercel — `login`, `admin`, `user` subdomains |
+| `/api` | VPS — `api.coair.ai` (Docker Compose) |
 
 ## Local development
 
@@ -36,9 +47,9 @@ Copy from `.env.example`. Leave `RESEND_API_KEY` empty to dry-run emails (UI sti
 
 ## Deploy on Vercel
 
-1. Import [bolttesting/COAir-Super-Admin](https://github.com/bolttesting/COAir-Super-Admin) in the [Vercel dashboard](https://vercel.com/new).
+1. Import [CoAirai/CoAIr](https://github.com/CoAirai/CoAIr) in the [Vercel dashboard](https://vercel.com/new).
 2. Framework preset: **Next.js** (auto-detected). Root directory: repo root.
-3. Add environment variables from the table above.
+3. Add environment variables — full list in **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 4. Deploy. Production build command: `npm run build`.
 
 ## Subdomain deployment

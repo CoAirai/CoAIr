@@ -1,0 +1,459 @@
+"""
+Persistent document library — tracks every file in the system.
+JSON-backed at storage/document_registry.json.
+"""
+
+import json
+import threading
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .config import STORAGE_DIR
+from .document_rag import generate_doc_id
+from .logger import logger
+
+
+REGISTRY_FILE = STORAGE_DIR / "document_registry.json"
+
+
+@dataclass
+class DocumentRecord:
+    doc_id: str
+    file_name: str
+    file_path: str
+    file_size_kb: int
+    file_type: str          # "document" | "email" | "data"
+    extension: str          # ".pdf", ".xlsx", etc.
+    status: str = "processing"  # "processing" | "completed" | "error"
+    table_names: List[str] = field(default_factory=list)
+    notice_extracted: bool = False
+    file_hash: str = ""     # MD5 hash for strong duplicate detection
+    created_at: str = ""
+    completed_at: str = ""
+    error: Optional[str] = None
+    # Excel/CSV ingestion outcome (only meaningful when file_type == "data")
+    # "registered"      → at least one parquet/DuckDB table created
+    # "no_schema_match" → file processed but no sheet matched a target schema
+    # "rag_only"        → not a data file (kept for default Optional in JSON)
+    # "error"           → processing crashed
+    data_table_status: Optional[str] = None
+    data_tables_count: int = 0
+    schema_match_details: List[Dict] = field(default_factory=list)
+    # Topic clustering — denormalized cache of DocumentClusterer state.
+    # Truth source is storage/document_clusters.json.
+    cluster_id: Optional[str] = None
+    cluster_label: Optional[str] = None
+    # Upload-time LLM enrichment (Phase 2): a one-line summary + 3-5 topic tags,
+    # generated once at ingest. Feeds the LLM router's document-topic context and
+    # the per-document inventory to reduce hallucination/misrouting.
+    llm_summary: Optional[str] = None
+    llm_topics: List[str] = field(default_factory=list)
+    jargon_terms: List[str] = field(default_factory=list)
+    # Security boundary. Empty only for pre-project legacy records; new writes
+    # must always receive the request/job project context.
+    project_id: str = ""
+    # Independent ingest-time event-memory state. A document may be searchable
+    # while this second durable stage is still running or has failed.
+    search_status: str = "not_started"
+    event_index_status: str = "not_started"
+    event_observation_count: int = 0
+    event_cluster_count: int = 0
+    event_index_version: str = ""
+    event_partial_reasons: List[str] = field(default_factory=list)
+
+
+class DocumentRegistry:
+    """Singleton JSON-backed document library with duplicate detection."""
+
+    _instance: Optional["DocumentRegistry"] = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    inst = super().__new__(cls)
+                    inst._records: Dict[str, DocumentRecord] = {}
+                    inst._file_lock = threading.Lock()
+                    inst._load()
+                    cls._instance = inst
+        return cls._instance
+
+    # ── Persistence ──────────────────────────────────────────
+
+    @staticmethod
+    def _record_from_dict(rec: Dict[str, Any]) -> DocumentRecord:
+        """Backward- and forward-compatible DocumentRecord loader.
+
+        Drops keys DocumentRecord doesn't declare and lets missing ones fall to
+        their defaults. A registry written by a newer build carries fields this
+        one has never heard of, and `DocumentRecord(**rec)` raises on the first
+        of them — which used to abort the whole load loop, so one unknown key
+        emptied the entire library.
+        """
+        known = DocumentRecord.__dataclass_fields__
+        return DocumentRecord(**{k: v for k, v in rec.items() if k in known})
+
+    def _load(self):
+        if REGISTRY_FILE.exists():
+            try:
+                data = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.error(f"[Registry] Failed to load: {e}")
+                return
+
+            dropped_keys, failed = set(), 0
+            for doc_id, rec in data.items():
+                try:
+                    dropped_keys |= set(rec) - set(DocumentRecord.__dataclass_fields__)
+                    self._records[doc_id] = self._record_from_dict(rec)
+                except Exception as e:
+                    # Per record, so one malformed entry costs one document
+                    # rather than every document after it.
+                    failed += 1
+                    logger.warning(f"[Registry] Skipping unreadable record {doc_id}: {e}")
+
+            logger.info(f"[Registry] Loaded {len(self._records)} documents")
+            if dropped_keys:
+                logger.info(f"[Registry] Ignored unknown field(s) written by another "
+                            f"build: {', '.join(sorted(dropped_keys))}")
+            if failed:
+                logger.warning(f"[Registry] {failed} record(s) could not be loaded")
+
+    def _save(self):
+        REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {doc_id: asdict(rec) for doc_id, rec in self._records.items()}
+        REGISTRY_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Sync to GCS synchronously (Cloud Run is stateless - data MUST persist!)
+        try:
+            from .gcs_storage import sync_document_registry_to_gcs
+            sync_document_registry_to_gcs()
+        except Exception:
+            pass
+
+    # ── Public API ───────────────────────────────────────────
+
+    def register(
+        self,
+        file_name: str,
+        file_path: str,
+        file_size_kb: int,
+        file_type: str,
+        extension: str,
+        project_id: str = "",
+    ) -> DocumentRecord:
+        """Register a new file. Returns the record (may already exist)."""
+        if not project_id:
+            try:
+                from .project_context import get_current_project_id
+                project_id = get_current_project_id()
+            except Exception:
+                project_id = ""
+        doc_id = generate_doc_id(file_path)
+        with self._file_lock:
+            if doc_id in self._records:
+                return self._records[doc_id]
+            # Compute file hash for strong duplicate detection
+            file_hash = ""
+            try:
+                import hashlib
+                file_hash = hashlib.md5(open(file_path, "rb").read()).hexdigest()
+            except Exception:
+                pass
+            rec = DocumentRecord(
+                doc_id=doc_id,
+                file_name=file_name,
+                file_path=file_path,
+                file_size_kb=file_size_kb,
+                file_type=file_type,
+                extension=extension,
+                status="processing",
+                file_hash=file_hash,
+                created_at=datetime.now().isoformat(),
+                project_id=project_id,
+            )
+            self._records[doc_id] = rec
+            self._save()
+            logger.info(f"[Registry] Registered: {file_name} ({doc_id})")
+            return rec
+
+    def find_duplicate(self, file_name: str, file_size_kb: int,
+                       file_path: str = "", project_id: str = "") -> Optional[DocumentRecord]:
+        """Find existing completed record with same name+size or same file hash."""
+        # Check by file hash (strongest dedup) if file_path provided
+        if file_path:
+            try:
+                import hashlib
+                h = hashlib.md5(open(file_path, "rb").read()).hexdigest()
+                for rec in self._records.values():
+                    if (getattr(rec, 'file_hash', None) == h
+                            and (not project_id or rec.project_id == project_id)
+                            and rec.status == "completed"):
+                        return rec
+            except Exception:
+                pass
+        # Fallback: name + size
+        for rec in self._records.values():
+            if (rec.file_name == file_name
+                    and rec.file_size_kb == file_size_kb
+                    and (not project_id or rec.project_id == project_id)
+                    and rec.status == "completed"):
+                return rec
+        return None
+
+    def mark_completed(
+        self,
+        doc_id: str,
+        table_names: Optional[List[str]] = None,
+        notice_extracted: bool = False,
+        data_table_status: Optional[str] = None,
+        data_tables_count: Optional[int] = None,
+        schema_match_details: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        with self._file_lock:
+            rec = self._records.get(doc_id)
+            if rec:
+                rec.status = "completed"
+                rec.completed_at = datetime.now().isoformat()
+                rec.table_names = table_names or []
+                rec.notice_extracted = notice_extracted
+                if data_table_status is not None:
+                    rec.data_table_status = data_table_status
+                if data_tables_count is not None:
+                    rec.data_tables_count = data_tables_count
+                if schema_match_details is not None:
+                    rec.schema_match_details = schema_match_details
+                self._save()
+                logger.info(f"[Registry] Completed: {rec.file_name}")
+
+    def set_llm_enrichment(
+        self,
+        doc_id: str,
+        summary: Optional[str] = None,
+        topics: Optional[List[str]] = None,
+        jargon_terms: Optional[List[str]] = None,
+    ) -> None:
+        """Store the upload-time LLM summary/topics for a document (Phase 2)."""
+        with self._file_lock:
+            rec = self._records.get(doc_id)
+            if rec:
+                if summary is not None:
+                    rec.llm_summary = summary
+                if topics is not None:
+                    rec.llm_topics = topics
+                if jargon_terms is not None:
+                    rec.jargon_terms = sorted(set(jargon_terms))
+                self._save()
+                logger.info(
+                    f"[Registry] LLM enrichment set for {rec.file_name}: "
+                    f"{len(topics or [])} topics"
+                )
+
+    def set_event_index(
+        self, doc_id: str, *, search_status: Optional[str] = None,
+        status: Optional[str] = None, observation_count: Optional[int] = None,
+        cluster_count: Optional[int] = None, version: Optional[str] = None,
+        partial_reasons: Optional[List[str]] = None,
+    ) -> None:
+        """Update the additive master-event status without changing file readiness."""
+        with self._file_lock:
+            rec = self._records.get(doc_id)
+            if not rec:
+                return
+            if search_status is not None:
+                rec.search_status = search_status
+            if status is not None:
+                rec.event_index_status = status
+            if observation_count is not None:
+                rec.event_observation_count = int(observation_count)
+            if cluster_count is not None:
+                rec.event_cluster_count = int(cluster_count)
+            if version is not None:
+                rec.event_index_version = version
+            if partial_reasons is not None:
+                rec.event_partial_reasons = list(partial_reasons)
+            self._save()
+
+    def mark_error(self, doc_id: str, error: str) -> None:
+        with self._file_lock:
+            rec = self._records.get(doc_id)
+            if rec:
+                rec.status = "error"
+                rec.error = error
+                self._save()
+                logger.warning(f"[Registry] Error for {rec.file_name}: {error}")
+
+    def delete(self, doc_id: str) -> Optional[DocumentRecord]:
+        """Remove a document record. Returns removed record or None."""
+        with self._file_lock:
+            rec = self._records.pop(doc_id, None)
+            if rec:
+                self._save()
+                logger.info(f"[Registry] Deleted: {rec.file_name}")
+            return rec
+
+    def get(self, doc_id: str) -> Optional[DocumentRecord]:
+        return self._records.get(doc_id)
+
+    def get_all(self, project_id: Optional[str] = None) -> List[DocumentRecord]:
+        rows = list(self._records.values())
+        if project_id is not None:
+            rows = [r for r in rows if (getattr(r, "project_id", "") or "") == project_id]
+        return rows
+
+    def get_completed(self, project_id: Optional[str] = None) -> List[DocumentRecord]:
+        return [r for r in self.get_all(project_id=project_id) if r.status == "completed"]
+
+    def search_by_name(self, keyword: str, project_id: Optional[str] = None) -> List[DocumentRecord]:
+        """Search completed records by filename substring match (case-insensitive)."""
+        kw = keyword.lower()
+        return [r for r in self.get_all(project_id=project_id)
+                if r.status == "completed" and kw in r.file_name.lower()]
+
+    def hydrate_from_existing(self, rag_registry: dict, catalog_entries: dict) -> int:
+        """Populate registry from existing RAG file_registry + catalog entries.
+
+        One registry record per source file. Catalog entries that share a
+        source_file (e.g. an .xlsx indexed once schema-matched and once raw)
+        are collapsed: tables merged, the richest metadata wins.
+
+        Returns number of new records added or merged into.
+        """
+        added = 0
+        merged = 0
+        with self._file_lock:
+            # From RAG file_registry: {file_name: {file_path, file_type, doc_id, ...}}
+            for file_name, info in rag_registry.items():
+                doc_id = info.get("doc_id", "")
+                if doc_id and doc_id not in self._records:
+                    fp = info.get("file_path", "")
+                    try:
+                        size_kb = Path(fp).stat().st_size // 1024 if fp and Path(fp).exists() else 0
+                    except OSError:
+                        size_kb = 0
+                    self._records[doc_id] = DocumentRecord(
+                        doc_id=doc_id,
+                        file_name=file_name,
+                        file_path=fp,
+                        file_size_kb=size_kb,
+                        file_type="document",
+                        extension=info.get("file_type", ""),
+                        status="completed",
+                        created_at=datetime.now().isoformat(),
+                        completed_at=datetime.now().isoformat(),
+                    )
+                    added += 1
+
+            # Group catalog entries by source_file so multiple tables for the
+            # same Excel collapse into a single registry record.
+            grouped: Dict[str, List[Any]] = {}
+            for _key, entry in catalog_entries.items():
+                source_file = getattr(entry, "source_file", "") or ""
+                if not source_file:
+                    continue
+                grouped.setdefault(source_file, []).append(entry)
+
+            for source_file, entries in grouped.items():
+                doc_id = generate_doc_id(source_file)
+                ext = Path(source_file).suffix.lower()
+                try:
+                    size_kb = Path(source_file).stat().st_size // 1024 if Path(source_file).exists() else 0
+                except OSError:
+                    size_kb = 0
+
+                # Aggregate across all entries for this file
+                all_table_names: List[str] = []
+                notice_extracted = False
+                ingested_at = ""
+                for entry in entries:
+                    for t in getattr(entry, "tables", []) or []:
+                        tn = getattr(t, "table_name", "")
+                        if tn and tn not in all_table_names:
+                            all_table_names.append(tn)
+                    if getattr(entry, "notice_extracted", False):
+                        notice_extracted = True
+                    ia = getattr(entry, "ingested_at", "") or ""
+                    if ia and (not ingested_at or ia < ingested_at):
+                        ingested_at = ia
+
+                if doc_id not in self._records:
+                    self._records[doc_id] = DocumentRecord(
+                        doc_id=doc_id,
+                        file_name=Path(source_file).name,
+                        file_path=source_file,
+                        file_size_kb=size_kb,
+                        file_type="data" if ext in (".xlsx", ".xls", ".csv") else "document",
+                        extension=ext,
+                        status="completed",
+                        table_names=all_table_names,
+                        notice_extracted=notice_extracted,
+                        created_at=ingested_at or datetime.now().isoformat(),
+                        completed_at=datetime.now().isoformat(),
+                    )
+                    added += 1
+                else:
+                    existing = self._records[doc_id]
+                    for tn in all_table_names:
+                        if tn and tn not in existing.table_names:
+                            existing.table_names.append(tn)
+                    # Prefer the richer file_size_kb when the existing record is empty
+                    if not existing.file_size_kb and size_kb:
+                        existing.file_size_kb = size_kb
+                    if notice_extracted and not existing.notice_extracted:
+                        existing.notice_extracted = True
+                    merged += 1
+
+            # Final pass: collapse any legacy records that share the same
+            # (file_name, file_path) but live under different doc_ids
+            # (the pre-fix data leaves Excel files duplicated this way).
+            collapsed = self._collapse_legacy_duplicates_locked()
+
+            if added or merged or collapsed:
+                self._save()
+                logger.info(
+                    f"[Registry] Hydrated: {added} new, {merged} merged, "
+                    f"{collapsed} legacy duplicates collapsed"
+                )
+        return added
+
+    def _collapse_legacy_duplicates_locked(self) -> int:
+        """Merge any records that share (file_name, file_path) under different doc_ids.
+
+        Must be called while holding ``_file_lock``. Keeps the record whose
+        ``doc_id`` matches ``generate_doc_id(file_path)`` (the canonical one),
+        merging tables and richer metadata from the others before deleting them.
+        """
+        groups: Dict[tuple, List[str]] = {}
+        for doc_id, rec in self._records.items():
+            key = (rec.file_name, rec.file_path)
+            groups.setdefault(key, []).append(doc_id)
+
+        collapsed = 0
+        for (file_name, file_path), ids in groups.items():
+            if len(ids) < 2:
+                continue
+            canonical_id = generate_doc_id(file_path) if file_path else ids[0]
+            keeper_id = canonical_id if canonical_id in ids else ids[0]
+            keeper = self._records[keeper_id]
+            for dup_id in ids:
+                if dup_id == keeper_id:
+                    continue
+                dup = self._records.pop(dup_id, None)
+                if dup is None:
+                    continue
+                for tn in dup.table_names:
+                    if tn and tn not in keeper.table_names:
+                        keeper.table_names.append(tn)
+                if not keeper.file_size_kb and dup.file_size_kb:
+                    keeper.file_size_kb = dup.file_size_kb
+                if dup.notice_extracted and not keeper.notice_extracted:
+                    keeper.notice_extracted = True
+                collapsed += 1
+        return collapsed
+
+
+def get_document_registry() -> DocumentRegistry:
+    """Get or create the singleton DocumentRegistry."""
+    return DocumentRegistry()

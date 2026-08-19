@@ -1,0 +1,68 @@
+# COAir sandbox — a self-contained API on your own machine.
+#
+#   cp .env.sandbox.example .env      # then fill the two blank lines
+#   docker compose -f docker-compose.sandbox.yml up -d
+#   docker compose -f docker-compose.sandbox.yml exec api python scripts/seed_sandbox.py
+#
+# Two containers, no connection to any of our servers: the API image and its own
+# vector store. Everything it writes stays in ./storage, ./data and
+# ./qdrant_storage next to this file, so deleting those three directories resets
+# the sandbox completely.
+
+services:
+  api:
+    # Either pull the published image, or build from this checkout:
+    #   docker compose -f docker-compose.sandbox.yml build
+    # The build takes ~20 minutes cold and needs ~3 GB.
+    image: ${API_IMAGE:-ghcr.io/kadir-sen/rag:dev}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: coair-sandbox-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - APP_MODE=api
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      # Accounts, projects, conversations and job queues (SQLite).
+      - ./storage:/app/storage
+      # Uploaded files, per project.
+      - ./data:/app/data
+    depends_on:
+      - qdrant
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    container_name: coair-sandbox-qdrant
+    restart: unless-stopped
+    environment:
+      # A throwaway key for this sandbox only. Change it if you like — just keep
+      # QDRANT_API_KEY in .env identical.
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-sandbox-local-key}
+    # Loopback only. The API reaches it as http://qdrant:6333 over the compose
+    # network; this publish is here so you can inspect it with curl if you want.
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+      - ./qdrant_snapshots:/qdrant/snapshots
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
