@@ -55,6 +55,8 @@ next-env.d.ts
 # API runtime data (when using /api subfolder)
 api/data/
 api/storage/
+!api/storage/schemas/
+!api/storage/schemas/**
 api/cache/
 api/logs/
 api/qdrant_storage/
@@ -62,3 +64,7 @@ api/qdrant_snapshots/
 api/.env
 api/.env.local
 api/.env.production
+
+# Local paste files with secrets — never commit
+deploy/render.env.paste
+**/render.env.paste

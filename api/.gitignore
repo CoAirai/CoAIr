@@ -49,6 +49,9 @@ env/
 data/
 uploads/
 storage/
+# Ship authored schemas with the repo
+!storage/schemas/
+!storage/schemas/**
 
 # OCR cache
 .cache/
