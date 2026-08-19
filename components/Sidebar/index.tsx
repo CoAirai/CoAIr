@@ -13,6 +13,7 @@ import ForensicNav from "./ForensicNav";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import type { CompanyDocumentKind } from "@/lib/admin/companyDocuments";
 
 type Props = {
@@ -30,6 +31,7 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
     const { clearChat } = useChat();
     const { session } = useAuth();
     const { addCompanyDocument } = useAdminData();
+    const live = useLiveWorkspace();
     const documentInputRef = useRef<HTMLInputElement>(null);
     const csvInputRef = useRef<HTMLInputElement>(null);
 
@@ -40,6 +42,10 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
         const file = event.target.files?.[0];
         event.target.value = "";
         if (!file || !session?.companyId || !session.userId) return;
+        if (live.enabled) {
+            void live.uploadFile(file);
+            return;
+        }
         addCompanyDocument({
             companyId: session.companyId,
             name: file.name,

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { getPlanById } from "@/lib/admin/plans";
+import { planForCompany } from "@/lib/admin/plans";
+import { companyForSession } from "@/lib/workspace/companyForSession";
 import {
     canCreateProgrammeWorkspace,
     MAX_PROGRAMME_SET_MB,
@@ -13,8 +14,43 @@ import {
 import { getModuleGate } from "@/lib/workspace/moduleAccess";
 import { ownedByUser } from "@/lib/workspace/ownedByUser";
 import { useChat } from "@/context/ChatContext";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import ForensicShell from "./ForensicShell";
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
+import {
+    createForensicWorkspace,
+    listForensicProgrammes,
+    listForensicWorkspaces,
+    uploadForensicProgramme,
+    type CoairForensicWorkspace,
+    type CoairProgramme,
+} from "@/lib/coair/forensic";
+import type { ForensicProgrammeWorkspace, ForensicXerFile } from "@/lib/forensic/types";
+
+const FORENSIC_WORKSPACE_KEY = "coair.forensic.activeWorkspace";
+
+function mapProgramme(row: CoairProgramme, companyId: string): ForensicXerFile {
+    return {
+        id: row.file_id,
+        companyId,
+        name: row.name,
+        sizeMb: (row.size_bytes ?? 0) / 1_000_000,
+        addedAt: row.created_at || new Date().toISOString(),
+    };
+}
+
+function mapWorkspace(
+    row: CoairForensicWorkspace,
+    companyId: string
+): ForensicProgrammeWorkspace {
+    return {
+        id: row.workspace_id,
+        companyId,
+        name: row.name,
+        programmeIds: row.programme_ids ?? [],
+        createdAt: row.created_at || new Date().toISOString(),
+    };
+}
 
 const ForensicHomePage = () => {
     const router = useRouter();
@@ -29,24 +65,34 @@ const ForensicHomePage = () => {
         setActiveForensicWorkspace,
     } = useAdminData();
     const { activeWorkspaceUserId } = useChat();
-    const company = companies.find((entry) => entry.id === session?.companyId);
-    const plan = company ? getPlanById(company.planId, plans) : null;
+    const live = useLiveWorkspace();
+    const company = companyForSession(session, companies);
+    const plan = planForCompany(company, plans);
     const gate =
         company && plan ? getModuleGate(plan, company, "forensic") : null;
     const workspaceState = company
         ? companyWorkspaces[company.id]
         : undefined;
-    const xerFiles = workspaceState?.forensicXerFiles ?? [];
+    const mockFiles = workspaceState?.forensicXerFiles ?? [];
     const ownerUserId = activeWorkspaceUserId ?? session?.userId ?? undefined;
-    const programmeWorkspaces = ownedByUser(
+    const mockWorkspaces = ownedByUser(
         workspaceState?.forensicProgrammeWorkspaces ?? [],
         ownerUserId
     );
-    const activeWorkspaceId = programmeWorkspaces.some(
-        (entry) => entry.id === workspaceState?.activeForensicWorkspaceId
-    )
-        ? workspaceState?.activeForensicWorkspaceId ?? ""
-        : "";
+    const [liveFiles, setLiveFiles] = useState<ForensicXerFile[]>([]);
+    const [liveWorkspaces, setLiveWorkspaces] = useState<
+        ForensicProgrammeWorkspace[]
+    >([]);
+    const [liveActiveId, setLiveActiveId] = useState("");
+    const xerFiles = live.enabled ? liveFiles : mockFiles;
+    const programmeWorkspaces = live.enabled ? liveWorkspaces : mockWorkspaces;
+    const activeWorkspaceId = live.enabled
+        ? liveActiveId
+        : programmeWorkspaces.some(
+              (entry) => entry.id === workspaceState?.activeForensicWorkspaceId
+          )
+          ? workspaceState?.activeForensicWorkspaceId ?? ""
+          : "";
 
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [workspaceName, setWorkspaceName] = useState("Programme Analysis");
@@ -57,6 +103,52 @@ const ForensicHomePage = () => {
             router.replace("/workspace?upgrade=forensic");
         }
     }, [gate, router]);
+
+    useEffect(() => {
+        if (!live.enabled || !session?.accessToken || !session.projectId) {
+            setLiveFiles([]);
+            setLiveWorkspaces([]);
+            return;
+        }
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const companyId = session.companyId ?? "live";
+        let cancelled = false;
+        void Promise.all([
+            listForensicProgrammes(token, projectId),
+            listForensicWorkspaces(token, projectId),
+        ])
+            .then(([programmes, workspaces]) => {
+                if (cancelled) return;
+                const files = (programmes.programmes ?? []).map((row) =>
+                    mapProgramme(row, companyId)
+                );
+                const mapped = (workspaces.workspaces ?? []).map((row) =>
+                    mapWorkspace(row, companyId)
+                );
+                setLiveFiles(files);
+                setLiveWorkspaces(mapped);
+                const stored =
+                    window.sessionStorage.getItem(FORENSIC_WORKSPACE_KEY) ?? "";
+                setLiveActiveId(
+                    mapped.some((entry) => entry.id === stored)
+                        ? stored
+                        : mapped[0]?.id ?? ""
+                );
+            })
+            .catch((err) => {
+                if (!cancelled) {
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : "Unable to load forensic programmes"
+                    );
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [live.enabled, session?.accessToken, session?.companyId, session?.projectId]);
 
     const selectedFiles = useMemo(
         () => xerFiles.filter((file) => selectedIds.includes(file.id)),
@@ -69,10 +161,35 @@ const ForensicHomePage = () => {
         return <ModulePortalSkeleton />;
     }
 
-    const onUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         event.target.value = "";
         if (!file) return;
+        if (live.enabled) {
+            if (!session?.accessToken || !session.projectId) return;
+            try {
+                await uploadForensicProgramme(
+                    session.accessToken,
+                    session.projectId,
+                    file
+                );
+                const listed = await listForensicProgrammes(
+                    session.accessToken,
+                    session.projectId
+                );
+                setLiveFiles(
+                    (listed.programmes ?? []).map((row) =>
+                        mapProgramme(row, session.companyId ?? "live")
+                    )
+                );
+                setError("");
+            } catch (err) {
+                setError(
+                    err instanceof Error ? err.message : "Upload failed"
+                );
+            }
+            return;
+        }
         const sizeMb = Math.max(0.1, file.size / (1024 * 1024));
         addForensicXerFile({
             companyId: company.id,
@@ -91,13 +208,42 @@ const ForensicHomePage = () => {
         );
     };
 
-    const createWorkspace = () => {
+    const createWorkspace = async () => {
         if (!canCreate) {
             setError(
                 selectedFiles.length === 0
                     ? "Select at least one XER programme."
                     : `Combined selected size may not exceed ${MAX_PROGRAMME_SET_MB} MB.`
             );
+            return;
+        }
+        if (live.enabled) {
+            if (!session?.accessToken || !session.projectId) return;
+            try {
+                const created = await createForensicWorkspace(
+                    session.accessToken,
+                    session.projectId,
+                    {
+                        name: workspaceName,
+                        programme_ids: selectedIds,
+                    }
+                );
+                const mapped = mapWorkspace(
+                    created,
+                    session.companyId ?? "live"
+                );
+                setLiveWorkspaces((current) => [mapped, ...current]);
+                setLiveActiveId(mapped.id);
+                window.sessionStorage.setItem(FORENSIC_WORKSPACE_KEY, mapped.id);
+                setSelectedIds([]);
+                setError("");
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : "Could not create workspace."
+                );
+            }
             return;
         }
         const result = createForensicProgrammeWorkspace({
@@ -134,12 +280,21 @@ const ForensicHomePage = () => {
                             <select
                                 className="h-11 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none"
                                 value={activeWorkspaceId}
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                    const next = event.target.value;
+                                    if (live.enabled) {
+                                        setLiveActiveId(next);
+                                        window.sessionStorage.setItem(
+                                            FORENSIC_WORKSPACE_KEY,
+                                            next
+                                        );
+                                        return;
+                                    }
                                     setActiveForensicWorkspace(
                                         company.id,
-                                        event.target.value || null
-                                    )
-                                }
+                                        next || null
+                                    );
+                                }}
                             >
                                 <option value="">No workspace selected</option>
                                 {programmeWorkspaces.map((entry) => (

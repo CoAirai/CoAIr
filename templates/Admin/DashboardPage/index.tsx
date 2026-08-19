@@ -3,12 +3,17 @@
 import Link from "next/link";
 import { useMemo } from "react";
 
+import { AdminAreaChart, AdminBarChart } from "@/components/Admin/AdminCharts";
 import PageEnter from "@/components/Motion/PageEnter";
 import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { formatAuditHeadline } from "@/lib/admin/auditLabels";
+import {
+    barsFromNamedValues,
+    TOKEN_SPEND_TREND,
+} from "@/lib/admin/dashboardSeries";
 import { getPlanById } from "@/lib/admin/plans";
 import {
     getPlatformTotals,
@@ -31,6 +36,16 @@ const DashboardPage = () => {
     const recentActivity = useMemo(
         () => auditLog.slice(0, RECENT_ACTIVITY_LIMIT),
         [auditLog]
+    );
+    const tokenBars = useMemo(
+        () =>
+            barsFromNamedValues(
+                companies.map((company) => ({
+                    name: company.name,
+                    value: company.tokensUsed,
+                }))
+            ),
+        [companies]
     );
 
     return (
@@ -60,6 +75,21 @@ const DashboardPage = () => {
                     label="Platform tokens"
                     value={numberFormatter.format(totals.tokensUsed)}
                     hint={`of ${numberFormatter.format(totals.tokenLimit)} allocated`}
+                />
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-2">
+                <AdminAreaChart
+                    title="Token spend"
+                    hint="Last 12 weeks · billed sell rate"
+                    data={TOKEN_SPEND_TREND}
+                    valuePrefix="$"
+                    fillId="dashSpendFill"
+                />
+                <AdminBarChart
+                    title="Tokens by company"
+                    hint="Used tokens in the current period"
+                    data={tokenBars}
                 />
             </div>
 
@@ -138,7 +168,7 @@ const DashboardPage = () => {
                                 Recent activity
                             </h2>
                             <p className="mt-1 text-label-xs text-sub-600">
-                                From this session’s audit log
+                                Latest admin and tenant actions
                             </p>
                         </div>
                         <Link
@@ -149,34 +179,27 @@ const DashboardPage = () => {
                         </Link>
                     </div>
                     <div className="mt-4 divide-y divide-stroke-soft-200">
-                        {recentActivity.length === 0 ? (
-                            <p className="py-2 text-label-sm text-sub-600">
-                                No admin actions yet. Create a company, approve
-                                access, or change status to see activity here.
-                            </p>
-                        ) : (
-                            recentActivity.map((entry) => (
-                                <div
-                                    key={entry.id}
-                                    className="py-4 first:pt-0 last:pb-0"
-                                >
-                                    <p className="text-label-sm text-strong-950">
-                                        {formatAuditHeadline(entry)}
-                                    </p>
-                                    {entry.detail ? (
-                                        <p className="mt-1 text-label-xs text-sub-600">
-                                            {entry.detail}
-                                        </p>
-                                    ) : null}
+                        {recentActivity.map((entry) => (
+                            <div
+                                key={entry.id}
+                                className="py-4 first:pt-0 last:pb-0"
+                            >
+                                <p className="text-label-sm text-strong-950">
+                                    {formatAuditHeadline(entry)}
+                                </p>
+                                {entry.detail ? (
                                     <p className="mt-1 text-label-xs text-sub-600">
-                                        {dateTimeFormatter.format(
-                                            new Date(entry.at)
-                                        )}{" "}
-                                        · {entry.actor}
+                                        {entry.detail}
                                     </p>
-                                </div>
-                            ))
-                        )}
+                                ) : null}
+                                <p className="mt-1 text-label-xs text-sub-600">
+                                    {dateTimeFormatter.format(
+                                        new Date(entry.at)
+                                    )}{" "}
+                                    · {entry.actor}
+                                </p>
+                            </div>
+                        ))}
                     </div>
                 </section>
             </div>

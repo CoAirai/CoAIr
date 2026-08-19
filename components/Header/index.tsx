@@ -9,7 +9,9 @@ import Image from "@/components/Image";
 import AvatarMenu from "@/components/AvatarMenu";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { redirectToSignIn } from "@/lib/auth/portalNav";
 import { useChat } from "@/context/ChatContext";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { chatTransition } from "@/lib/chat/motion";
 import { activeWorkspaceUsers } from "@/lib/chat/threads";
 type Props = {
@@ -39,6 +41,7 @@ const Header = ({ onOpenSidebar }: Props) => {
     const { session, signOut } = useAuth();
     const { users } = useAdminData();
     const { activeWorkspaceUserId, setActiveWorkspaceUserId } = useChat();
+    const { enabled: liveEnabled, projects, selectProject } = useLiveWorkspace();
 
     const teammates = useMemo(
         () =>
@@ -106,12 +109,31 @@ const Header = ({ onOpenSidebar }: Props) => {
                     </div>
                 </div>
                 <div className="flex shrink-0 gap-1.5 items-center">
+                    {liveEnabled && projects.length > 0 && (
+                        <select
+                            aria-label="Project"
+                            className="h-10 max-w-52 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none transition-colors duration-200 hover:border-stroke-sub-300"
+                            value={session?.projectId ?? ""}
+                            onChange={(event) =>
+                                selectProject(event.target.value)
+                            }
+                        >
+                            {projects.map((project) => (
+                                <option
+                                    key={project.project_id}
+                                    value={project.project_id}
+                                >
+                                    {project.name}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                     {session?.role === "company_admin" && (
                         <label className="sr-only" htmlFor="workspace-user">
                             Switch user
                         </label>
                     )}
-                    {session?.role === "company_admin" && (
+                    {session?.role === "company_admin" && teammates.length > 0 && (
                         <select
                             id="workspace-user"
                             className="h-10 max-w-44 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none transition-colors duration-200 hover:border-stroke-sub-300"
@@ -134,7 +156,7 @@ const Header = ({ onOpenSidebar }: Props) => {
                         onSettings={() => setOpenSettings(true)}
                         onSignOut={() => {
                             signOut();
-                            router.replace("/auth/sign-in");
+                            redirectToSignIn(router);
                         }}
                     />
                 </div>

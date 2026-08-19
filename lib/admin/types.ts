@@ -1,3 +1,5 @@
+import type { RightKey } from "./rolesStub";
+
 export type PlanId = "demo" | "foundation" | "pro" | "enterprise" | "custom";
 
 export type ModuleId = "chatbot" | "chronology" | "forensic";
@@ -64,6 +66,7 @@ export type User = {
     personalTokensUsed?: number;
     canUseOverflow?: boolean;
     unusedReleased?: boolean;
+    rights?: Partial<Record<RightKey, boolean>>;
 };
 
 export type ActivityItem = {

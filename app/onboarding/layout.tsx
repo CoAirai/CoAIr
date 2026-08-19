@@ -4,7 +4,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { homePathForRole } from "@/lib/auth/resolveLogin";
+import { homeUrlForRole, homeUrlForSession } from "@/lib/auth/hosts";
+import { portalNavigate, redirectToSignIn } from "@/lib/auth/portalNav";
 
 export default function OnboardingLayout({
     children,
@@ -15,23 +16,32 @@ export default function OnboardingLayout({
     const { companies } = useAdminData();
     const router = useRouter();
     const company = companies.find((entry) => entry.id === session?.companyId);
+    const needsCheckout =
+        session?.source === "live"
+            ? Boolean(session.needsCheckout)
+            : Boolean(company?.needsCheckout);
 
     useEffect(() => {
         if (!ready) return;
         if (!session) {
-            router.replace("/auth/sign-in");
+            redirectToSignIn(router);
             return;
         }
         if (!session.companyId) {
-            router.replace(homePathForRole(session.role));
+            portalNavigate(router, homeUrlForRole(session.role));
             return;
         }
-        if (!company?.needsCheckout) {
-            router.replace(homePathForRole(session.role));
+        if (!needsCheckout) {
+            portalNavigate(
+                router,
+                session.source === "live"
+                    ? homeUrlForSession(session)
+                    : homeUrlForRole(session.role)
+            );
         }
-    }, [ready, session, company, router]);
+    }, [ready, session, needsCheckout, router]);
 
-    if (!ready || !session?.companyId || !company?.needsCheckout) {
+    if (!ready || !session?.companyId || !needsCheckout) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-weak-50 text-label-md text-sub-600">
                 Preparing checkout…

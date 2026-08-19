@@ -13,6 +13,8 @@ export type EmailPayload = {
     companyName?: string;
     role?: string;
     isResend?: boolean;
+    resetToken?: string;
+    temporaryPassword?: string;
 };
 
 export type BuiltEmail = {

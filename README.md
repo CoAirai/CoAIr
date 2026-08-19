@@ -1,6 +1,6 @@
-# COAir Super Admin
+# COAir
 
-Next.js 15 app for COAir Super Admin, company workspaces, chat, chronology, and forensic modules (mock data until live APIs are connected).
+Next.js 15 app for COAir — Super Admin, company workspaces, chat, chronology, and forensic modules (mock data until live APIs are connected).
 
 ## Local development
 
@@ -27,7 +27,10 @@ Copy from `.env.example`. Leave `RESEND_API_KEY` empty to dry-run emails (UI sti
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `NEXT_PUBLIC_APP_URL` | Yes on Vercel | Public site URL, e.g. `https://your-app.vercel.app` |
+| `NEXT_PUBLIC_LOGIN_URL` | Production | Auth portal, e.g. `https://login.coair.ai` |
+| `NEXT_PUBLIC_ADMIN_URL` | Production | Super Admin portal, e.g. `https://admin.coair.ai` |
+| `NEXT_PUBLIC_USER_URL` | Production | Company admin + member portal, e.g. `https://user.coair.ai` |
+| `NEXT_PUBLIC_APP_URL` | Yes | Asset links in emails (alias for `NEXT_PUBLIC_USER_URL`) |
 | `RESEND_API_KEY` | No | Set when going live with Resend |
 | `RESEND_FROM_EMAIL` | No | Default `COAir <noreply@coair.ai>` |
 
@@ -35,8 +38,41 @@ Copy from `.env.example`. Leave `RESEND_API_KEY` empty to dry-run emails (UI sti
 
 1. Import [bolttesting/COAir-Super-Admin](https://github.com/bolttesting/COAir-Super-Admin) in the [Vercel dashboard](https://vercel.com/new).
 2. Framework preset: **Next.js** (auto-detected). Root directory: repo root.
-3. Add environment variables from the table above. Set `NEXT_PUBLIC_APP_URL` to the Vercel domain (or custom domain).
+3. Add environment variables from the table above.
 4. Deploy. Production build command: `npm run build`.
+
+## Subdomain deployment
+
+Marketing site: **coair.ai** (separate). This app uses three subdomains on one Next.js deployment:
+
+| Host | Purpose | Default landing |
+| --- | --- | --- |
+| `login.coair.ai` | Sign-in, sign-up, password reset | `/auth/sign-in` |
+| `admin.coair.ai` | Super Admin | `/admin` |
+| `user.coair.ai` | Company admin + members | `/workspace` |
+
+### Production env (Vercel + API)
+
+```env
+NEXT_PUBLIC_LOGIN_URL=https://login.coair.ai
+NEXT_PUBLIC_ADMIN_URL=https://admin.coair.ai
+NEXT_PUBLIC_USER_URL=https://user.coair.ai
+NEXT_PUBLIC_APP_URL=https://user.coair.ai
+COAIR_LOGIN_URL=https://login.coair.ai
+COAIR_USER_URL=https://user.coair.ai
+COAIR_ADMIN_URL=https://admin.coair.ai
+COAIR_APP_URL=https://user.coair.ai
+COAIR_EMAIL_RELAY_URL=https://login.coair.ai/api/email/send
+CORS_ORIGINS=https://login.coair.ai,https://admin.coair.ai,https://user.coair.ai
+```
+
+### DNS + Vercel
+
+1. Add `login.coair.ai`, `admin.coair.ai`, and `user.coair.ai` as domains on the same Vercel project.
+2. Point DNS CNAME records for each subdomain to Vercel.
+3. In Supabase → Authentication → URL configuration, add all three subdomains to **Redirect URLs**. Site URL: `https://login.coair.ai`.
+
+After login on `login.coair.ai`, users are sent to `admin.coair.ai` or `user.coair.ai` based on role. Sign-out returns to `login.coair.ai`.
 
 Optional CLI:
 

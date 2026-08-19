@@ -16,7 +16,9 @@ import {
     userRemainingInSlice,
 } from "@/lib/company/tokenMath";
 import { getPlanById } from "@/lib/admin/plans";
+import { companyForSession } from "@/lib/workspace/companyForSession";
 import type { Company, ModuleId, Plan, PlanId, TokenEconomics, User, UserRole } from "@/lib/admin/types";
+import type { RightKey } from "@/lib/admin/rolesStub";
 import type { Invoice } from "@/lib/admin/billingTypes";
 import type { SupportTicket } from "@/lib/admin/wave2Types";
 import type {
@@ -43,6 +45,10 @@ type CompanyDataContextValue = {
     }) => { ok: boolean; error?: string };
     resendInvite: (userId: string) => { ok: boolean; error?: string };
     setUserRole: (userId: string, role: UserRole) => void;
+    setUserRights: (
+        userId: string,
+        rights: Partial<Record<RightKey, boolean>>
+    ) => void;
     setUserStatus: (userId: string, status: "active" | "suspended") => void;
     saveTokenShares: (
         shares: Record<string, number>
@@ -81,6 +87,7 @@ function toCompanyUser(user: User): CompanyUser {
         tokensUsed: user.personalTokensUsed ?? 0,
         canUseOverflow: user.canUseOverflow ?? false,
         unusedReleased: user.unusedReleased ?? false,
+        rights: user.rights,
     };
 }
 
@@ -107,6 +114,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
         inviteUser: invitePlatformUser,
         resendInvite: resendPlatformInvite,
         setUserRole: setPlatformUserRole,
+        setUserRights: setPlatformUserRights,
         setUserStatus: setPlatformUserStatus,
         patchUser,
         patchUsers,
@@ -122,8 +130,8 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
     const companyId = session?.companyId ?? "";
 
     const company = useMemo(
-        () => companies.find((entry) => entry.id === companyId) ?? null,
-        [companies, companyId]
+        () => companyForSession(session, companies),
+        [companies, session]
     );
 
     const users = useMemo(
@@ -193,6 +201,20 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
             );
         },
         [users, company, setPlatformUserRole, pushCompanyActivity]
+    );
+
+    const setUserRights = useCallback(
+        (userId: string, rights: Partial<Record<RightKey, boolean>>) => {
+            const target = users.find((user) => user.id === userId);
+            if (!target || !company) return;
+
+            setPlatformUserRights(userId, rights);
+            pushCompanyActivity(
+                company.id,
+                `Updated rights for ${target.email}`
+            );
+        },
+        [users, company, setPlatformUserRights, pushCompanyActivity]
     );
 
     const setUserStatus = useCallback(
@@ -445,6 +467,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
             inviteUser,
             resendInvite,
             setUserRole,
+            setUserRights,
             setUserStatus,
             saveTokenShares,
             releaseUnused,
@@ -469,6 +492,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
         inviteUser,
         resendInvite,
         setUserRole,
+        setUserRights,
         setUserStatus,
         saveTokenShares,
         releaseUnused,

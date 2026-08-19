@@ -41,9 +41,24 @@ const interDisplay = localFont({
     variable: "--font-inter-display",
 });
 
+const siteDescription =
+    "COAir — chat, cite, and verify your construction project data";
+
 export const metadata: Metadata = {
     title: "COAir",
-    description: "COAir — chat, cite, verify your project data",
+    description: siteDescription,
+    applicationName: "COAir",
+    openGraph: {
+        title: "COAir",
+        description: siteDescription,
+        siteName: "COAir",
+        type: "website",
+    },
+    twitter: {
+        card: "summary",
+        title: "COAir",
+        description: siteDescription,
+    },
 };
 
 export default function RootLayout({
@@ -57,96 +72,6 @@ export default function RootLayout({
             lang="en"
             suppressHydrationWarning
         >
-            <head>
-                {/* Description no longer than 155 characters */}
-                <meta
-                    name="description"
-                    content="COAir — chat, cite, verify your project data"
-                />
-
-                <meta
-                    name="product-name"
-                    content="COAir"
-                />
-
-                {/* Twitter Card data */}
-                <meta name="twitter:card" content="summary" />
-                <meta name="twitter:site" content="@ui8" />
-                <meta
-                    name="twitter:title"
-                    content="NeuraTalk: Coded AI Chat Companion"
-                />
-                <meta
-                    name="twitter:description"
-                    content="A powerful coded AI chat experience"
-                />
-                <meta name="twitter:creator" content="@ui8" />
-                {/* Twitter Summary card images must be at least 120x120px */}
-                <meta
-                    name="twitter:image"
-                    content="https://neuratalk-tau.vercel.app/twitter-card.png"
-                />
-
-                {/* Open Graph data for Facebook */}
-                <meta
-                    property="og:title"
-                    content="NeuraTalk: Coded AI Chat Companion"
-                />
-                <meta property="og:type" content="Article" />
-                <meta
-                    property="og:url"
-                    content="https://ui8.net/odyssey-agency-d2aaee/products/neuratalk-your-smart-ai-chat-companion-coded"
-                />
-                <meta
-                    property="og:image"
-                    content="https://neuratalk-tau.vercel.app/fb-og-image.png"
-                />
-                <meta
-                    property="og:description"
-                    content="A powerful coded AI chat experience"
-                />
-                <meta
-                    property="og:site_name"
-                    content="NeuraTalk: Coded AI Chat Companion"
-                />
-                <meta property="fb:admins" content="132951670226590" />
-
-                {/* Open Graph data for LinkedIn */}
-                <meta
-                    property="og:title"
-                    content="NeuraTalk: Coded AI Chat Companion"
-                />
-                <meta
-                    property="og:url"
-                    content="https://ui8.net/odyssey-agency-d2aaee/products/neuratalk-your-smart-ai-chat-companion-coded"
-                />
-                <meta
-                    property="og:image"
-                    content="https://neuratalk-tau.vercel.app/linkedin-og-image.png"
-                />
-                <meta
-                    property="og:description"
-                    content="A powerful coded AI chat experience"
-                />
-
-                {/* Open Graph data for Pinterest */}
-                <meta
-                    property="og:title"
-                    content="NeuraTalk: Coded AI Chat Companion"
-                />
-                <meta
-                    property="og:url"
-                    content="https://ui8.net/slabdsgn/products/elitefinancial---fintech-html--react--tailwind"
-                />
-                <meta
-                    property="og:image"
-                    content="https://neuratalk-tau.vercel.app/pinterest-og-image.png"
-                />
-                <meta
-                    property="og:description"
-                    content="A powerful coded AI chat experience"
-                />
-            </head>
             <body
                 className={`${satoshi.variable} ${inter.variable} ${interDisplay.variable} bg-weak-50 font-satoshi text-p-sm text-strong-950 antialiased`}
             >

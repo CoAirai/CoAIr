@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { getPlanById } from "@/lib/admin/plans";
+import { planForCompany } from "@/lib/admin/plans";
+import { companyForSession } from "@/lib/workspace/companyForSession";
 import type { ModuleId } from "@/lib/admin/types";
 import { getModuleGate, MODULES } from "@/lib/workspace/moduleAccess";
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
@@ -22,10 +23,10 @@ const ModulePlaceholderPage = ({ moduleId }: Props) => {
     const meta = MODULES.find((module) => module.id === moduleId)!;
 
     const company = useMemo(
-        () => companies.find((entry) => entry.id === session?.companyId) ?? null,
-        [companies, session?.companyId]
+        () => companyForSession(session, companies),
+        [companies, session]
     );
-    const plan = company ? getPlanById(company.planId, plans) : null;
+    const plan = planForCompany(company, plans);
     const gate = company && plan ? getModuleGate(plan, company, moduleId) : null;
 
     useEffect(() => {

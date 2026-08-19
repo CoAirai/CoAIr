@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { homePathForRole } from "@/lib/auth/resolveLogin";
+import { homeUrlForRole } from "@/lib/auth/hosts";
+import { portalNavigate, redirectToSignIn } from "@/lib/auth/portalNav";
 import {
     ChatPortalSkeleton,
     ModulePortalSkeleton,
@@ -18,30 +19,40 @@ export default function RequireCompanySession({
     const { session, ready } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
+    const isLive = session?.source === "live";
 
     useEffect(() => {
         if (!ready) return;
         if (!session) {
-            router.replace("/auth/sign-in");
+            redirectToSignIn(router);
             return;
         }
+        if (isLive) return;
         if (!session.companyId || session.role === "super_admin") {
-            router.replace(homePathForRole(session.role));
+            portalNavigate(router, homeUrlForRole(session.role));
         }
-    }, [ready, session, router]);
+    }, [ready, session, router, isLive]);
 
-    if (!ready || !session?.companyId) {
-        if (pathname.startsWith("/workspace/chat")) {
-            return <ChatPortalSkeleton />;
-        }
-        if (
-            pathname.startsWith("/workspace/chronology") ||
-            pathname.startsWith("/workspace/forensic")
-        ) {
-            return <ModulePortalSkeleton />;
-        }
-        return <WorkspaceHubSkeleton />;
+    if (!ready || !session) {
+        return <WorkspaceGateSkeleton pathname={pathname} />;
+    }
+
+    if (!isLive && !session.companyId) {
+        return <WorkspaceGateSkeleton pathname={pathname} />;
     }
 
     return <>{children}</>;
+}
+
+function WorkspaceGateSkeleton({ pathname }: { pathname: string }) {
+    if (pathname.startsWith("/workspace/chat")) {
+        return <ChatPortalSkeleton />;
+    }
+    if (
+        pathname.startsWith("/workspace/chronology") ||
+        pathname.startsWith("/workspace/forensic")
+    ) {
+        return <ModulePortalSkeleton />;
+    }
+    return <WorkspaceHubSkeleton />;
 }

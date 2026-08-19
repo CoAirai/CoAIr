@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { AdminDataProvider } from "@/context/AdminDataContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { ChatProvider } from "@/context/ChatContext";
+import { LiveWorkspaceProvider } from "@/context/LiveWorkspaceContext";
 
 const Providers = ({ children }: { children: React.ReactNode }) => {
     return (
@@ -15,7 +16,9 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
         >
             <AdminDataProvider>
                 <AuthProvider>
-                    <ChatProvider>{children}</ChatProvider>
+                    <LiveWorkspaceProvider>
+                        <ChatProvider>{children}</ChatProvider>
+                    </LiveWorkspaceProvider>
                 </AuthProvider>
             </AdminDataProvider>
         </ThemeProvider>

@@ -6,7 +6,6 @@ import { FormEvent, useMemo, useState } from "react";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import ConfirmModal from "@/components/Admin/ConfirmModal";
 import { useAdminData } from "@/context/AdminDataContext";
-import { pendingAccessRequests } from "@/lib/admin/accessRequests";
 import { getPlanById } from "@/lib/admin/plans";
 import {
     filterCompanies,
@@ -27,9 +26,6 @@ const CompaniesPage = () => {
         createCompany,
         setCompanyStatus,
         plans,
-        accessRequests,
-        approveCompanyAccessRequest,
-        denyCompanyAccessRequest,
     } = useAdminData();
     const [search, setSearch] = useState("");
     const [planId, setPlanId] = useState<PlanId | "all">("all");
@@ -43,8 +39,6 @@ const CompaniesPage = () => {
     const [ownerName, setOwnerName] = useState("");
     const [createError, setCreateError] = useState<string | null>(null);
     const [createSuccess, setCreateSuccess] = useState<string | null>(null);
-    const [requestMessage, setRequestMessage] = useState<string | null>(null);
-    const [requestError, setRequestError] = useState<string | null>(null);
     const [suspendTarget, setSuspendTarget] = useState<{
         id: string;
         name: string;
@@ -56,10 +50,6 @@ const CompaniesPage = () => {
     const filtered = useMemo(
         () => filterCompanies(companies, { search, planId, status }),
         [companies, planId, search, status]
-    );
-    const pendingRequests = useMemo(
-        () => pendingAccessRequests(accessRequests),
-        [accessRequests]
     );
 
     const onCreate = (event: FormEvent) => {
@@ -103,9 +93,9 @@ const CompaniesPage = () => {
                 <div>
                     <h1 className="text-label-xl text-strong-950">Companies</h1>
                     <p className="mt-1 text-label-sm text-sub-600">
-                        Invite companies or review public access requests.
-                        Company admins invite their own users. Assign packages
-                        and suspend or activate access.
+                        Invite companies and assign packages. Access requests
+                        live under Onboarding. Company admins invite their own
+                        users.
                     </p>
                 </div>
                 <button
@@ -120,129 +110,6 @@ const CompaniesPage = () => {
                     {showCreate ? "Cancel" : "Invite company"}
                 </button>
             </div>
-
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-stroke-soft-200 p-5">
-                    <div>
-                        <h2 className="text-label-lg text-strong-950">
-                            Access requests
-                        </h2>
-                        <p className="mt-1 text-label-xs text-sub-600">
-                            From Sign up → Request access. Approve so the owner
-                            can sign in, choose a package, and complete dummy
-                            payment.
-                        </p>
-                    </div>
-                    <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-label-xs text-orange-600">
-                        {pendingRequests.length} pending
-                    </span>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[800px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Name</th>
-                                <th className="px-5 py-3 font-medium">Email</th>
-                                <th className="px-5 py-3 font-medium">
-                                    Company
-                                </th>
-                                <th className="px-5 py-3 font-medium">
-                                    Requested
-                                </th>
-                                <th className="px-5 py-3 font-medium">
-                                    Actions
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {pendingRequests.map((request) => (
-                                <tr key={request.id} className="text-label-sm">
-                                    <td className="px-5 py-4 text-strong-950">
-                                        {request.fullName}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {request.email}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {request.companyName}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {dateFormatter.format(
-                                            new Date(request.createdAt)
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <button
-                                                type="button"
-                                                className="text-label-sm text-blue-500 hover:text-blue-600"
-                                                onClick={() => {
-                                                    const result =
-                                                        approveCompanyAccessRequest(
-                                                            request.id
-                                                        );
-                                                    if (!result.ok) {
-                                                        setRequestError(
-                                                            result.error ??
-                                                                "Unable to approve"
-                                                        );
-                                                        setRequestMessage(null);
-                                                        return;
-                                                    }
-                                                    setRequestError(null);
-                                                    setRequestMessage(
-                                                        `Approved ${request.companyName} — ${request.email} can sign in and choose a package`
-                                                    );
-                                                }}
-                                            >
-                                                Approve
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="text-label-sm text-red-500 hover:text-red-600"
-                                                onClick={() => {
-                                                    const result =
-                                                        denyCompanyAccessRequest(
-                                                            request.id
-                                                        );
-                                                    if (!result.ok) {
-                                                        setRequestError(
-                                                            result.error ??
-                                                                "Unable to deny"
-                                                        );
-                                                        setRequestMessage(null);
-                                                        return;
-                                                    }
-                                                    setRequestError(null);
-                                                    setRequestMessage(
-                                                        `Denied ${request.companyName}`
-                                                    );
-                                                }}
-                                            >
-                                                Deny
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                {pendingRequests.length === 0 && (
-                    <div className="px-5 py-10 text-center text-label-sm text-sub-600">
-                        No pending access requests
-                    </div>
-                )}
-                {(requestError || requestMessage) && (
-                    <div className="border-t border-stroke-soft-200 px-5 py-3 text-label-xs">
-                        {requestError ? (
-                            <p className="text-red-500">{requestError}</p>
-                        ) : (
-                            <p className="text-green-600">{requestMessage}</p>
-                        )}
-                    </div>
-                )}
-            </section>
 
             {showCreate && (
                 <form

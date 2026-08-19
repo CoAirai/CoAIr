@@ -7,6 +7,7 @@ import TokenUsage from "./TokenUsage";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import type { CompanyDocument } from "@/lib/admin/companyDocuments";
 import { chatTransition } from "@/lib/chat/motion";
 import { getTokenMeter } from "@/lib/chat/tokenMeter";
@@ -128,6 +129,7 @@ const KnowledgeBase = () => {
     const { session } = useAuth();
     const { companies, users, companyWorkspaces, removeCompanyDocument } =
         useAdminData();
+    const live = useLiveWorkspace();
     const {
         activeKbId,
         setActiveKbId,
@@ -135,10 +137,11 @@ const KnowledgeBase = () => {
         askAboutDocument,
         activeWorkspaceUserId,
     } = useChat();
-    const documents =
-        (session?.companyId
-            ? companyWorkspaces[session.companyId]?.documents
-            : []) ?? [];
+    const documents = live.enabled
+        ? live.documents
+        : (session?.companyId
+              ? companyWorkspaces[session.companyId]?.documents
+              : []) ?? [];
     const files = documents.filter(
         (doc) => doc.kind === "document" || doc.kind === "csv"
     );
@@ -148,6 +151,15 @@ const KnowledgeBase = () => {
     const sheets = documents.filter((doc) => doc.kind === "spreadsheet");
     const canRemove = session?.role === "company_admin";
     const tokenMeter = useMemo(() => {
+        if (live.enabled && live.accountUsage) {
+            const used = live.accountUsage.used_tokens ?? 0;
+            const limit = live.accountUsage.token_limit ?? 0;
+            return getTokenMeter({
+                tokenLimit: limit,
+                tokensUsed: used,
+                personalTokensUsed: used,
+            });
+        }
         const company = companies.find((entry) => entry.id === session?.companyId);
         const user = users.find((entry) => entry.id === activeWorkspaceUserId);
         if (!company || !user) return null;
@@ -158,9 +170,20 @@ const KnowledgeBase = () => {
             personalTokensUsed: user.personalTokensUsed,
             unusedReleased: user.unusedReleased,
         });
-    }, [activeWorkspaceUserId, companies, session?.companyId, users]);
+    }, [
+        activeWorkspaceUserId,
+        companies,
+        live.accountUsage,
+        live.enabled,
+        session?.companyId,
+        users,
+    ]);
 
     const removeDoc = (documentId: string) => {
+        if (live.enabled) {
+            void live.removeFile(documentId);
+            return;
+        }
         if (!session?.companyId) return;
         removeCompanyDocument({
             companyId: session.companyId,

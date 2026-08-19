@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "@/components/Image";
 import Button from "@/components/Button";
 import Icon from "@/components/Icon";
+import { authHref } from "@/lib/auth/hosts";
 import Slider from "./Slider";
 
 type Props = {
@@ -39,7 +40,7 @@ const LayoutLogin = ({ title, description, children }: Props) => (
                 <div className="mb-auto flex items-center justify-between gap-4">
                     <Link
                         className="inline-flex items-center gap-3"
-                        href="/auth/sign-in"
+                        href={authHref("/auth/sign-in")}
                     >
                         <Image
                             className="w-10 rounded-xl object-contain opacity-100"
@@ -61,7 +62,7 @@ const LayoutLogin = ({ title, description, children }: Props) => (
                         className="!h-10 !gap-3 rounded-xl bg-white-0"
                         isStroke
                         as="link"
-                        href="/auth/sign-in"
+                        href={authHref("/auth/sign-in")}
                     >
                         Sign in
                         <Icon className="!size-4.5" name="chevron-circle" />

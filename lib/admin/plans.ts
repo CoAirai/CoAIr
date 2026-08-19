@@ -79,6 +79,14 @@ export function getPlanById(id: string, plans: Plan[] = PLANS) {
     return plans.find((plan) => plan.id === id) ?? null;
 }
 
+export function planForCompany(
+    company: { planId: string } | null | undefined,
+    plans: Plan[] = PLANS
+) {
+    if (!company) return null;
+    return getPlanById(company.planId, plans) ?? getPlanById("pro", plans);
+}
+
 export function clonePlans(plans: Plan[] = PLANS): Plan[] {
     return plans.map((plan) => ({
         ...plan,

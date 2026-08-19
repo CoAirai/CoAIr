@@ -10,7 +10,9 @@ type Props = {
     title: string;
     summary: string;
     amountLabel: string;
-    onConfirm: () => { ok: boolean; error?: string };
+    onConfirm: () =>
+        | { ok: boolean; error?: string }
+        | Promise<{ ok: boolean; error?: string }>;
 };
 
 const CheckoutModal = ({
@@ -25,6 +27,7 @@ const CheckoutModal = ({
     const [last4, setLast4] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         if (!open) {
@@ -32,25 +35,34 @@ const CheckoutModal = ({
             setLast4("");
             setError(null);
             setSuccess(false);
+            setSubmitting(false);
         }
     }, [open]);
 
     const canConfirm =
-        nameOnCard.trim().length > 0 && last4.trim().length > 0 && !success;
+        nameOnCard.trim().length > 0 &&
+        last4.trim().length > 0 &&
+        !success &&
+        !submitting;
 
-    const handleSubmit = (event: FormEvent) => {
+    const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
         if (!canConfirm) return;
 
-        const result = onConfirm();
-        if (!result.ok) {
-            setError(result.error ?? "Unable to complete purchase");
-            return;
-        }
+        setSubmitting(true);
+        try {
+            const result = await onConfirm();
+            if (!result.ok) {
+                setError(result.error ?? "Unable to complete purchase");
+                return;
+            }
 
-        setError(null);
-        setSuccess(true);
-        setTimeout(() => onClose(), 1200);
+            setError(null);
+            setSuccess(true);
+            setTimeout(() => onClose(), 1200);
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -107,7 +119,7 @@ const CheckoutModal = ({
                             disabled={!canConfirm}
                             className="h-10 flex-1 rounded-full bg-strong-950 text-label-sm text-white-0 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                            Confirm payment
+                            {submitting ? "Charging…" : "Confirm payment"}
                         </button>
                         <button
                             type="button"

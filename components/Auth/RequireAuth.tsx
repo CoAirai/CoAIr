@@ -3,7 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { homePathForRole, type SessionRole } from "@/lib/auth/resolveLogin";
+import { type SessionRole } from "@/lib/auth/resolveLogin";
+import { homeUrlForRole } from "@/lib/auth/hosts";
+import { portalNavigate, redirectToSignIn } from "@/lib/auth/portalNav";
 import {
     AdminPortalSkeleton,
     CompanyPortalSkeleton,
@@ -21,11 +23,11 @@ export default function RequireAuth({ role, children }: Props) {
     useEffect(() => {
         if (!ready) return;
         if (!session) {
-            router.replace("/auth/sign-in");
+            redirectToSignIn(router);
             return;
         }
         if (session.role !== role) {
-            router.replace(homePathForRole(session.role));
+            portalNavigate(router, homeUrlForRole(session.role));
         }
     }, [ready, session, role, router]);
 

@@ -16,7 +16,9 @@ type Props = {
     changePassword?: (
         current: string,
         next: string
-    ) => { ok: boolean; error?: string };
+    ) =>
+        | { ok: boolean; error?: string }
+        | Promise<{ ok: boolean; error?: string }>;
 };
 
 const Settings = ({ open, onClose, changePassword: changePasswordProp }: Props) => {

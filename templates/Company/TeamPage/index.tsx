@@ -4,8 +4,14 @@ import { FormEvent, useMemo, useState } from "react";
 
 import PageHeader from "@/components/Admin/PageHeader";
 import StatusBadge from "@/components/Admin/StatusBadge";
+import RightsToggleCells from "@/components/Admin/RightsToggleCells";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import { isValidInviteEmail } from "@/lib/admin/wave2Helpers";
+import {
+    RIGHT_COLUMNS,
+    rightsFromFeatures,
+    type RightKey,
+} from "@/lib/admin/rolesStub";
 import type { UserRole, UserStatus } from "@/lib/admin/types";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -15,7 +21,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 const ROLE_OPTIONS: UserRole[] = ["admin", "member", "viewer"];
 
 const TeamPage = () => {
-    const { users, inviteUser, resendInvite, setUserRole, setUserStatus } =
+    const { users, inviteUser, resendInvite, setUserRole, setUserRights, setUserStatus } =
         useCompanyData();
     const [showInvite, setShowInvite] = useState(false);
     const [email, setEmail] = useState("");
@@ -88,7 +94,7 @@ const TeamPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Team"
-                description="Invite teammates, manage roles, and suspend access."
+                description="Invite teammates, manage roles and module rights, and suspend access."
                 action={
                     <button
                         type="button"
@@ -218,12 +224,20 @@ const TeamPage = () => {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[960px] text-left">
+                    <table className="w-full min-w-[1280px] text-left">
                         <thead className="bg-weak-50 text-label-xs text-sub-600">
                             <tr>
                                 <th className="px-5 py-3 font-medium">Name</th>
                                 <th className="px-5 py-3 font-medium">Email</th>
                                 <th className="px-5 py-3 font-medium">Role</th>
+                                {RIGHT_COLUMNS.map((column) => (
+                                    <th
+                                        key={column.key}
+                                        className="px-5 py-3 text-center font-medium"
+                                    >
+                                        {column.label}
+                                    </th>
+                                ))}
                                 <th className="px-5 py-3 font-medium">Status</th>
                                 <th className="px-5 py-3 font-medium">
                                     Last login
@@ -266,6 +280,23 @@ const TeamPage = () => {
                                             ))}
                                         </select>
                                     </td>
+                                    <RightsToggleCells
+                                        rights={{
+                                            ...rightsFromFeatures(
+                                                undefined,
+                                                user.role
+                                            ),
+                                            ...user.rights,
+                                        }}
+                                        onToggle={(
+                                            key: RightKey,
+                                            enabled
+                                        ) =>
+                                            setUserRights(user.id, {
+                                                [key]: enabled,
+                                            })
+                                        }
+                                    />
                                     <td className="px-5 py-4">
                                         <StatusBadge status={user.status} />
                                     </td>

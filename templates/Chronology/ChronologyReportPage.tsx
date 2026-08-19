@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import SourcePdfPreview from "@/components/SourcePdfPreview";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import type { ChronologyCitation } from "@/lib/chronology/types";
+import { companyForSession } from "@/lib/workspace/companyForSession";
+import type { ChronologyCitation, ChronologyReport } from "@/lib/chronology/types";
+import { mapChronologyJob } from "@/lib/coair/mapChronology";
+import { downloadReportDocument, getReport } from "@/lib/coair/reports";
 import ChronologyShell from "./ChronologyShell";
 
 type Props = {
@@ -15,15 +18,57 @@ type Props = {
 const ChronologyReportPage = ({ reportId }: Props) => {
     const { session } = useAuth();
     const { companies, companyWorkspaces } = useAdminData();
-    const company = companies.find((entry) => entry.id === session?.companyId);
-    const report = company
+    const company = companyForSession(session, companies);
+    const live = session?.source === "live";
+    const mockReport = company
         ? companyWorkspaces[company.id]?.chronologyReports.find(
               (entry) => entry.id === reportId
           )
         : null;
+    const [liveReport, setLiveReport] = useState<ChronologyReport | null>(null);
+    const [liveError, setLiveError] = useState<string | null>(null);
+    const report = live ? liveReport : mockReport;
     const [openSource, setOpenSource] = useState<ChronologyCitation | null>(
         null
     );
+
+    useEffect(() => {
+        if (!live || !session?.accessToken || !session.projectId) return;
+        let cancelled = false;
+        let timer: number | undefined;
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const companyId = session.companyId ?? "live";
+
+        const tick = async () => {
+            try {
+                const job = await getReport(token, projectId, reportId);
+                if (cancelled) return;
+                setLiveReport(mapChronologyJob(job, companyId));
+                setLiveError(null);
+                if (
+                    job.status !== "ready" &&
+                    job.status !== "failed" &&
+                    job.status !== "credit_balance_exhausted"
+                ) {
+                    timer = window.setTimeout(() => {
+                        void tick();
+                    }, 2500);
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setLiveError(
+                        err instanceof Error ? err.message : "Report not found"
+                    );
+                }
+            }
+        };
+        void tick();
+        return () => {
+            cancelled = true;
+            if (timer) window.clearTimeout(timer);
+        };
+    }, [live, reportId, session?.accessToken, session?.companyId, session?.projectId]);
 
     const createdLabel = useMemo(() => {
         if (!report) return "";
@@ -37,10 +82,33 @@ const ChronologyReportPage = ({ reportId }: Props) => {
         });
     }, [report]);
 
+    const downloadWord = async () => {
+        if (!live || !session?.accessToken || !session.projectId) return;
+        const blob = await downloadReportDocument(
+            session.accessToken,
+            session.projectId,
+            reportId
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${report?.title || "chronology"}.docx`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+    if (live && !report && !liveError) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-weak-50 text-sub-600">
+                Loading report…
+            </div>
+        );
+    }
+
     if (!company || !report) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-weak-50 text-sub-600">
-                Report not found.{" "}
+                {liveError || "Report not found."}{" "}
                 <Link className="ml-2 text-blue-500" href="/workspace/chronology">
                     Back
                 </Link>
@@ -49,9 +117,9 @@ const ChronologyReportPage = ({ reportId }: Props) => {
     }
 
     const renderBody = (body: string, citations: ChronologyCitation[]) => {
-        const parts = body.split(/(\[src_[a-z0-9]+\])/g);
+        const parts = body.split(/(\[[^\]]+\])/g);
         return parts.map((part, index) => {
-            const match = part.match(/^\[(src_[a-z0-9]+)\]$/);
+            const match = part.match(/^\[([^\]]+)\]$/);
             if (!match) return <span key={index}>{part}</span>;
             const citation =
                 citations.find((entry) => entry.srcId === match[1]) ??
@@ -91,15 +159,28 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                                     {report.title}
                                 </h1>
                                 <p className="mt-2 text-label-xs text-sub-600">
-                                    Created {createdLabel} — read-only record
+                                    Created {createdLabel} —{" "}
+                                    {report.status === "generating"
+                                        ? "generating"
+                                        : "read-only record"}
                                 </p>
                             </div>
-                            <button
-                                type="button"
-                                className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
-                            >
-                                Download Word ↓
-                            </button>
+                            {live && report.status === "ready" ? (
+                                <button
+                                    type="button"
+                                    onClick={() => void downloadWord()}
+                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                >
+                                    Download Word ↓
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                >
+                                    Download Word ↓
+                                </button>
+                            )}
                         </div>
                     </div>
 

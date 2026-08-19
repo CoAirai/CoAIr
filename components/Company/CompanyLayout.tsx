@@ -7,8 +7,11 @@ import Icon from "@/components/Icon";
 import Image from "@/components/Image";
 import ModalSettings from "@/components/ModalSettings";
 import { useAuth } from "@/context/AuthContext";
+import { redirectToSignIn } from "@/lib/auth/portalNav";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import CompanyNav from "./CompanyNav";
+import ImpersonationBanner from "@/components/Auth/ImpersonationBanner";
+import MaintenanceBanner from "@/components/Auth/MaintenanceBanner";
 import PortalRouteGate from "@/components/Skeleton/PortalRouteGate";
 import { CompanyContentSkeleton } from "@/components/Skeleton/portals";
 
@@ -21,7 +24,7 @@ const CompanyLayout = ({ children }: Props) => {
     const [collapsed, setCollapsed] = useState(false);
     const [openSettings, setOpenSettings] = useState(false);
     const router = useRouter();
-    const { session, signOut } = useAuth();
+    const { session, signOut, changePassword: changeLivePassword } = useAuth();
     const { company, users, changePassword } = useCompanyData();
 
     const adminUser = useMemo(
@@ -163,6 +166,8 @@ const CompanyLayout = ({ children }: Props) => {
             </aside>
 
             <div className="flex h-full flex-col bg-weak-50/40 pt-9.5 pb-5 max-2xl:pt-5 max-md:pt-3 max-md:pb-4">
+                <MaintenanceBanner />
+                <ImpersonationBanner />
                 <header className="mb-3.5 flex shrink-0 items-center gap-4 max-md:mb-3 max-md:gap-2">
                     <button
                         type="button"
@@ -191,7 +196,7 @@ const CompanyLayout = ({ children }: Props) => {
                         onSettings={() => setOpenSettings(true)}
                         onSignOut={() => {
                             signOut();
-                            router.replace("/auth/sign-in");
+                            redirectToSignIn(router);
                         }}
                     />
                 </header>
@@ -215,7 +220,9 @@ const CompanyLayout = ({ children }: Props) => {
             <ModalSettings
                 open={openSettings}
                 onClose={() => setOpenSettings(false)}
-                changePassword={changePassword}
+                changePassword={
+                    session?.source === "live" ? changeLivePassword : changePassword
+                }
             />
         </div>
     );

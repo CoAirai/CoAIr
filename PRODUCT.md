@@ -55,7 +55,7 @@ Terminology to preserve: COAir, Super Admin, Company Admin, tokens, packages, to
 - Name: **COAir**
 - Voice: professional project-intelligence product (not consumer social).
 - Assets: `public/images/coair-logo.png`, auth hero imagery.
-- Visual system: NeuraTalk-derived token theme (Satoshi/Inter, `bg-weak-50`, `text-strong-950`, `border-stroke-soft-200`, blue accent) — polish refinements allowed; full rebrand only on explicit request.
+- Visual system: COAir product theme (Satoshi/Inter, `bg-weak-50`, `text-strong-950`, `border-stroke-soft-200`, blue accent).
 
 ## Evidence on Hand
 

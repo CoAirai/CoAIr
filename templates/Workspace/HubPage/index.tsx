@@ -10,7 +10,9 @@ import PageEnter from "@/components/Motion/PageEnter";
 import UpgradePackageModal from "@/components/Workspace/UpgradePackageModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { getPlanById } from "@/lib/admin/plans";
+import { redirectToSignIn } from "@/lib/auth/portalNav";
+import { companyForSession } from "@/lib/workspace/companyForSession";
+import { planForCompany } from "@/lib/admin/plans";
 import type { ModuleId } from "@/lib/admin/types";
 import {
     getModuleGate,
@@ -36,16 +38,17 @@ const HubPage = () => {
     );
 
     const company = useMemo(
-        () => companies.find((entry) => entry.id === session?.companyId) ?? null,
-        [companies, session?.companyId]
+        () => companyForSession(session, companies),
+        [companies, session]
     );
-    const plan = company ? getPlanById(company.planId, plans) : null;
+    const plan = planForCompany(company, plans);
     const initials = (session?.name ?? "U")
         .split(" ")
         .filter(Boolean)
         .slice(0, 2)
         .map((part) => part[0]?.toUpperCase() ?? "")
         .join("");
+    const reduceMotion = useReducedMotion();
 
     if (!company || !plan) {
         return <WorkspaceHubSkeleton />;
@@ -57,7 +60,6 @@ const HubPage = () => {
     const lockedGate = lockedModule
         ? getModuleGate(plan, company, lockedModule)
         : null;
-    const reduceMotion = useReducedMotion();
 
     return (
         <PortalRouteGate skeleton={<WorkspaceHubSkeleton />}>
@@ -119,7 +121,7 @@ const HubPage = () => {
                                         className={menuItemClass}
                                         onClick={() => {
                                             signOut();
-                                            router.replace("/auth/sign-in");
+                                            redirectToSignIn(router);
                                         }}
                                     >
                                         Sign out

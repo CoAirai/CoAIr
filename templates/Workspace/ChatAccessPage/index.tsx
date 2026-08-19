@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import HomePage from "@/templates/HomePage";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { getPlanById } from "@/lib/admin/plans";
+import { planForCompany } from "@/lib/admin/plans";
+import { companyForSession } from "@/lib/workspace/companyForSession";
 import { getModuleGate } from "@/lib/workspace/moduleAccess";
 import { ChatPortalSkeleton } from "@/components/Skeleton/portals";
 import PortalRouteGate from "@/components/Skeleton/PortalRouteGate";
@@ -14,19 +15,20 @@ const ChatAccessPage = () => {
     const router = useRouter();
     const { session } = useAuth();
     const { companies, plans } = useAdminData();
-    const company = companies.find((entry) => entry.id === session?.companyId);
-    const plan = company ? getPlanById(company.planId, plans) : null;
+    const company = companyForSession(session, companies);
+    const plan = planForCompany(company, plans);
     const gate =
         company && plan ? getModuleGate(plan, company, "chatbot") : null;
+    const chatOpen = gate?.state === "open" || session?.source === "live";
 
     useEffect(() => {
         if (!company || !plan) return;
-        if (gate?.state === "locked") {
+        if (!chatOpen) {
             router.replace("/workspace?upgrade=chatbot");
         }
-    }, [company, plan, gate, router]);
+    }, [company, plan, chatOpen, router]);
 
-    if (!company || !plan || gate?.state !== "open") {
+    if (!company || !plan || !chatOpen) {
         return <ChatPortalSkeleton />;
     }
 

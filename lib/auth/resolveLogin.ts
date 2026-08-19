@@ -6,10 +6,18 @@ export type AuthSession = {
     role: SessionRole;
     companyId: string | null;
     userId: string | null;
+    source?: "mock" | "live";
+    accessToken?: string;
+    projectId?: string | null;
+    username?: string;
+    companyName?: string;
+    needsCheckout?: boolean;
+    impersonator?: string;
 };
 
 export const SUPER_ADMIN_EMAIL = "admin@coair.ai";
 export const AUTH_SESSION_KEY = "coair.auth.session";
+export const ADMIN_BACKUP_KEY = "coair.auth.adminBackup";
 
 type LoginUser = {
     id: string;
@@ -30,6 +38,13 @@ export function homePathForSession(
     session: AuthSession,
     company?: { needsCheckout?: boolean } | null
 ): string {
+    if (session.source === "live") {
+        if (session.role === "super_admin") return "/admin";
+        if (session.needsCheckout || company?.needsCheckout) {
+            return "/onboarding/plans";
+        }
+        return "/workspace";
+    }
     if (session.role === "super_admin") return "/admin";
     if (company?.needsCheckout) return "/onboarding/plans";
     return homePathForRole(session.role);

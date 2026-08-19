@@ -1,4 +1,5 @@
 import type { UserRole, UserStatus } from "../admin/types";
+import type { RightKey } from "../admin/rolesStub";
 
 export type CompanyUser = {
   id: string;
@@ -13,6 +14,7 @@ export type CompanyUser = {
   tokensUsed: number;
   canUseOverflow: boolean;
   unusedReleased: boolean;
+  rights?: Partial<Record<RightKey, boolean>>;
 };
 
 export type CompanyActivityItem = {

@@ -3,7 +3,13 @@
 import { useMemo, useState } from "react";
 
 import StatusBadge from "@/components/Admin/StatusBadge";
+import RightsToggleCells from "@/components/Admin/RightsToggleCells";
 import { useAdminData } from "@/context/AdminDataContext";
+import {
+    RIGHT_COLUMNS,
+    rightsFromFeatures,
+    type RightKey,
+} from "@/lib/admin/rolesStub";
 import { filterUsers } from "@/lib/admin/selectors";
 import type { UserRole, UserStatus } from "@/lib/admin/types";
 
@@ -19,6 +25,7 @@ const UsersPage = () => {
         users,
         setUserStatus,
         setUserRole,
+        setUserRights,
         impersonateUser,
         stopImpersonation,
         forceLogoutUser,
@@ -44,7 +51,8 @@ const UsersPage = () => {
                 <h1 className="text-label-xl text-strong-950">Users</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
                     Oversight only — companies invite their own users. Manage
-                    roles, suspend access, impersonate, or force logout.
+                    roles, module rights, suspend access, impersonate, or force
+                    logout.
                 </p>
             </div>
 
@@ -95,7 +103,7 @@ const UsersPage = () => {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1280px] text-left">
+                    <table className="w-full min-w-[1480px] text-left">
                         <thead className="bg-weak-50 text-label-xs text-sub-600">
                             <tr>
                                 <th className="px-5 py-3 font-medium">Name</th>
@@ -104,6 +112,14 @@ const UsersPage = () => {
                                     Company
                                 </th>
                                 <th className="px-5 py-3 font-medium">Role</th>
+                                {RIGHT_COLUMNS.map((column) => (
+                                    <th
+                                        key={column.key}
+                                        className="px-5 py-3 text-center font-medium"
+                                    >
+                                        {column.label}
+                                    </th>
+                                ))}
                                 <th className="px-5 py-3 font-medium">Status</th>
                                 <th className="px-5 py-3 font-medium">
                                     Last login
@@ -148,6 +164,23 @@ const UsersPage = () => {
                                             ))}
                                         </select>
                                     </td>
+                                    <RightsToggleCells
+                                        rights={{
+                                            ...rightsFromFeatures(
+                                                undefined,
+                                                user.role
+                                            ),
+                                            ...user.rights,
+                                        }}
+                                        onToggle={(
+                                            key: RightKey,
+                                            enabled
+                                        ) =>
+                                            setUserRights(user.id, {
+                                                [key]: enabled,
+                                            })
+                                        }
+                                    />
                                     <td className="px-5 py-4">
                                         <StatusBadge status={user.status} />
                                     </td>

@@ -8,7 +8,9 @@ import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { useAdminData } from "@/context/AdminDataContext";
-import { postLoginPath } from "@/lib/auth/postLoginPath";
+import { postLoginUrl } from "@/lib/auth/postLoginPath";
+import { portalNavigate } from "@/lib/auth/portalNav";
+import { MFA_CHALLENGE_KEY } from "@/lib/coair/liveLogin";
 
 const SignInPage = () => {
     const router = useRouter();
@@ -17,20 +19,39 @@ const SignInPage = () => {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         if (!ready || !session) return;
-        router.replace(postLoginPath(session, companies));
+        portalNavigate(router, postLoginUrl(session, companies));
     }, [ready, session, router, companies]);
 
-    const handleSubmit = (event: FormEvent) => {
+    const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
-        const result = signIn(email, password);
-        if (!result.ok) {
-            setError(result.error);
-            return;
+        setError("");
+        setSubmitting(true);
+        try {
+            const result = await signIn(email, password);
+            if (!result.ok && result.mfa) {
+                sessionStorage.setItem(
+                    MFA_CHALLENGE_KEY,
+                    JSON.stringify({
+                        mfaToken: result.mfaToken,
+                        debugCode: result.debugCode,
+                        username: result.username,
+                    })
+                );
+                router.push("/auth/enter-code");
+                return;
+            }
+            if (!result.ok) {
+                setError(result.error);
+                return;
+            }
+            portalNavigate(router, postLoginUrl(result.session, companies));
+        } finally {
+            setSubmitting(false);
         }
-        router.replace(postLoginPath(result.session, companies));
     };
 
     return (
@@ -48,9 +69,10 @@ const SignInPage = () => {
             <div>
                 <form className="flex flex-col gap-4.5" onSubmit={handleSubmit}>
                     <Field
-                        placeholder="Work email"
+                        placeholder="Username or work email"
                         value={email}
-                        type="email"
+                        type="text"
+                        autoComplete="username"
                         onChange={(e) => setEmail(e.target.value)}
                         required
                     />
@@ -68,33 +90,19 @@ const SignInPage = () => {
                         className="w-full !h-12 !rounded-xl"
                         isBlue
                         type="submit"
+                        disabled={submitting}
                     >
-                        Sign in
+                        {submitting ? "Signing in…" : "Sign in"}
                     </Button>
                 </form>
-                <div className="mt-5 surface-panel px-4 py-3 text-label-sm text-sub-600">
-                    <p className="mb-1.5 font-medium text-strong-950">
-                        Demo workspaces
-                    </p>
-                    <div className="space-y-1 tabular-nums">
-                        <p>admin@coair.ai — Super Admin</p>
-                        <p>ada@acmebuilders.com — Company admin</p>
-                        <p>elena@betalabs.io — Demo company admin</p>
-                        <p>ben.carter@acmebuilders.com — Member</p>
-                    </div>
-                    <p className="mt-2 text-label-xs">
-                        Any non-empty password works. Approved access requests
-                        sign in with the same email, then choose a package.
-                    </p>
-                </div>
-                <div className="mt-5 text-center">
+                <p className="mt-5 text-center">
                     <Link
                         className="text-label-sm text-blue-500 transition-colors hover:text-blue-700"
                         href="/auth/forgot-password"
                     >
                         Forgot password?
                     </Link>
-                </div>
+                </p>
             </div>
         </LayoutLogin>
     );

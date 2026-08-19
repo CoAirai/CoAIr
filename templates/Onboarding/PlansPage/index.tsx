@@ -1,16 +1,28 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "@/components/Image";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { redirectToSignIn } from "@/lib/auth/portalNav";
+import type { Plan } from "@/lib/admin/types";
+import { listPackages } from "@/lib/coair/commerce";
 
 const PlansPage = () => {
     const router = useRouter();
     const { session, signOut } = useAuth();
     const { plans, companies } = useAdminData();
+    const [livePlans, setLivePlans] = useState<Plan[]>([]);
+    const live = session?.source === "live";
     const company = companies.find((entry) => entry.id === session?.companyId);
-    const selectable = plans.filter((plan) => plan.id !== "custom");
+    const catalog = live ? livePlans : plans;
+    const selectable = catalog.filter((plan) => plan.id !== "custom");
+
+    useEffect(() => {
+        if (!live || !session?.accessToken) return;
+        void listPackages(session.accessToken).then(setLivePlans);
+    }, [live, session?.accessToken]);
 
     return (
         <div className="min-h-screen bg-weak-50 px-6 py-10">
@@ -28,7 +40,7 @@ const PlansPage = () => {
                         className="text-label-sm text-sub-600 hover:text-strong-950"
                         onClick={() => {
                             signOut();
-                            router.replace("/auth/sign-in");
+                            redirectToSignIn(router);
                         }}
                     >
                         Sign out
@@ -41,7 +53,7 @@ const PlansPage = () => {
                     Choose a COAir package
                 </h1>
                 <p className="mt-2 max-w-2xl text-label-sm text-sub-600">
-                    Super Admin approved {company?.name ?? "your company"}.
+                    Super Admin approved {company?.name ?? session?.companyName ?? "your company"}.
                     Select a package, then complete dummy payment. Stripe comes
                     later.
                 </p>

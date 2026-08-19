@@ -15,15 +15,19 @@ export default function RequireCheckoutComplete({
     const { companies } = useAdminData();
     const router = useRouter();
     const company = companies.find((entry) => entry.id === session?.companyId);
+    const needsCheckout =
+        session?.source === "live"
+            ? Boolean(session.needsCheckout)
+            : Boolean(company?.needsCheckout);
 
     useEffect(() => {
         if (!ready || !session?.companyId) return;
-        if (company?.needsCheckout) {
+        if (needsCheckout) {
             router.replace("/onboarding/plans");
         }
-    }, [ready, session, company, router]);
+    }, [ready, session, needsCheckout, router]);
 
-    if (session?.companyId && company?.needsCheckout) {
+    if (session?.companyId && needsCheckout) {
         return <WorkspaceHubSkeleton />;
     }
 

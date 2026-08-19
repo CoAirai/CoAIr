@@ -5,8 +5,13 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { getPlanById } from "@/lib/admin/plans";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
+import { planForCompany } from "@/lib/admin/plans";
+import { companyForSession } from "@/lib/workspace/companyForSession";
 import { buildChronologyReport } from "@/lib/chronology/generate";
+import type { ChronologyReport } from "@/lib/chronology/types";
+import { mapChronologyJob } from "@/lib/coair/mapChronology";
+import { generateChronology, listReports } from "@/lib/coair/reports";
 import { getModuleGate } from "@/lib/workspace/moduleAccess";
 import { ownedByUser } from "@/lib/workspace/ownedByUser";
 import { useChat } from "@/context/ChatContext";
@@ -30,28 +35,64 @@ const ChronologyHomePage = () => {
         addChronologyReport,
     } = useAdminData();
     const { activeWorkspaceUserId } = useChat();
-    const company = companies.find((entry) => entry.id === session?.companyId);
-    const plan = company ? getPlanById(company.planId, plans) : null;
+    const live = useLiveWorkspace();
+    const company = companyForSession(session, companies);
+    const plan = planForCompany(company, plans);
     const gate =
         company && plan ? getModuleGate(plan, company, "chronology") : null;
     const ownerUserId = activeWorkspaceUserId ?? session?.userId ?? undefined;
-    const reports = company
+    const mockReports = company
         ? ownedByUser(
               companyWorkspaces[company.id]?.chronologyReports ?? [],
               ownerUserId
           )
         : [];
+    const [liveReports, setLiveReports] = useState<ChronologyReport[]>([]);
+    const reports = live.enabled ? liveReports : mockReports;
 
     const [topic, setTopic] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [parties, setParties] = useState("");
     const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
 
     const documents = useMemo(
-        () => companyWorkspaces[company?.id ?? ""]?.documents ?? [],
-        [companyWorkspaces, company?.id]
+        () =>
+            live.enabled
+                ? live.documents
+                : (companyWorkspaces[company?.id ?? ""]?.documents ?? []),
+        [company?.id, companyWorkspaces, live.documents, live.enabled]
     );
+
+    useEffect(() => {
+        if (!live.enabled || !session?.accessToken || !session.projectId) {
+            setLiveReports([]);
+            return;
+        }
+        let cancelled = false;
+        void listReports(session.accessToken, session.projectId, "chronology")
+            .then((payload) => {
+                if (cancelled) return;
+                setLiveReports(
+                    (payload.reports ?? []).map((job) =>
+                        mapChronologyJob(job, session.companyId ?? "live")
+                    )
+                );
+            })
+            .catch((err) => {
+                if (!cancelled) {
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : "Unable to load chronology reports"
+                    );
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [live.enabled, session?.accessToken, session?.companyId, session?.projectId]);
 
     useEffect(() => {
         if (gate?.state === "locked") {
@@ -63,10 +104,43 @@ const ChronologyHomePage = () => {
         return <ModulePortalSkeleton />;
     }
 
-    const generate = (event: FormEvent) => {
+    const generate = async (event: FormEvent) => {
         event.preventDefault();
         if (!topic.trim()) {
             setError("Describe the issue to investigate.");
+            return;
+        }
+        if (live.enabled) {
+            if (!session?.accessToken || !session.projectId) {
+                setError("Select a live project first.");
+                return;
+            }
+            setSubmitting(true);
+            setError("");
+            try {
+                const job = await generateChronology(
+                    session.accessToken,
+                    session.projectId,
+                    {
+                        topic: topic.trim(),
+                        date_from: startDate,
+                        date_to: endDate,
+                        parties: parties
+                            .split(",")
+                            .map((part) => part.trim())
+                            .filter(Boolean),
+                    }
+                );
+                router.push(`/workspace/chronology/${job.job_id}`);
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : "Unable to start chronology"
+                );
+            } finally {
+                setSubmitting(false);
+            }
             return;
         }
         const nextIndex =
@@ -181,9 +255,12 @@ const ChronologyHomePage = () => {
                             </button>
                             <button
                                 type="submit"
-                                className="h-11 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
+                                disabled={submitting}
+                                className="h-11 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-60"
                             >
-                                Generate chronology →
+                                {submitting
+                                    ? "Starting…"
+                                    : "Generate chronology →"}
                             </button>
                         </div>
                     </div>

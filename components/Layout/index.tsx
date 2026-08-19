@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
+import ImpersonationBanner from "@/components/Auth/ImpersonationBanner";
+import MaintenanceBanner from "@/components/Auth/MaintenanceBanner";
 import { useChat } from "@/context/ChatContext";
 
 type Props = {
@@ -29,6 +31,8 @@ const Layout = ({ children, onClickNew }: Props) => {
                 }}
             />
             <div className="bg-weak-50/40 pt-9.5 pb-5 max-2xl:pt-5 max-md:pt-3 max-md:pb-4">
+                <MaintenanceBanner />
+                <ImpersonationBanner />
                 <Header onOpenSidebar={() => setVisibleSidebar(true)} />
                 {children}
             </div>

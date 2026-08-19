@@ -31,8 +31,14 @@ const GROUPS: NavGroup[] = [
         label: "Tenants",
         icon: "team",
         items: [
+            {
+                href: "/admin/onboarding",
+                label: "Onboarding",
+                icon: "document-check",
+            },
             { href: "/admin/companies", label: "Companies", icon: "folder" },
             { href: "/admin/users", label: "Users", icon: "profile" },
+            { href: "/admin/roles", label: "Roles & Rights", icon: "check" },
         ],
     },
     {

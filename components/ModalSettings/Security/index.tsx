@@ -7,7 +7,9 @@ type Props = {
     changePassword?: (
         current: string,
         next: string
-    ) => { ok: boolean; error?: string };
+    ) =>
+        | { ok: boolean; error?: string }
+        | Promise<{ ok: boolean; error?: string }>;
 };
 
 const Security = ({ changePassword }: Props) => {
@@ -18,7 +20,7 @@ const Security = ({ changePassword }: Props) => {
     const [success, setSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const onSubmitPassword = (event: FormEvent<HTMLFormElement>) => {
+    const onSubmitPassword = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!changePassword) return;
 
@@ -28,7 +30,9 @@ const Security = ({ changePassword }: Props) => {
             return;
         }
 
-        const result = changePassword(currentPassword, newPassword);
+        const result = await Promise.resolve(
+            changePassword(currentPassword, newPassword)
+        );
         if (!result.ok) {
             setError(result.error ?? "Unable to change password");
             setSuccess(null);

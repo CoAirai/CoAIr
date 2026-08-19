@@ -67,6 +67,31 @@ describe("resolveLogin", () => {
 });
 
 describe("homePathForSession", () => {
+    it("sends live API sessions to the connected workspace", () => {
+        const session = {
+            email: "acme-admin",
+            name: "Company SuperAdmin",
+            role: "company_admin" as const,
+            companyId: "org-live",
+            userId: "acme-admin",
+            source: "live" as const,
+        };
+        expect(homePathForSession(session)).toBe("/workspace");
+    });
+
+    it("sends live owners who still need a package to checkout", () => {
+        const session = {
+            email: "maya@northspan.example",
+            name: "Maya Chen",
+            role: "company_admin" as const,
+            companyId: "org-new",
+            userId: "maya@northspan.example",
+            source: "live" as const,
+            needsCheckout: true,
+        };
+        expect(homePathForSession(session)).toBe("/onboarding/plans");
+    });
+
     it("sends unpaid approved owners to package checkout", () => {
         const session = {
             email: "maya@northspan.example",

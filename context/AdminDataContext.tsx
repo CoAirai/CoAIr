@@ -47,6 +47,7 @@ import {
     type AccessRequest,
 } from "@/lib/admin/accessRequests";
 import { SEED_ACCESS_REQUESTS } from "@/lib/admin/accessRequestSeed";
+import { SEED_AUDIT } from "@/lib/admin/auditSeed";
 import { USER_TOKEN_STORY } from "@/lib/company/seed";
 import { equalizeShares } from "@/lib/company/tokenMath";
 import type { CompanyActivityItem } from "@/lib/company/types";
@@ -66,6 +67,7 @@ import {
     retryInvoiceStatus,
 } from "@/lib/admin/wave2Helpers";
 import type { Invoice, InvoiceStatus, TopUpRequest, TopUpStatus } from "@/lib/admin/billingTypes";
+import type { RightKey } from "@/lib/admin/rolesStub";
 import type {
     AuditEntry,
     Company,
@@ -229,6 +231,10 @@ type AdminDataContextValue = {
     }) => void;
     resendInvite: (userId: string) => { ok: boolean; error?: string };
     setUserRole: (userId: string, role: UserRole) => void;
+    setUserRights: (
+        userId: string,
+        rights: Partial<Record<RightKey, boolean>>
+    ) => void;
     impersonateUser: (userId: string) => void;
     stopImpersonation: () => void;
     forceLogoutUser: (userId: string) => void;
@@ -444,7 +450,9 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
         SEED_ACCESS_REQUESTS.map((request) => ({ ...request }))
     );
     const [accessRequestsReady, setAccessRequestsReady] = useState(false);
-    const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+    const [auditLog, setAuditLog] = useState<AuditEntry[]>(() =>
+        SEED_AUDIT.map((entry) => ({ ...entry }))
+    );
     const [impersonatingUserId, setImpersonatingUserId] = useState<
         string | null
     >(null);
@@ -1623,6 +1631,28 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
         [users, pushAudit]
     );
 
+    const setUserRights = useCallback(
+        (userId: string, rights: Partial<Record<RightKey, boolean>>) => {
+            const target = users.find((u) => u.id === userId);
+            if (!target) return;
+            setUsers((prev) =>
+                prev.map((entry) =>
+                    entry.id === userId
+                        ? { ...entry, rights: { ...entry.rights, ...rights } }
+                        : entry
+                )
+            );
+            pushAudit({
+                action: "user.role_change",
+                targetType: "user",
+                targetId: userId,
+                targetLabel: target.email,
+                detail: `Rights updated for ${target.email}`,
+            });
+        },
+        [users, pushAudit]
+    );
+
     const impersonateUser = useCallback(
         (userId: string) => {
             const target = users.find((u) => u.id === userId);
@@ -2196,6 +2226,7 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
             createSupportTicket,
             resendInvite,
             setUserRole,
+            setUserRights,
             impersonateUser,
             stopImpersonation,
             forceLogoutUser,
@@ -2281,6 +2312,7 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
             createSupportTicket,
             resendInvite,
             setUserRole,
+            setUserRights,
             impersonateUser,
             stopImpersonation,
             forceLogoutUser,

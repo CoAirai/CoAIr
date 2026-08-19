@@ -1,50 +1,103 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { getPlanById } from "@/lib/admin/plans";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
+import { planForCompany } from "@/lib/admin/plans";
+import { companyForSession } from "@/lib/workspace/companyForSession";
 import { getForensicTool } from "@/lib/forensic/nav";
 import { getModuleGate } from "@/lib/workspace/moduleAccess";
 import { ownedByUser } from "@/lib/workspace/ownedByUser";
 import { useChat } from "@/context/ChatContext";
 import ForensicShell from "./ForensicShell";
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
+import {
+    createForensicRun,
+    defaultForensicRunParameters,
+    listForensicRuns,
+    listForensicWorkspaces,
+    type CoairForensicRun,
+    type CoairForensicWorkspace,
+} from "@/lib/coair/forensic";
+import type { ForensicProgrammeWorkspace } from "@/lib/forensic/types";
 
 type Props = {
     toolId: string;
 };
+
+const FORENSIC_WORKSPACE_KEY = "coair.forensic.activeWorkspace";
+
+function mapWorkspace(
+    row: CoairForensicWorkspace,
+    companyId: string
+): ForensicProgrammeWorkspace {
+    return {
+        id: row.workspace_id,
+        companyId,
+        name: row.name,
+        programmeIds: row.programme_ids ?? [],
+        createdAt: row.created_at || new Date().toISOString(),
+    };
+}
+
+function summarizeRun(run: CoairForensicRun | null) {
+    if (!run) return "No live run yet.";
+    if (run.status && !["ready", "complete", "completed"].includes(run.status)) {
+        return `Status: ${run.status}${run.error ? ` — ${run.error}` : ""}`;
+    }
+    const result = run.result;
+    if (!result) return "Run finished with no summary.";
+    if (typeof result.summary === "string") return result.summary;
+    if (typeof result.narrative === "string") return result.narrative;
+    if (typeof result.text === "string") return result.text;
+    if (Array.isArray(result.findings)) return result.findings.join(" ");
+    return JSON.stringify(result).slice(0, 1200);
+}
 
 const ForensicToolPage = ({ toolId }: Props) => {
     const router = useRouter();
     const { session } = useAuth();
     const { companies, plans, companyWorkspaces, setActiveForensicWorkspace } =
         useAdminData();
+    const live = useLiveWorkspace();
     const tool = getForensicTool(toolId);
     const { activeWorkspaceUserId } = useChat();
-    const company = companies.find((entry) => entry.id === session?.companyId);
-    const plan = company ? getPlanById(company.planId, plans) : null;
+    const company = companyForSession(session, companies);
+    const plan = planForCompany(company, plans);
     const gate =
         company && plan ? getModuleGate(plan, company, "forensic") : null;
     const workspaceState = company
         ? companyWorkspaces[company.id]
         : undefined;
-    const programmeWorkspaces = ownedByUser(
+    const mockWorkspaces = ownedByUser(
         workspaceState?.forensicProgrammeWorkspaces ?? [],
         activeWorkspaceUserId ?? session?.userId
     );
     const xerFiles = workspaceState?.forensicXerFiles ?? [];
+    const [liveWorkspaces, setLiveWorkspaces] = useState<
+        ForensicProgrammeWorkspace[]
+    >([]);
+    const [liveActiveId, setLiveActiveId] = useState("");
+    const [run, setRun] = useState<CoairForensicRun | null>(null);
+    const [runError, setRunError] = useState("");
+    const [running, setRunning] = useState(false);
+
+    const programmeWorkspaces = live.enabled ? liveWorkspaces : mockWorkspaces;
     const activeWorkspace =
-        programmeWorkspaces.find(
-            (entry) => entry.id === workspaceState?.activeForensicWorkspaceId
+        programmeWorkspaces.find((entry) =>
+            live.enabled
+                ? entry.id === liveActiveId
+                : entry.id === workspaceState?.activeForensicWorkspaceId
         ) ?? null;
     const activeProgrammes = activeWorkspace
         ? xerFiles.filter((file) =>
               activeWorkspace.programmeIds.includes(file.id)
           )
         : [];
+    const canLiveRun = Boolean(defaultForensicRunParameters(toolId));
 
     useEffect(() => {
         if (gate?.state === "locked") {
@@ -54,6 +107,100 @@ const ForensicToolPage = ({ toolId }: Props) => {
             router.replace("/workspace/forensic");
         }
     }, [gate, router, tool]);
+
+    useEffect(() => {
+        if (!live.enabled || !session?.accessToken || !session.projectId) {
+            setLiveWorkspaces([]);
+            return;
+        }
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const companyId = session.companyId ?? "live";
+        let cancelled = false;
+        void listForensicWorkspaces(token, projectId)
+            .then((payload) => {
+                if (cancelled) return;
+                const mapped = (payload.workspaces ?? []).map((row) =>
+                    mapWorkspace(row, companyId)
+                );
+                setLiveWorkspaces(mapped);
+                const stored =
+                    window.sessionStorage.getItem(FORENSIC_WORKSPACE_KEY) ?? "";
+                setLiveActiveId(
+                    mapped.some((entry) => entry.id === stored)
+                        ? stored
+                        : mapped[0]?.id ?? ""
+                );
+            })
+            .catch((err) => {
+                if (!cancelled) {
+                    setRunError(
+                        err instanceof Error
+                            ? err.message
+                            : "Unable to load workspaces"
+                    );
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [live.enabled, session?.accessToken, session?.companyId, session?.projectId]);
+
+    useEffect(() => {
+        if (
+            !live.enabled ||
+            !session?.accessToken ||
+            !session.projectId ||
+            !liveActiveId ||
+            !tool
+        ) {
+            setRun(null);
+            return;
+        }
+        let cancelled = false;
+        void listForensicRuns(session.accessToken, session.projectId, liveActiveId)
+            .then((payload) => {
+                if (cancelled) return;
+                const latest =
+                    (payload.runs ?? []).find(
+                        (item) => item.module_slug === tool.id
+                    ) ?? null;
+                setRun(latest);
+            })
+            .catch(() => {
+                if (!cancelled) setRun(null);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        live.enabled,
+        liveActiveId,
+        session?.accessToken,
+        session?.projectId,
+        tool,
+    ]);
+
+    const runLive = async () => {
+        if (!session?.accessToken || !session.projectId || !liveActiveId || !tool) {
+            return;
+        }
+        setRunning(true);
+        setRunError("");
+        try {
+            const created = await createForensicRun(
+                session.accessToken,
+                session.projectId,
+                liveActiveId,
+                tool.id
+            );
+            setRun(created);
+        } catch (err) {
+            setRunError(err instanceof Error ? err.message : "Run failed");
+        } finally {
+            setRunning(false);
+        }
+    };
 
     if (!company || !plan || !gate || gate.state === "locked" || !tool) {
         return <ModulePortalSkeleton />;
@@ -82,12 +229,21 @@ const ForensicToolPage = ({ toolId }: Props) => {
                             <select
                                 className="h-11 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none"
                                 value={activeWorkspace?.id ?? ""}
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                    const next = event.target.value;
+                                    if (live.enabled) {
+                                        setLiveActiveId(next);
+                                        window.sessionStorage.setItem(
+                                            FORENSIC_WORKSPACE_KEY,
+                                            next
+                                        );
+                                        return;
+                                    }
                                     setActiveForensicWorkspace(
                                         company.id,
-                                        event.target.value || null
-                                    )
-                                }
+                                        next || null
+                                    );
+                                }}
                             >
                                 <option value="">No workspace selected</option>
                                 {programmeWorkspaces.map((entry) => (
@@ -125,34 +281,56 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                     {activeWorkspace.name}
                                 </p>
                                 <p className="mt-2 text-label-xs text-sub-600">
-                                    {activeProgrammes.length} XER programme
-                                    {activeProgrammes.length === 1 ? "" : "s"}
+                                    {live.enabled
+                                        ? `${activeWorkspace.programmeIds.length} programme(s)`
+                                        : `${activeProgrammes.length} XER programme${
+                                              activeProgrammes.length === 1
+                                                  ? ""
+                                                  : "s"
+                                          }`}
                                 </p>
                             </section>
                             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:col-span-2">
                                 <h2 className="text-label-xs uppercase tracking-[0.16em] text-soft-400">
-                                    Mock finding
+                                    {live.enabled ? "Live engine" : "Mock finding"}
                                 </h2>
                                 <p className="mt-2 text-label-sm leading-6 text-sub-600">
-                                    {tool.label} ran against{" "}
-                                    {activeProgrammes
-                                        .map((file) => file.name)
-                                        .join(" · ") || "the selected set"}
-                                    . This is a deterministic mock result for
-                                    product review — live engine output comes
-                                    later.
+                                    {live.enabled
+                                        ? summarizeRun(run)
+                                        : `${tool.label} ran against ${
+                                              activeProgrammes
+                                                  .map((file) => file.name)
+                                                  .join(" · ") || "the selected set"
+                                          }. This is a deterministic mock result for product review — live engine output comes later.`}
                                 </p>
+                                {runError ? (
+                                    <p className="mt-3 text-label-sm text-red-500">
+                                        {runError}
+                                    </p>
+                                ) : null}
+                                {live.enabled ? (
+                                    <button
+                                        type="button"
+                                        disabled={!canLiveRun || running}
+                                        onClick={() => void runLive()}
+                                        className="mt-4 h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 disabled:cursor-not-allowed disabled:bg-soft-200 disabled:text-soft-400"
+                                    >
+                                        {running
+                                            ? "Running…"
+                                            : canLiveRun
+                                              ? `Run ${tool.label}`
+                                              : "Needs extra inputs"}
+                                    </button>
+                                ) : null}
                             </section>
                             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:col-span-3">
                                 <h2 className="text-label-md text-strong-950">
                                     Result summary
                                 </h2>
                                 <p className="mt-3 text-label-sm leading-7 text-sub-600">
-                                    The selected programmes support a readable{" "}
-                                    {tool.label.toLowerCase()} position. Open
-                                    Intake to swap the XER set, or keep this
-                                    workspace and move through the native COAir
-                                    analyses in the left nav.
+                                    {live.enabled
+                                        ? "Open Intake to swap the XER set, then run this analysis against the live forensic engine."
+                                        : `The selected programmes support a readable ${tool.label.toLowerCase()} position. Open Intake to swap the XER set, or keep this workspace and move through the native COAir analyses in the left nav.`}
                                 </p>
                             </section>
                         </div>

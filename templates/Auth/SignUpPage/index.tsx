@@ -7,6 +7,19 @@ import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAdminData } from "@/context/AdminDataContext";
+import { createAccessRequest as createLiveAccessRequest } from "@/lib/coair/commerce";
+
+const ACCESS_ERRORS: Record<string, string> = {
+    pending_request_exists: "A pending request already exists for this email",
+    invalid_email: "Valid work email required",
+    full_name_required: "Full name required",
+    company_name_required: "Company name required",
+    email_already_registered: "This email already has a COAir account",
+};
+
+function humanAccessError(code: string) {
+    return ACCESS_ERRORS[code] ?? code.replace(/_/g, " ");
+}
 
 const SignUpPage = () => {
     const router = useRouter();
@@ -17,8 +30,25 @@ const SignUpPage = () => {
     const [error, setError] = useState("");
     const [submitted, setSubmitted] = useState(false);
 
-    const handleSubmit = (event: FormEvent) => {
+    const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
+        const live = await createLiveAccessRequest({
+            fullName,
+            email,
+            companyName: company,
+        });
+        if (live.ok) {
+            setError("");
+            setSubmitted(true);
+            window.setTimeout(() => {
+                router.push("/auth/sign-in");
+            }, 1600);
+            return;
+        }
+        if (live.kind === "invalid") {
+            setError(humanAccessError(live.error));
+            return;
+        }
         const result = requestCompanyAccess({
             fullName,
             email,

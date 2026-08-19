@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
+import { isApiUnreachable } from "@/lib/coair/client";
+import { RESET_EMAIL_KEY, RESET_TOKEN_KEY } from "@/lib/coair/liveLogin";
+import { forgotPassword } from "@/lib/coair/ops";
 import { dispatchEmail } from "@/lib/email/dispatch";
-
-const RESET_EMAIL_KEY = "coair.resetEmail";
 
 const ForgotPasswordPage = () => {
     const router = useRouter();
@@ -18,11 +19,22 @@ const ForgotPasswordPage = () => {
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
         setSending(true);
-        sessionStorage.setItem(RESET_EMAIL_KEY, email.trim());
-        await dispatchEmail({
-            kind: "password_reset",
-            to: email.trim(),
-        });
+        const username = email.trim();
+        sessionStorage.setItem(RESET_EMAIL_KEY, username);
+        sessionStorage.removeItem(RESET_TOKEN_KEY);
+        try {
+            const result = await forgotPassword(username);
+            if (result.reset_token) {
+                sessionStorage.setItem(RESET_TOKEN_KEY, result.reset_token);
+            }
+        } catch (error) {
+            if (isApiUnreachable(error)) {
+                await dispatchEmail({
+                    kind: "password_reset",
+                    to: username,
+                });
+            }
+        }
         router.push("/auth/check-email");
     };
 
@@ -36,9 +48,10 @@ const ForgotPasswordPage = () => {
             <div>
                 <form className="flex flex-col gap-4.5" onSubmit={handleSubmit}>
                     <Field
-                        placeholder="Work email"
+                        placeholder="Username or work email"
                         value={email}
-                        type="email"
+                        type="text"
+                        autoComplete="username"
                         onChange={(e) => setEmail(e.target.value)}
                         required
                     />

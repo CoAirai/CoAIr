@@ -4,12 +4,15 @@ import {
     createContext,
     useCallback,
     useContext,
+    useEffect,
     useMemo,
     useState,
     type ReactNode,
 } from "react";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { mapLiveCitations } from "@/lib/coair/mapCitations";
+import { createConversation, sendLiveChat } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
 import { buildMockAnswer, buildMockReply } from "@/lib/chat/mockReply";
 import {
@@ -84,6 +87,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
     const [activeKbId, setActiveKbId] = useState("assistant");
     const [openCitation, setOpenCitation] = useState<Citation | null>(null);
+    const [liveConversationId, setLiveConversationId] = useState<string | null>(
+        null
+    );
+
+    useEffect(() => {
+        setLiveConversationId(null);
+    }, [session?.userId, session?.projectId]);
 
     const activeWorkspaceUserId = useMemo(() => {
         if (!session?.userId || !session.companyId) return null;
@@ -183,49 +193,90 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             const trimmed = text.trim();
             if (!trimmed || !session?.userId || !activeWorkspaceUserId) return;
 
-            const consumed = consumeUserTokens(activeWorkspaceUserId, 1);
-            if (!consumed.ok) {
-                setSendError(consumed.error ?? "No tokens remaining");
-                return;
+            const live = session.source === "live" && Boolean(session.accessToken);
+
+            if (!live) {
+                const consumed = consumeUserTokens(activeWorkspaceUserId, 1);
+                if (!consumed.ok) {
+                    setSendError(consumed.error ?? "No tokens remaining");
+                    return;
+                }
             }
 
             setSendError(null);
             setSelectedQueryId(null);
             setIsReplying(true);
 
-            await new Promise((resolve) => setTimeout(resolve, 600));
+            try {
+                let assistantText: string;
+                let citations: Citation[] | undefined;
 
-            const company = companies.find(
-                (entry) => entry.id === session.companyId
-            );
-            const docs =
-                (company
-                    ? companyWorkspaces[company.id]?.documents
-                    : companyDocs) ?? [];
+                if (live) {
+                    if (!session.projectId) {
+                        throw new Error(
+                            "This account has no project yet. Seed the sandbox, then sign in again."
+                        );
+                    }
+                    let conversationId = liveConversationId;
+                    if (!conversationId) {
+                        const created = await createConversation(
+                            session.accessToken!,
+                            session.projectId,
+                            trimmed.slice(0, 80)
+                        );
+                        conversationId = created.conversation_id;
+                        setLiveConversationId(conversationId);
+                    }
+                    const response = await sendLiveChat({
+                        token: session.accessToken!,
+                        projectId: session.projectId,
+                        conversationId,
+                        message: trimmed,
+                        requestId: makeId("req"),
+                    });
+                    assistantText = response.assistant_text;
+                    citations = mapLiveCitations(response.citations);
+                } else {
+                    await new Promise((resolve) => setTimeout(resolve, 600));
+                    const company = companies.find(
+                        (entry) => entry.id === session.companyId
+                    );
+                    const docs =
+                        (company
+                            ? companyWorkspaces[company.id]?.documents
+                            : companyDocs) ?? [];
+                    const answer = buildMockAnswer(trimmed, docs);
+                    assistantText = answer.content;
+                    citations = answer.citations;
+                }
 
-            setThreadsByUserId((prevThreads) => {
-                let nextRecents = recentsByUserId;
-                const answer = buildMockAnswer(trimmed, docs);
-                const next = appendChatTurn({
-                    threadsByUserId: prevThreads,
-                    recentsByUserId,
-                    threadUserId: activeWorkspaceUserId,
-                    authorUserId: session.userId!,
-                    authorName: session.name,
-                    userText: trimmed,
-                    assistantText: answer.content,
-                    citations: answer.citations,
-                    now: new Date().toISOString(),
-                    userMessageId: makeId("u"),
-                    assistantMessageId: makeId("a"),
-                    queryId: makeId("q"),
+                setThreadsByUserId((prevThreads) => {
+                    const next = appendChatTurn({
+                        threadsByUserId: prevThreads,
+                        recentsByUserId,
+                        threadUserId: activeWorkspaceUserId,
+                        authorUserId: session.userId!,
+                        authorName: session.name,
+                        userText: trimmed,
+                        assistantText,
+                        citations,
+                        now: new Date().toISOString(),
+                        userMessageId: makeId("u"),
+                        assistantMessageId: makeId("a"),
+                        queryId: makeId("q"),
+                    });
+                    setRecentsByUserId(next.recentsByUserId);
+                    return next.threadsByUserId;
                 });
-                nextRecents = next.recentsByUserId;
-                setRecentsByUserId(nextRecents);
-                return next.threadsByUserId;
-            });
-
-            setIsReplying(false);
+            } catch (error) {
+                setSendError(
+                    error instanceof Error
+                        ? error.message
+                        : "Chat request failed"
+                );
+            } finally {
+                setIsReplying(false);
+            }
         },
         [
             activeWorkspaceUserId,
@@ -233,6 +284,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             companyDocs,
             companyWorkspaces,
             consumeUserTokens,
+            liveConversationId,
             recentsByUserId,
             session,
         ]

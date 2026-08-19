@@ -11,9 +11,45 @@ const KINDS = new Set<EmailKind>([
     "password_reset",
 ]);
 
-export async function POST(request: Request) {
-    const body = (await request.json().catch(() => null)) as EmailPayload | null;
+type RelayPayload = EmailPayload & {
+    company_name?: string;
+    temporary_password?: string;
+    reset_token?: string;
+    is_resend?: boolean;
+};
+
+function normalizePayload(body: RelayPayload | null): EmailPayload | null {
     if (!body || !KINDS.has(body.kind) || typeof body.to !== "string") {
+        return null;
+    }
+    return {
+        kind: body.kind,
+        to: body.to,
+        name: body.name,
+        companyName: body.companyName ?? body.company_name,
+        role: body.role,
+        temporaryPassword: body.temporaryPassword ?? body.temporary_password,
+        resetToken: body.resetToken ?? body.reset_token,
+        isResend: body.isResend ?? body.is_resend,
+    };
+}
+
+export async function POST(request: Request) {
+    const relaySecret = process.env.COAIR_EMAIL_RELAY_SECRET?.trim();
+    if (relaySecret) {
+        const provided = request.headers.get("x-coair-email-secret")?.trim();
+        if (provided !== relaySecret) {
+            return NextResponse.json(
+                { ok: false, mode: "live", error: "relay_unauthorized" },
+                { status: 401 }
+            );
+        }
+    }
+
+    const body = normalizePayload(
+        (await request.json().catch(() => null)) as RelayPayload | null
+    );
+    if (!body) {
         return NextResponse.json(
             { ok: false, mode: "dry-run", error: "Invalid email payload" },
             { status: 400 }

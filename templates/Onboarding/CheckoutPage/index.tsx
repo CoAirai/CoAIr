@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "@/components/Image";
@@ -9,16 +9,22 @@ import Field from "@/components/Field";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { getPlanById } from "@/lib/admin/plans";
-import type { PlanId } from "@/lib/admin/types";
+import type { Plan, PlanId } from "@/lib/admin/types";
 import { validateDummyPayment } from "@/lib/billing/checkout";
+import { apiErrorMessage, checkoutPlan, listPackages } from "@/lib/coair/commerce";
 
 const CheckoutPage = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { session } = useAuth();
+    const { session, updateSession } = useAuth();
     const { plans, completeCompanyCheckout } = useAdminData();
+    const [livePlans, setLivePlans] = useState<Plan[]>([]);
+    const live = session?.source === "live";
     const planId = (searchParams.get("plan") ?? "foundation") as PlanId;
-    const plan = useMemo(() => getPlanById(planId, plans), [planId, plans]);
+    const plan = useMemo(
+        () => getPlanById(planId, live ? livePlans : plans),
+        [planId, plans, live, livePlans]
+    );
     const [name, setName] = useState(session?.name ?? "");
     const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
     const [expiry, setExpiry] = useState("12/28");
@@ -26,7 +32,12 @@ const CheckoutPage = () => {
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
 
-    const onSubmit = (event: FormEvent) => {
+    useEffect(() => {
+        if (!live || !session?.accessToken) return;
+        void listPackages(session.accessToken).then(setLivePlans);
+    }, [live, session?.accessToken]);
+
+    const onSubmit = async (event: FormEvent) => {
         event.preventDefault();
         if (!session?.companyId || !plan) {
             setError("Missing company or plan");
@@ -43,6 +54,17 @@ const CheckoutPage = () => {
             return;
         }
         setBusy(true);
+        if (live && session.accessToken) {
+            try {
+                await checkoutPlan(session.accessToken, plan.id);
+                updateSession({ needsCheckout: false });
+                router.replace("/workspace");
+            } catch (err) {
+                setBusy(false);
+                setError(apiErrorMessage(err));
+            }
+            return;
+        }
         const result = completeCompanyCheckout(session.companyId, plan.id);
         if (!result.ok) {
             setBusy(false);

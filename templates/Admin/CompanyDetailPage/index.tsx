@@ -7,8 +7,14 @@ import { FormEvent, Fragment, useMemo, useState } from "react";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import ConfirmModal from "@/components/Admin/ConfirmModal";
+import RightsToggleCells from "@/components/Admin/RightsToggleCells";
 import { useAdminData } from "@/context/AdminDataContext";
 import { getPlanById } from "@/lib/admin/plans";
+import {
+    RIGHT_COLUMNS,
+    rightsFromFeatures,
+    type RightKey,
+} from "@/lib/admin/rolesStub";
 import { getStorageRemaining, getTokensRemaining } from "@/lib/admin/selectors";
 import type { ModuleId, PlanId, UserRole } from "@/lib/admin/types";
 import {
@@ -69,6 +75,7 @@ const CompanyDetailPage = ({ id }: Props) => {
         adjustTokens,
         setUserStatus,
         setUserRole,
+        setUserRights,
         impersonateUser,
         stopImpersonation,
         forceLogoutUser,
@@ -387,12 +394,20 @@ const CompanyDetailPage = ({ id }: Props) => {
                         </p>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-[960px] text-left">
+                        <table className="w-full min-w-[1280px] text-left">
                             <thead className="bg-weak-50 text-label-xs text-sub-600">
                                 <tr>
                                     <th className="px-5 py-3 font-medium">Name</th>
                                     <th className="px-5 py-3 font-medium">Email</th>
                                     <th className="px-5 py-3 font-medium">Role</th>
+                                    {RIGHT_COLUMNS.map((column) => (
+                                        <th
+                                            key={column.key}
+                                            className="px-5 py-3 text-center font-medium"
+                                        >
+                                            {column.label}
+                                        </th>
+                                    ))}
                                     <th className="px-5 py-3 font-medium">Status</th>
                                     <th className="px-5 py-3 font-medium">
                                         Last login
@@ -434,6 +449,23 @@ const CompanyDetailPage = ({ id }: Props) => {
                                                 ))}
                                             </select>
                                         </td>
+                                        <RightsToggleCells
+                                            rights={{
+                                                ...rightsFromFeatures(
+                                                    undefined,
+                                                    user.role
+                                                ),
+                                                ...user.rights,
+                                            }}
+                                            onToggle={(
+                                                key: RightKey,
+                                                enabled
+                                            ) =>
+                                                setUserRights(user.id, {
+                                                    [key]: enabled,
+                                                })
+                                            }
+                                        />
                                         <td className="px-5 py-4">
                                             <StatusBadge status={user.status} />
                                         </td>

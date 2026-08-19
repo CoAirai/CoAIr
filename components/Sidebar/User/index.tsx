@@ -6,6 +6,8 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import Image from "@/components/Image";
 import Icon from "@/components/Icon";
 import { useAuth } from "@/context/AuthContext";
+import { authHref } from "@/lib/auth/hosts";
+import { redirectToSignIn } from "@/lib/auth/portalNav";
 import { homePathForRole } from "@/lib/auth/resolveLogin";
 
 const itemClassName =
@@ -19,7 +21,7 @@ const User = () => {
         return (
             <Link
                 className="group flex items-center shrink-0 gap-2 mx-5 pt-3 px-3 pb-5 border-t border-stroke-soft-200"
-                href="/auth/sign-in"
+                href={authHref("/auth/sign-in")}
             >
                 <div className="">
                     <Image
@@ -83,7 +85,7 @@ const User = () => {
                     className={itemClassName}
                     onClick={() => {
                         signOut();
-                        router.replace("/auth/sign-in");
+                        redirectToSignIn(router);
                     }}
                 >
                     Sign out

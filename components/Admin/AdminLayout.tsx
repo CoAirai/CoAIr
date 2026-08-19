@@ -8,7 +8,11 @@ import Image from "@/components/Image";
 import ModalSettings from "@/components/ModalSettings";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { redirectToSignIn } from "@/lib/auth/portalNav";
+import AdminCommandBar from "./AdminCommandBar";
 import AdminNav from "./AdminNav";
+import ImpersonationBanner from "@/components/Auth/ImpersonationBanner";
+import MaintenanceBanner from "@/components/Auth/MaintenanceBanner";
 import PortalRouteGate from "@/components/Skeleton/PortalRouteGate";
 import { AdminContentSkeleton } from "@/components/Skeleton/portals";
 
@@ -21,7 +25,7 @@ const AdminLayout = ({ children }: Props) => {
     const [collapsed, setCollapsed] = useState(false);
     const [openSettings, setOpenSettings] = useState(false);
     const router = useRouter();
-    const { session, signOut } = useAuth();
+    const { session, signOut, changePassword: changeLivePassword } = useAuth();
     const {
         users,
         impersonatingUserId,
@@ -165,29 +169,38 @@ const AdminLayout = ({ children }: Props) => {
             </aside>
 
             <div className="flex h-full flex-col pt-9.5 pb-5 max-2xl:pt-5 max-md:pt-3 max-md:pb-4">
-                {maintenanceMode && (
-                    <div className="mb-3.5 flex shrink-0 items-center rounded-2xl border-b border-stroke-soft-200 bg-orange-500/10 px-4 py-2 text-label-sm text-strong-950">
-                        <span>
-                            Maintenance mode active — {maintenanceMessage}
-                        </span>
-                    </div>
+                {session?.source === "live" ? (
+                    <>
+                        <MaintenanceBanner />
+                        <ImpersonationBanner />
+                    </>
+                ) : (
+                    <>
+                        {maintenanceMode && (
+                            <div className="mb-3.5 flex shrink-0 items-center rounded-2xl border-b border-stroke-soft-200 bg-orange-500/10 px-4 py-2 text-label-sm text-strong-950">
+                                <span>
+                                    Maintenance mode active — {maintenanceMessage}
+                                </span>
+                            </div>
+                        )}
+                        {impersonating && (
+                            <div className="mb-3.5 flex shrink-0 items-center justify-between gap-3 rounded-2xl border-b border-stroke-soft-200 bg-away-lighter px-4 py-2 text-label-sm text-strong-950">
+                                <span>
+                                    Impersonating {impersonating.name} (
+                                    {impersonating.email})
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={stopImpersonation}
+                                    className="text-label-sm text-blue-500"
+                                >
+                                    Stop
+                                </button>
+                            </div>
+                        )}
+                    </>
                 )}
-                {impersonating && (
-                    <div className="mb-3.5 flex shrink-0 items-center justify-between gap-3 rounded-2xl border-b border-stroke-soft-200 bg-away-lighter px-4 py-2 text-label-sm text-strong-950">
-                        <span>
-                            Impersonating {impersonating.name} (
-                            {impersonating.email})
-                        </span>
-                        <button
-                            type="button"
-                            onClick={stopImpersonation}
-                            className="text-label-sm text-blue-500"
-                        >
-                            Stop
-                        </button>
-                    </div>
-                )}
-                <header className="mb-3.5 flex shrink-0 items-center gap-4 max-md:mb-3 max-md:gap-2">
+                <header className="relative z-20 mb-3.5 flex shrink-0 items-center gap-4 max-md:mb-3 max-md:gap-2">
                     <button
                         type="button"
                         className="mr-2 hidden size-10 items-center justify-center max-lg:flex max-md:mr-0"
@@ -199,9 +212,7 @@ const AdminLayout = ({ children }: Props) => {
                             name="burger"
                         />
                     </button>
-                    <div className="grow truncate text-label-xl max-md:text-label-md">
-                        COAir Super Admin
-                    </div>
+                    <AdminCommandBar />
                     <AvatarMenu
                         initials="SA"
                         name={session?.name ?? "Super Admin"}
@@ -209,7 +220,7 @@ const AdminLayout = ({ children }: Props) => {
                         onSettings={() => setOpenSettings(true)}
                         onSignOut={() => {
                             signOut();
-                            router.replace("/auth/sign-in");
+                            redirectToSignIn(router);
                         }}
                     />
                 </header>
@@ -233,7 +244,11 @@ const AdminLayout = ({ children }: Props) => {
             <ModalSettings
                 open={openSettings}
                 onClose={() => setOpenSettings(false)}
-                changePassword={changeAdminPassword}
+                changePassword={
+                    session?.source === "live"
+                        ? changeLivePassword
+                        : changeAdminPassword
+                }
             />
         </div>
     );
