@@ -1,16 +1,5 @@
 import type { NextConfig } from "next";
 
-const apiOrigin = process.env.COAIR_API_ORIGIN ?? "http://localhost:8000";
-
-const nextConfig: NextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/coair-api/:path*",
-        destination: `${apiOrigin}/api/:path*`,
-      },
-    ];
-  },
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;
