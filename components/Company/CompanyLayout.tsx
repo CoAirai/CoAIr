@@ -7,7 +7,7 @@ import Icon from "@/components/Icon";
 import Image from "@/components/Image";
 import ModalSettings from "@/components/ModalSettings";
 import { useAuth } from "@/context/AuthContext";
-import { redirectToSignIn } from "@/lib/auth/portalNav";
+import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import CompanyNav from "./CompanyNav";
 import ImpersonationBanner from "@/components/Auth/ImpersonationBanner";
@@ -196,7 +196,7 @@ const CompanyLayout = ({ children }: Props) => {
                         onSettings={() => setOpenSettings(true)}
                         onSignOut={async () => {
                             await signOut();
-                            redirectToSignIn(router);
+                            redirectToSignInAfterLogout(router);
                         }}
                     />
                 </header>

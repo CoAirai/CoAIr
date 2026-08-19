@@ -23,6 +23,7 @@ import {
     removeSharedItem,
     writeSharedItem,
 } from "@/lib/auth/sharedStorage";
+import { CoairApiError } from "@/lib/coair/client";
 import { tryLiveLogin, sessionFromLiveToken } from "@/lib/coair/liveLogin";
 import {
     authEmailFromUsername,
@@ -69,7 +70,7 @@ function persist(session: AuthSession | null) {
         return;
     }
     const raw = JSON.stringify(session);
-    writeSharedItem(AUTH_SESSION_KEY, raw, false);
+    writeSharedItem(AUTH_SESSION_KEY, raw, raw.length < 3500);
     if (session.accessToken) {
         writeSharedItem(ACCESS_TOKEN_KEY, session.accessToken, true);
     }
@@ -110,10 +111,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     persist(live);
                     setSession(live);
                 }
-            } catch {
-                persist(null);
-                if (!cancelled) {
-                    setSession(null);
+            } catch (error) {
+                const unauthorized =
+                    error instanceof CoairApiError && error.status === 401;
+                if (unauthorized) {
+                    persist(null);
+                    if (!cancelled) setSession(null);
+                    return;
+                }
+                const stored = readStoredSession();
+                if (!cancelled && stored) {
+                    setSession(stored);
                 }
             }
         }

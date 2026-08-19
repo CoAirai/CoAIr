@@ -8,7 +8,7 @@ import Image from "@/components/Image";
 import ModalSettings from "@/components/ModalSettings";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { redirectToSignIn } from "@/lib/auth/portalNav";
+import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import AdminCommandBar from "./AdminCommandBar";
 import AdminNav from "./AdminNav";
 import ImpersonationBanner from "@/components/Auth/ImpersonationBanner";
@@ -220,7 +220,7 @@ const AdminLayout = ({ children }: Props) => {
                         onSettings={() => setOpenSettings(true)}
                         onSignOut={async () => {
                             await signOut();
-                            redirectToSignIn(router);
+                            redirectToSignInAfterLogout(router);
                         }}
                     />
                 </header>

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "@/components/Image";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { redirectToSignIn } from "@/lib/auth/portalNav";
+import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import type { Plan } from "@/lib/admin/types";
 import { listPackages } from "@/lib/coair/commerce";
 
@@ -40,7 +40,7 @@ const PlansPage = () => {
                         className="text-label-sm text-sub-600 hover:text-strong-950"
                         onClick={async () => {
                             await signOut();
-                            redirectToSignIn(router);
+                            redirectToSignInAfterLogout(router);
                         }}
                     >
                         Sign out

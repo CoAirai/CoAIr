@@ -7,7 +7,7 @@ import Image from "@/components/Image";
 import Icon from "@/components/Icon";
 import { useAuth } from "@/context/AuthContext";
 import { authHref } from "@/lib/auth/hosts";
-import { redirectToSignIn } from "@/lib/auth/portalNav";
+import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { homePathForRole } from "@/lib/auth/resolveLogin";
 
 const itemClassName =
@@ -85,7 +85,7 @@ const User = () => {
                     className={itemClassName}
                     onClick={async () => {
                         await signOut();
-                        redirectToSignIn(router);
+                        redirectToSignInAfterLogout(router);
                     }}
                 >
                     Sign out

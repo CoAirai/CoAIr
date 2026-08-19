@@ -9,7 +9,7 @@ import Image from "@/components/Image";
 import AvatarMenu from "@/components/AvatarMenu";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { redirectToSignIn } from "@/lib/auth/portalNav";
+import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { useChat } from "@/context/ChatContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { chatTransition } from "@/lib/chat/motion";
@@ -156,7 +156,7 @@ const Header = ({ onOpenSidebar }: Props) => {
                         onSettings={() => setOpenSettings(true)}
                         onSignOut={async () => {
                             await signOut();
-                            redirectToSignIn(router);
+                            redirectToSignInAfterLogout(router);
                         }}
                     />
                 </div>

@@ -10,7 +10,7 @@ import PageEnter from "@/components/Motion/PageEnter";
 import UpgradePackageModal from "@/components/Workspace/UpgradePackageModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
-import { redirectToSignIn } from "@/lib/auth/portalNav";
+import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { companyForSession } from "@/lib/workspace/companyForSession";
 import { planForCompany } from "@/lib/admin/plans";
 import type { ModuleId } from "@/lib/admin/types";
@@ -121,7 +121,7 @@ const HubPage = () => {
                                         className={menuItemClass}
                                         onClick={async () => {
                                             await signOut();
-                                            redirectToSignIn(router);
+                                            redirectToSignInAfterLogout(router);
                                         }}
                                     >
                                         Sign out
