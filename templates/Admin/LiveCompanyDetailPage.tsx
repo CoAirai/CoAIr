@@ -244,7 +244,6 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
         setActionError(null);
         try {
             await deleteAdminUser(token, username);
-            setMessage(`Removed ${username}`);
             await Promise.all([load(), refreshAdmin()]);
         } catch (err) {
             setActionError(
