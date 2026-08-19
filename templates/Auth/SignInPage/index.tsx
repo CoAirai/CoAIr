@@ -16,7 +16,7 @@ const SignInPage = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const signedOut = searchParams.get("signedOut") === "1";
-    const { session, ready, signIn, signOut } = useAuth();
+    const { signIn, signOut } = useAuth();
     const { companies } = useAdminData();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -27,11 +27,6 @@ const SignInPage = () => {
         if (!signedOut) return;
         void signOut();
     }, [signedOut, signOut]);
-
-    useEffect(() => {
-        if (!ready || !session || signedOut) return;
-        portalNavigate(router, postLoginUrl(session, companies));
-    }, [ready, session, signedOut, router, companies]);
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();

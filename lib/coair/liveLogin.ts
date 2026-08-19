@@ -128,11 +128,51 @@ export async function tryLiveLogin(
                 email,
                 password,
             });
-            if (first.data.session?.access_token) {
+            if (first.error) {
+                let login: CoairLoginResponse | null = null;
+                try {
+                    login = await loginViaApi(trimmed, password);
+                } catch (error) {
+                    if (isApiUnreachable(error)) throw error;
+                    login = null;
+                }
+                if (login?.access_token) {
+                    await adoptSupabaseSession(login.access_token, login.refresh_token);
+                    return {
+                        ok: true,
+                        session: await sessionFromAccessToken(
+                            login.access_token,
+                            login.user
+                        ),
+                    };
+                }
+                if (login?.mfa_required && login.mfa_token) {
+                    return {
+                        ok: false,
+                        kind: "mfa",
+                        mfaToken: login.mfa_token,
+                        debugCode: login.debug_code,
+                        username: trimmed,
+                    };
+                }
                 return {
-                    ok: true,
-                    session: await sessionFromLiveToken(first.data.session.access_token),
+                    ok: false,
+                    kind: "invalid",
+                    error: "Invalid username or password",
                 };
+            }
+            if (first.data.session?.access_token) {
+                try {
+                    return {
+                        ok: true,
+                        session: await sessionFromLiveToken(
+                            first.data.session.access_token
+                        ),
+                    };
+                } catch (error) {
+                    await supabase.auth.signOut({ scope: "local" });
+                    throw error;
+                }
             }
         }
 

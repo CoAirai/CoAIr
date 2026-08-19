@@ -96,5 +96,14 @@ export async function coairFetch<T>(
 }
 
 export function isApiUnreachable(error: unknown): boolean {
-    return error instanceof CoairApiError && error.status === 0;
+    if (!(error instanceof CoairApiError)) return false;
+    if (error.status === 0) return true;
+    if (error.status === 502 || error.status === 503 || error.status === 504) {
+        return true;
+    }
+    const body = error.body.toLowerCase();
+    return (
+        body.includes("tunnel unavailable") ||
+        body.includes("tunnel website ahead")
+    );
 }

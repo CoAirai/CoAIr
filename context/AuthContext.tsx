@@ -17,6 +17,7 @@ import {
     resolveLogin,
 } from "@/lib/auth/resolveLogin";
 import {
+    ACCESS_TOKEN_KEY,
     clearSharedAuth,
     readSharedItem,
     removeSharedItem,
@@ -68,7 +69,10 @@ function persist(session: AuthSession | null) {
         return;
     }
     const raw = JSON.stringify(session);
-    writeSharedItem(AUTH_SESSION_KEY, raw);
+    writeSharedItem(AUTH_SESSION_KEY, raw, false);
+    if (session.accessToken) {
+        writeSharedItem(ACCESS_TOKEN_KEY, session.accessToken, true);
+    }
     sessionStorage.removeItem(AUTH_SESSION_KEY);
 }
 
@@ -99,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         let cancelled = false;
 
-        async function adoptToken(token: string, fallback: AuthSession | null) {
+        async function adoptToken(token: string) {
             try {
                 const live = await sessionFromLiveToken(token);
                 if (!cancelled) {
@@ -107,10 +111,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setSession(live);
                 }
             } catch {
-                if (!cancelled && fallback) {
-                    const kept = { ...fallback, accessToken: token };
-                    persist(kept);
-                    setSession(kept);
+                persist(null);
+                if (!cancelled) {
+                    setSession(null);
                 }
             }
         }
@@ -119,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setSession((prev) => {
                 const base = prev ?? readStoredSession();
                 if (!base) {
-                    void adoptToken(token, null);
+                    void adoptToken(token);
                     return prev;
                 }
                 const updated = { ...base, accessToken: token };
@@ -146,15 +149,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
-                const stored = readStoredSession();
-                if (sessionStorage.getItem("coair.signedOut")) {
+                if (
+                    sessionStorage.getItem("coair.signedOut") ||
+                    new URLSearchParams(window.location.search).get("signedOut") === "1"
+                ) {
                     persist(null);
+                    await getSupabaseBrowser()?.auth.signOut({ scope: "local" });
                     if (!cancelled) {
                         setSession(null);
                         setReady(true);
                     }
                     return;
                 }
+
+                const stored = readStoredSession();
                 if (stored && !cancelled) {
                     setSession(stored);
                     setReady(true);
@@ -162,11 +170,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 const supabase = getSupabaseBrowser();
                 const token =
+                    readSharedItem(ACCESS_TOKEN_KEY) ||
                     (supabase
                         ? (await supabase.auth.getSession()).data.session?.access_token
-                        : null) ?? stored?.accessToken;
+                        : null) ||
+                    stored?.accessToken;
                 if (token) {
-                    await adoptToken(token, stored);
+                    await adoptToken(token);
                 }
             } catch {
                 /* keep whatever session we already restored */

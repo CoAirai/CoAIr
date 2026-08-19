@@ -1,4 +1,5 @@
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+export const ACCESS_TOKEN_KEY = "coair.accessToken";
 
 function cookieDomain(): string | undefined {
     if (typeof window === "undefined") return undefined;
@@ -40,9 +41,11 @@ export function readSharedItem(key: string): string | null {
     }
 }
 
-export function writeSharedItem(key: string, value: string): void {
+export function writeSharedItem(key: string, value: string, cookie = true): void {
     if (typeof window === "undefined") return;
-    document.cookie = `${key}=${encodeURIComponent(value)}; ${cookieSuffix()}`;
+    if (cookie && value.length < 3500) {
+        document.cookie = `${key}=${encodeURIComponent(value)}; ${cookieSuffix()}`;
+    }
     try {
         localStorage.setItem(key, value);
     } catch {
