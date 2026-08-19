@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { sharedWebStorage } from "@/lib/auth/sharedStorage";
+
 const AUTH_EMAIL_DOMAIN =
     process.env.NEXT_PUBLIC_SUPABASE_AUTH_EMAIL_DOMAIN ?? "users.coair.local";
 
@@ -50,6 +52,7 @@ export function getSupabaseBrowser(): SupabaseClient | null {
                 persistSession: true,
                 autoRefreshToken: true,
                 detectSessionInUrl: true,
+                storage: sharedWebStorage,
             },
         });
     }

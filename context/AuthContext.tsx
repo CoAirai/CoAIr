@@ -16,6 +16,11 @@ import {
     type AuthSession,
     resolveLogin,
 } from "@/lib/auth/resolveLogin";
+import {
+    readSharedItem,
+    removeSharedItem,
+    writeSharedItem,
+} from "@/lib/auth/sharedStorage";
 import { tryLiveLogin, sessionFromLiveToken } from "@/lib/coair/liveLogin";
 import {
     authEmailFromUsername,
@@ -56,12 +61,12 @@ function persist(session: AuthSession | null) {
         return;
     }
     if (!session) {
-        localStorage.removeItem(AUTH_SESSION_KEY);
+        removeSharedItem(AUTH_SESSION_KEY);
         sessionStorage.removeItem(AUTH_SESSION_KEY);
         return;
     }
     const raw = JSON.stringify(session);
-    localStorage.setItem(AUTH_SESSION_KEY, raw);
+    writeSharedItem(AUTH_SESSION_KEY, raw);
     sessionStorage.removeItem(AUTH_SESSION_KEY);
 }
 
@@ -70,7 +75,7 @@ function readStoredSession(): AuthSession | null {
         return null;
     }
     const raw =
-        localStorage.getItem(AUTH_SESSION_KEY) ||
+        readSharedItem(AUTH_SESSION_KEY) ||
         sessionStorage.getItem(AUTH_SESSION_KEY);
     if (!raw) {
         return null;
@@ -78,7 +83,7 @@ function readStoredSession(): AuthSession | null {
     try {
         return JSON.parse(raw) as AuthSession;
     } catch {
-        localStorage.removeItem(AUTH_SESSION_KEY);
+        removeSharedItem(AUTH_SESSION_KEY);
         sessionStorage.removeItem(AUTH_SESSION_KEY);
         return null;
     }
