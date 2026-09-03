@@ -9,6 +9,10 @@ const KINDS = new Set<EmailKind>([
     "access_approved",
     "access_denied",
     "password_reset",
+    "invoice_issued",
+    "invoice_paid",
+    "invoice_refunded",
+    "purchase_receipt",
 ]);
 
 type RelayPayload = EmailPayload & {
@@ -16,6 +20,8 @@ type RelayPayload = EmailPayload & {
     temporary_password?: string;
     reset_token?: string;
     is_resend?: boolean;
+    invoice_id?: string;
+    amount_label?: string;
 };
 
 function normalizePayload(body: RelayPayload | null): EmailPayload | null {
@@ -31,6 +37,9 @@ function normalizePayload(body: RelayPayload | null): EmailPayload | null {
         temporaryPassword: body.temporaryPassword ?? body.temporary_password,
         resetToken: body.resetToken ?? body.reset_token,
         isResend: body.isResend ?? body.is_resend,
+        invoiceId: body.invoiceId ?? body.invoice_id,
+        amountLabel: body.amountLabel ?? body.amount_label,
+        description: body.description,
     };
 }
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -242,6 +242,33 @@ async def me(
         raise HTTPException(401, "unknown_user")
     usage = store.get_billing_summary(user.username)
     return {"user": _user_payload(record, usage)}
+
+
+class NotificationPrefsRequest(BaseModel):
+    notify_email: Optional[bool] = None
+    notify_push: Optional[bool] = None
+    notify_responses: Optional[bool] = None
+
+
+@router.patch("/auth/me/notifications")
+async def update_my_notifications(
+    req: NotificationPrefsRequest,
+    user: UserContext = Depends(get_current_user),
+    store: UserStore = Depends(get_user_store),
+):
+    record = store.get_user(user.username)
+    if not record:
+        raise HTTPException(401, "unknown_user")
+    features = dict(record.get("features") or {})
+    if req.notify_email is not None:
+        features["notify_email"] = bool(req.notify_email)
+    if req.notify_push is not None:
+        features["notify_push"] = bool(req.notify_push)
+    if req.notify_responses is not None:
+        features["notify_responses"] = bool(req.notify_responses)
+    store.update_user(user.username, features=features)
+    refreshed = store.get_user(user.username) or record
+    return {"features": refreshed.get("features") or features}
 
 
 @router.post("/auth/logout")

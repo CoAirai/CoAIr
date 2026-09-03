@@ -88,6 +88,9 @@ export async function deactivateOrgUser(token: string, username: string) {
 export async function readAuthMe(token: string) {
     return coairFetch<{
         user: {
+            username?: string;
+            display_name?: string;
+            features?: Record<string, boolean>;
             used_tokens?: number;
             token_limit?: number;
             credits_remaining?: number;
@@ -98,4 +101,22 @@ export async function readAuthMe(token: string) {
             credit_percent_remaining?: number;
         };
     }>("/auth/me", { token });
+}
+
+export async function updateMyNotificationPrefs(
+    token: string,
+    prefs: { responses: boolean; push: boolean; email: boolean }
+) {
+    return coairFetch<{ features: Record<string, boolean> }>(
+        "/auth/me/notifications",
+        {
+            method: "PATCH",
+            token,
+            body: {
+                notify_responses: prefs.responses,
+                notify_push: prefs.push,
+                notify_email: prefs.email,
+            },
+        }
+    );
 }

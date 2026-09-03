@@ -1,11 +1,13 @@
 "use client";
 
+import Image from "@/components/Image";
 import Modal from "@/components/Modal";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import type { Invoice } from "@/lib/admin/billingTypes";
 import {
     downloadInvoicePdf,
     formatInvoiceDate,
+    invoiceLogoUrl,
 } from "@/lib/admin/invoiceDocument";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -26,11 +28,22 @@ const InvoiceDetailModal = ({ invoice, companyName, onClose }: Props) => {
     return (
         <Modal open={Boolean(invoice)} onClose={onClose} classWrapper="max-w-lg">
             <div className="space-y-4">
-                <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-soft-400">
-                        Invoice
-                    </p>
-                    <h2 className="mt-1 text-h5 text-strong-950">{invoice.id}</h2>
+                <div className="flex items-start gap-3">
+                    <Image
+                        src={invoiceLogoUrl()}
+                        alt="COAir"
+                        width={48}
+                        height={48}
+                        className="size-12 rounded-xl border border-stroke-soft-200 object-contain"
+                    />
+                    <div>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-soft-400">
+                            COAir invoice
+                        </p>
+                        <h2 className="mt-1 text-h5 text-strong-950">
+                            {invoice.id}
+                        </h2>
+                    </div>
                 </div>
 
                 <dl className="grid gap-3 sm:grid-cols-2">
@@ -82,7 +95,7 @@ const InvoiceDetailModal = ({ invoice, companyName, onClose }: Props) => {
                         }
                         className="h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
                     >
-                        Download PDF
+                        Download / print PDF
                     </button>
                     <button
                         type="button"

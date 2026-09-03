@@ -5,18 +5,22 @@ import {
     escapeHtml,
     wrapEmailHtml,
 } from "./layout";
-import { loginOrigin, signInUrl } from "@/lib/auth/hosts";
+import { loginOrigin, signInUrl, userOrigin } from "@/lib/auth/hosts";
 import type { BuiltEmail, EmailPayload } from "./types";
 
 export function buildEmail(payload: EmailPayload): BuiltEmail {
     const name = payload.name?.trim() || payload.to.split("@")[0];
     const company = payload.companyName?.trim() || "your company";
     const signIn = signInUrl();
+    const billingUrl = `${userOrigin()}/company/billing`;
     const resetToken = payload.resetToken?.trim();
     const reset = resetToken
         ? `${loginOrigin()}/auth/reset-password?token=${encodeURIComponent(resetToken)}`
         : `${loginOrigin()}/auth/reset-password`;
     const tempPassword = payload.temporaryPassword?.trim();
+    const invoiceId = payload.invoiceId?.trim() || "invoice";
+    const amountLabel = payload.amountLabel?.trim() || "—";
+    const detail = payload.description?.trim() || "Your COAir billing update";
 
     switch (payload.kind) {
         case "team_invite": {
@@ -171,6 +175,46 @@ export function buildEmail(payload: EmailPayload): BuiltEmail {
                 html: wrapEmailHtml({
                     title: "Reset your password",
                     preheader: "Use this link to choose a new COAir password",
+                    body,
+                }),
+            };
+        }
+        case "invoice_issued":
+        case "invoice_paid":
+        case "invoice_refunded":
+        case "purchase_receipt": {
+            const titles = {
+                invoice_issued: "New invoice",
+                invoice_paid: "Payment received",
+                invoice_refunded: "Invoice refunded",
+                purchase_receipt: "Purchase receipt",
+            } as const;
+            const title = titles[payload.kind];
+            const subject =
+                payload.kind === "invoice_issued"
+                    ? `Invoice ${invoiceId} for ${company}`
+                    : payload.kind === "invoice_paid"
+                      ? `Payment confirmed — ${invoiceId}`
+                      : payload.kind === "invoice_refunded"
+                        ? `Refund issued — ${invoiceId}`
+                        : `Receipt for ${company}`;
+            const text = `Hi ${name},\n\n${title} for ${company}.\nInvoice: ${invoiceId}\nAmount: ${amountLabel}\nDetails: ${detail}\n\nView billing: ${billingUrl}\n`;
+            const body = [
+                `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#525866">Hi ${escapeHtml(name)},</p>`,
+                `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#525866">${escapeHtml(title)} for <strong style="color:#0E121B">${escapeHtml(company)}</strong>.</p>`,
+                emailNotice(
+                    `Invoice ${invoiceId} · ${amountLabel} · ${detail}`
+                ),
+                emailButton(billingUrl, "View billing"),
+            ].join("");
+            return {
+                kind: payload.kind,
+                to: payload.to,
+                subject,
+                text,
+                html: wrapEmailHtml({
+                    title,
+                    preheader: `${title} · ${invoiceId}`,
                     body,
                 }),
             };

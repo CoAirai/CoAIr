@@ -361,6 +361,19 @@ def fulfill_purchase(
         target_label=description or invoice["id"],
         detail=f"{paid_via} purchase {kind} ${amount:.2f}",
     )
+    try:
+        from src.billing_notify import notify_org_billing
+
+        notify_org_billing(
+            org_id,
+            "purchase_receipt" if kind != "upgrade" else "invoice_paid",
+            invoice=invoice,
+            description=description,
+            orgs=orgs,
+            users=users,
+        )
+    except Exception:
+        pass
     if stripe_session_id:
         _save_fulfillment(
             commerce,

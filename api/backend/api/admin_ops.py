@@ -131,6 +131,19 @@ async def create_admin_invoice(
         target_label=invoice["id"],
         detail=f"Created invoice ${req.amount_usd:.2f} ({req.status})",
     )
+    try:
+        from src.billing_notify import notify_org_billing
+
+        kind = "invoice_paid" if req.status == "paid" else "invoice_issued"
+        notify_org_billing(
+            req.org_id,
+            kind,
+            invoice=invoice,
+            description=req.description or "",
+            orgs=orgs,
+        )
+    except Exception:
+        pass
     return invoice
 
 
@@ -175,6 +188,17 @@ async def refund_invoice(
         target_label=invoice_id,
         detail=f"Refunded ${updated['amount_usd']:.2f} — {req.reason or 'no reason'}",
     )
+    try:
+        from src.billing_notify import notify_org_billing
+
+        notify_org_billing(
+            str(updated.get("company_id") or ""),
+            "invoice_refunded",
+            invoice=updated,
+            description=req.reason or "Refund issued",
+        )
+    except Exception:
+        pass
     return updated
 
 

@@ -20,6 +20,10 @@ EMAIL_KINDS = {
     "access_approved",
     "access_denied",
     "password_reset",
+    "invoice_issued",
+    "invoice_paid",
+    "invoice_refunded",
+    "purchase_receipt",
 }
 
 
@@ -171,15 +175,22 @@ def build_email(
     temporary_password: str = "",
     reset_token: str = "",
     is_resend: bool = False,
+    invoice_id: str = "",
+    amount_label: str = "",
+    description: str = "",
 ) -> Dict[str, str]:
     recipient = (to or "").strip()
     display = (name or "").strip() or recipient.split("@")[0]
     company = (company_name or "").strip() or "your company"
     sign_in = f"{login_app_origin()}/auth/sign-in"
+    billing_url = f"{user_app_origin()}/company/billing"
     reset_base = f"{login_app_origin()}/auth/reset-password"
     reset_link = (
         f"{reset_base}?token={reset_token}" if reset_token else reset_base
     )
+    inv = (invoice_id or "").strip() or "invoice"
+    amount = (amount_label or "").strip() or "—"
+    detail = (description or "").strip() or "Your COAir billing update"
 
     if kind == "team_invite":
         subject = (
@@ -324,6 +335,39 @@ def build_email(
         )
         return {"subject": subject, "text": text, "html": html}
 
+    if kind in {"invoice_issued", "invoice_paid", "invoice_refunded", "purchase_receipt"}:
+        titles = {
+            "invoice_issued": "New invoice",
+            "invoice_paid": "Payment received",
+            "invoice_refunded": "Invoice refunded",
+            "purchase_receipt": "Purchase receipt",
+        }
+        subject_map = {
+            "invoice_issued": f"Invoice {inv} for {company}",
+            "invoice_paid": f"Payment confirmed — {inv}",
+            "invoice_refunded": f"Refund issued — {inv}",
+            "purchase_receipt": f"Receipt for {company}",
+        }
+        subject = subject_map[kind]
+        title = titles[kind]
+        text = (
+            f"Hi {display},\n\n{title} for {company}.\n"
+            f"Invoice: {inv}\nAmount: {amount}\nDetails: {detail}\n\n"
+            f"View billing: {billing_url}\n"
+        )
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+            f"{escape(title)} for <strong style=\"color:#0E121B\">{escape(company)}</strong>.</p>"
+            f"{_email_notice(f'Invoice {inv} · {amount} · {detail}')}"
+            f"{_email_button(billing_url, 'View billing')}"
+            f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">"
+            f"If the button doesn't work, copy this link:<br />"
+            f"<a href=\"{billing_url}\" style=\"color:#335CFF;text-decoration:none;word-break:break-all\">{billing_url}</a></p>"
+        )
+        html = _wrap_html(title, body, preheader=f"{title} · {inv}")
+        return {"subject": subject, "text": text, "html": html}
+
     raise ValueError(f"unsupported_email_kind:{kind}")
 
 
@@ -351,6 +395,9 @@ def _send_via_relay(
     temporary_password: str = "",
     reset_token: str = "",
     is_resend: bool = False,
+    invoice_id: str = "",
+    amount_label: str = "",
+    description: str = "",
 ) -> Dict[str, Any]:
     relay = _relay_url()
     if not relay:
@@ -365,6 +412,9 @@ def _send_via_relay(
         "temporaryPassword": temporary_password,
         "resetToken": reset_token,
         "isResend": is_resend,
+        "invoiceId": invoice_id,
+        "amountLabel": amount_label,
+        "description": description,
     }
     headers = {"Content-Type": "application/json"}
     secret = _relay_secret()
@@ -452,6 +502,9 @@ def send_coair_email(
     temporary_password: str = "",
     reset_token: str = "",
     is_resend: bool = False,
+    invoice_id: str = "",
+    amount_label: str = "",
+    description: str = "",
 ) -> Dict[str, Any]:
     if kind not in EMAIL_KINDS:
         raise ValueError(f"unsupported_email_kind:{kind}")
@@ -468,6 +521,9 @@ def send_coair_email(
         temporary_password=temporary_password,
         reset_token=reset_token,
         is_resend=is_resend,
+        invoice_id=invoice_id,
+        amount_label=amount_label,
+        description=description,
     )
     relay = _relay_url()
     if relay:
@@ -480,6 +536,9 @@ def send_coair_email(
             temporary_password=temporary_password,
             reset_token=reset_token,
             is_resend=is_resend,
+            invoice_id=invoice_id,
+            amount_label=amount_label,
+            description=description,
         )
         if relay_result.get("ok"):
             return relay_result
@@ -503,6 +562,9 @@ def send_coair_email(
         temporary_password=temporary_password,
         reset_token=reset_token,
         is_resend=is_resend,
+        invoice_id=invoice_id,
+        amount_label=amount_label,
+        description=description,
     )
 
 

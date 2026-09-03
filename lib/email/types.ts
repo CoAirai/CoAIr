@@ -4,7 +4,11 @@ export type EmailKind =
     | "access_request_received"
     | "access_approved"
     | "access_denied"
-    | "password_reset";
+    | "password_reset"
+    | "invoice_issued"
+    | "invoice_paid"
+    | "invoice_refunded"
+    | "purchase_receipt";
 
 export type EmailPayload = {
     kind: EmailKind;
@@ -15,6 +19,9 @@ export type EmailPayload = {
     isResend?: boolean;
     resetToken?: string;
     temporaryPassword?: string;
+    invoiceId?: string;
+    amountLabel?: string;
+    description?: string;
 };
 
 export type BuiltEmail = {
