@@ -160,6 +160,13 @@ export function signInUrl(nextPath?: string, signedOut = false): string {
     return query ? `${base}?${query}` : base;
 }
 
+/** Super-admin login lives on admin.coair.ai (same origin as the control plane). */
+export function adminSignInUrl(signedOut = false): string {
+    const origin = adminOrigin() || loginOrigin();
+    const base = `${origin}/admin/sign-in`;
+    return signedOut ? `${base}?signedOut=1` : base;
+}
+
 /** Auth routes live on login.coair.ai in production; stay relative locally. */
 export function authHref(path: string): string {
     if (!subdomainRoutingEnabled() || !path.startsWith("/auth")) {
@@ -168,10 +175,10 @@ export function authHref(path: string): string {
     return `${loginOrigin()}${path}`;
 }
 
-export function signInOriginForPortal(_portal: PortalKind): string {
-    return loginOrigin();
+export function signInOriginForPortal(portal: PortalKind): string {
+    return portal === "admin" ? adminOrigin() || loginOrigin() : loginOrigin();
 }
 
-export function signInUrlForPortal(_portal: PortalKind): string {
-    return signInUrl();
+export function signInUrlForPortal(portal: PortalKind, signedOut = false): string {
+    return portal === "admin" ? adminSignInUrl(signedOut) : signInUrl(undefined, signedOut);
 }

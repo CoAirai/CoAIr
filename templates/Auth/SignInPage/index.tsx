@@ -8,8 +8,8 @@ import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { useAdminData } from "@/context/AdminDataContext";
+import { adminSignInUrl, homeUrlForRole } from "@/lib/auth/hosts";
 import { postLoginUrl } from "@/lib/auth/postLoginPath";
-import { portalNavigate } from "@/lib/auth/portalNav";
 import { MFA_CHALLENGE_KEY } from "@/lib/coair/liveLogin";
 
 const SignInPage = () => {
@@ -30,8 +30,13 @@ const SignInPage = () => {
 
     useEffect(() => {
         if (!ready || !session || signedOut) return;
-        portalNavigate(router, postLoginUrl(session, companies));
-    }, [ready, session, signedOut, companies, router]);
+        // Super admins belong on admin.coair.ai — leave this workspace login alone.
+        if (session.role === "super_admin") {
+            window.location.assign(homeUrlForRole("super_admin"));
+            return;
+        }
+        window.location.assign(postLoginUrl(session, companies));
+    }, [ready, session, signedOut, companies]);
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
@@ -55,10 +60,17 @@ const SignInPage = () => {
                 setError(result.error);
                 return;
             }
-            // Always hard-navigate to the role portal so login.coair.ai does not
-            // soft-route into /admin (middleware would bounce that back to sign-in).
-            const dest = postLoginUrl(result.session, companies);
-            window.location.assign(dest);
+            if (result.session.role === "super_admin") {
+                await signOut();
+                setError(
+                    "Platform admins must sign in at the Super Admin portal."
+                );
+                window.setTimeout(() => {
+                    window.location.assign(adminSignInUrl());
+                }, 600);
+                return;
+            }
+            window.location.assign(postLoginUrl(result.session, companies));
         } finally {
             setSubmitting(false);
         }
@@ -111,6 +123,15 @@ const SignInPage = () => {
                         href="/auth/forgot-password"
                     >
                         Forgot password?
+                    </Link>
+                </p>
+                <p className="mt-3 text-center text-label-sm text-sub-600">
+                    Platform admin?{" "}
+                    <Link
+                        className="text-blue-500 hover:text-blue-700"
+                        href={adminSignInUrl()}
+                    >
+                        Super Admin sign in
                     </Link>
                 </p>
             </div>

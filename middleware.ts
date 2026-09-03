@@ -53,7 +53,7 @@ export function middleware(request: NextRequest) {
 
     if (portal === "admin") {
         if (pathname === "/") {
-            return NextResponse.redirect(new URL("/admin", request.url));
+            return NextResponse.redirect(new URL("/admin/sign-in", request.url));
         }
         if (pathname.startsWith("/admin")) {
             return NextResponse.next();

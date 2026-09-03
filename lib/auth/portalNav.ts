@@ -1,6 +1,11 @@
 import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 
-import { signInUrl, subdomainRoutingEnabled } from "./hosts";
+import {
+    adminSignInUrl,
+    portalKindFromHost,
+    signInUrl,
+    subdomainRoutingEnabled,
+} from "./hosts";
 
 function pathFromUrl(url: string): string {
     try {
@@ -31,11 +36,24 @@ export function portalNavigate(router: AppRouterInstance, url: string) {
     router.replace(pathFromUrl(url));
 }
 
+function currentPortal() {
+    if (typeof window === "undefined") return null;
+    return portalKindFromHost(window.location.host);
+}
+
 export function redirectToSignIn(router: AppRouterInstance, nextPath?: string) {
+    if (currentPortal() === "admin") {
+        portalNavigate(router, adminSignInUrl(false));
+        return;
+    }
     portalNavigate(router, signInUrl(nextPath, false));
 }
 
 export function redirectToSignInAfterLogout(router: AppRouterInstance) {
+    if (currentPortal() === "admin") {
+        portalNavigate(router, adminSignInUrl(true));
+        return;
+    }
     portalNavigate(router, signInUrl(undefined, true));
 }
 

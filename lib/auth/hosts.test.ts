@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     adminOrigin,
+    adminSignInUrl,
     authHref,
     homeUrlForRole,
     homeUrlForSession,
     loginOrigin,
     portalKindFromHost,
     signInUrl,
+    signInUrlForPortal,
     subdomainRoutingEnabled,
     userOrigin,
 } from "./hosts";
@@ -19,7 +21,8 @@ describe("portal hosts", () => {
 
     it("disables subdomain routing when portal URLs are missing", () => {
         expect(subdomainRoutingEnabled()).toBe(false);
-        expect(portalKindFromHost("login.coair.ai")).toBeNull();
+        // Production hostnames are still recognized for middleware routing.
+        expect(portalKindFromHost("login.coair.ai")).toBe("login");
     });
 
     it("disables subdomain routing when all hosts match (local dev)", () => {
@@ -44,6 +47,16 @@ describe("portal hosts", () => {
         expect(signInUrl()).toBe("https://login.coair.ai/auth/sign-in");
         expect(signInUrl(undefined, true)).toBe(
             "https://login.coair.ai/auth/sign-in?signedOut=1"
+        );
+        expect(adminSignInUrl()).toBe("https://admin.coair.ai/admin/sign-in");
+        expect(adminSignInUrl(true)).toBe(
+            "https://admin.coair.ai/admin/sign-in?signedOut=1"
+        );
+        expect(signInUrlForPortal("admin")).toBe(
+            "https://admin.coair.ai/admin/sign-in"
+        );
+        expect(signInUrlForPortal("login")).toBe(
+            "https://login.coair.ai/auth/sign-in"
         );
         expect(authHref("/auth/sign-up")).toBe("https://login.coair.ai/auth/sign-up");
     });
