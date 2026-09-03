@@ -25,14 +25,12 @@ const AdminSignInPage = () => {
     }, [signedOut, signOut]);
 
     useEffect(() => {
-        if (!ready || signedOut) return;
-        if (session?.role === "super_admin") {
+        if (!ready || signedOut || !session) return;
+        if (session.role === "super_admin") {
             router.replace("/admin");
             return;
         }
-        if (session && session.role !== "super_admin") {
-            window.location.assign(homeUrlForRole(session.role));
-        }
+        window.location.assign(homeUrlForRole(session.role));
     }, [ready, session, signedOut, router]);
 
     const handleSubmit = async (event: FormEvent) => {
