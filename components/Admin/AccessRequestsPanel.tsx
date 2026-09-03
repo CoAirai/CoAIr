@@ -31,7 +31,7 @@ const AccessRequestsPanel = ({
                 </h2>
                 <p className="mt-1 text-label-xs text-sub-600">
                     From Sign up → Request access. Approve so the owner can sign
-                    in, choose a package, and complete dummy payment.
+                    in, choose a package, and pay with Stripe Checkout.
                 </p>
             </div>
             <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-label-xs text-orange-600">

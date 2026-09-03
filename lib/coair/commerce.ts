@@ -163,12 +163,32 @@ export async function denyAccessRequest(token: string, requestId: string) {
 }
 
 export async function checkoutPlan(token: string, planId: string) {
-    return coairFetch<{
-        subscription: { plan_id: string; needs_checkout: boolean };
+    const payload = await coairFetch<{
+        checkout_url?: string;
+        session_id?: string;
+        subscription?: { plan_id: string; needs_checkout: boolean };
+        plan?: { id: string; name: string };
+        invoice?: { id: string };
     }>("/org/checkout", {
         method: "POST",
         token,
         body: { plan_id: planId },
+    });
+    if (payload.checkout_url && typeof window !== "undefined") {
+        window.location.assign(payload.checkout_url);
+        return { redirected: true as const, ...payload };
+    }
+    return { redirected: false as const, ...payload };
+}
+
+export async function confirmCheckout(token: string, sessionId: string) {
+    return coairFetch<{
+        subscription: { plan_id: string; needs_checkout: boolean };
+        plan?: { id: string; name: string };
+    }>("/org/checkout/confirm", {
+        method: "POST",
+        token,
+        body: { session_id: sessionId },
     });
 }
 

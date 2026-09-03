@@ -17,6 +17,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret-please-replace-in-prod")
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     from src import commerce_store as commerce_store_module
     from src import ops_store as ops_store_module
     from src import org_store as org_store_module
@@ -248,9 +249,10 @@ def test_access_request_approve_creates_owner_and_checkout(client, stores, acme)
 
     refreshed = client.get("/api/org", headers=owner).json()
     assert refreshed["subscription"]["plan_id"] == "foundation"
-    assert refreshed["policy"]["default_credits"] == next(
-        plan["api_credits_usd"] for plan in plans if plan["id"] == "foundation"
-    )
+    foundation = next(plan for plan in plans if plan["id"] == "foundation")
+    assert refreshed["policy"]["default_credits"] == foundation["api_credits_usd"]
+    assert refreshed["policy"]["default_token_limit"] == foundation["query_cap"]
+    assert refreshed["policy"]["default_storage_bytes"] == foundation["storage_limit_gb"] * 1024 ** 3
     assert org_id == refreshed["org"]["org_id"]
 
 

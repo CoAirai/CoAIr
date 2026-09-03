@@ -139,6 +139,14 @@ CREATE TABLE IF NOT EXISTS org_subscriptions (
     sell_tokens_per_usd_override REAL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS stripe_fulfillments (
+    session_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -248,6 +256,12 @@ class CommerceStore:
                 self._seed(conn)
         else:
             with self._connect() as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS stripe_fulfillments ("
+                    "session_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, "
+                    "kind TEXT NOT NULL, payload_json TEXT NOT NULL, "
+                    "created_at TEXT NOT NULL)"
+                )
                 self._seed(conn)
 
     @classmethod

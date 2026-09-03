@@ -73,12 +73,26 @@ export async function createPurchase(
         description?: string;
     }
 ) {
-    const payload = await coairFetch<CoairInvoice>("/org/purchases", {
+    const payload = await coairFetch<
+        CoairInvoice & { checkout_url?: string; session_id?: string }
+    >("/org/purchases", {
         method: "POST",
         token,
         body,
     });
-    return mapInvoice(payload);
+    if (payload.checkout_url && typeof window !== "undefined") {
+        window.location.assign(payload.checkout_url);
+        return { redirected: true as const, ...payload };
+    }
+    return { redirected: false as const, ...payload };
+}
+
+export async function confirmPurchase(token: string, sessionId: string) {
+    return coairFetch<CoairInvoice>("/org/purchases/confirm", {
+        method: "POST",
+        token,
+        body: { session_id: sessionId },
+    });
 }
 
 export async function inviteOrgUser(

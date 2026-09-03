@@ -16,6 +16,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret-please-replace-in-prod")
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     from src import commerce_store as commerce_store_module
     from src import ops_store as ops_store_module
     from src import org_store as org_store_module

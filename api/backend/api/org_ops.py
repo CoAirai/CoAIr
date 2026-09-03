@@ -1,4 +1,4 @@
-"""Company invoices, dummy purchases, and email invites."""
+"""Company invoices, purchases, and email invites."""
 
 from __future__ import annotations
 
@@ -10,10 +10,16 @@ from pydantic import BaseModel, Field
 
 from backend.core.orgs import OrgContext, require_org, require_org_owner
 from backend.core.security import UserContext, get_current_user
-from src.commerce_store import CommerceStore, gb_to_bytes, get_commerce_store
+from src.commerce_store import CommerceStore, get_commerce_store
 from src.ops_store import OpsStore, get_ops_store
 from src.org_store import OrgStore, get_org_store
 from src.email_delivery import send_coair_email
+from src.stripe_billing import (
+    create_checkout_session,
+    fulfill_purchase,
+    retrieve_paid_session,
+    stripe_enabled,
+)
 from src.supabase_auth import invite_or_recover, use_supabase_auth
 from src.user_store import UserStore, get_user_store
 
@@ -36,6 +42,10 @@ class PurchaseRequest(BaseModel):
     description: str = Field(default="", max_length=200)
 
 
+class ConfirmPurchaseRequest(BaseModel):
+    session_id: str = Field(min_length=8, max_length=200)
+
+
 class TopupRequestBody(BaseModel):
     tokens: int = Field(ge=1)
     amount_usd: float = Field(default=0, ge=0)
@@ -50,15 +60,10 @@ async def list_org_invoices(
     return {"invoices": ops.list_invoices(org.org_id)}
 
 
-@router.post("/org/purchases", status_code=201)
-async def create_purchase(
+def _purchase_amount_and_label(
     req: PurchaseRequest,
-    org: OrgContext = Depends(require_org_owner),
-    user: UserContext = Depends(get_current_user),
-    ops: OpsStore = Depends(get_ops_store),
-    commerce: CommerceStore = Depends(get_commerce_store),
-    orgs: OrgStore = Depends(get_org_store),
-):
+    commerce: CommerceStore,
+) -> tuple[float, str]:
     description = req.description.strip()
     amount = float(req.amount_usd)
     if req.kind == "upgrade":
@@ -68,49 +73,141 @@ async def create_purchase(
         if not plan:
             raise HTTPException(404, "plan_not_found")
         amount = amount or float(plan["api_credits_usd"])
-        storage_bytes = gb_to_bytes(int(plan["storage_limit_gb"]))
-        orgs.update_org(
-            org.org_id,
-            default_credits=float(plan["api_credits_usd"]),
-            default_storage_bytes=storage_bytes,
-        )
-        commerce.set_subscription(org.org_id, plan_id=req.plan_id, needs_checkout=False)
         description = description or f"Upgrade to {plan['name']}"
     elif req.kind == "storage":
         if not req.gb:
             raise HTTPException(400, "gb_required")
-        record = orgs.get_org(org.org_id) or {}
-        extra = gb_to_bytes(int(req.gb))
-        orgs.update_org(
-            org.org_id,
-            default_storage_bytes=int(record.get("default_storage_bytes") or 0) + extra,
-        )
         amount = amount or float({10: 10, 50: 40, 100: 70}.get(int(req.gb), req.gb))
         description = description or f"Storage +{req.gb} GB"
     elif req.kind == "tokens":
-        amount = amount or 0
-        description = description or f"Token pack {req.tokens or 0}"
+        if not req.tokens:
+            raise HTTPException(400, "tokens_required")
+        description = description or f"Token pack {req.tokens}"
     else:
         description = description or f"Add-on {req.module_id or ''}".strip()
         amount = amount or 50
+    return amount, description
 
-    invoice = ops.create_invoice(
-        org.org_id, amount_usd=amount, status="paid", description=description,
-    )
-    action = (
-        "tokens.topup_approve" if req.kind == "tokens"
-        else "company.plan_change" if req.kind == "upgrade"
-        else "company.addon"
-    )
-    ops.record_audit(
+
+@router.post("/org/purchases", status_code=201)
+async def create_purchase(
+    req: PurchaseRequest,
+    org: OrgContext = Depends(require_org_owner),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+    commerce: CommerceStore = Depends(get_commerce_store),
+    orgs: OrgStore = Depends(get_org_store),
+    users: UserStore = Depends(get_user_store),
+):
+    amount, description = _purchase_amount_and_label(req, commerce)
+
+    if stripe_enabled():
+        if amount <= 0:
+            return fulfill_purchase(
+                org.org_id,
+                kind=req.kind,
+                actor=user.username,
+                amount_usd=amount,
+                tokens=req.tokens,
+                gb=req.gb,
+                plan_id=req.plan_id,
+                module_id=req.module_id,
+                description=description,
+                commerce=commerce,
+                orgs=orgs,
+                users=users,
+                ops=ops,
+            )
+        try:
+            session = create_checkout_session(
+                org_id=org.org_id,
+                amount_usd=amount,
+                description=description,
+                success_path="/company/billing?session_id={CHECKOUT_SESSION_ID}",
+                cancel_path="/company/billing?cancelled=1",
+                metadata={
+                    "flow": "billing",
+                    "kind": req.kind,
+                    "plan_id": req.plan_id or "",
+                    "tokens": str(req.tokens or ""),
+                    "gb": str(req.gb or ""),
+                    "module_id": req.module_id or "",
+                    "description": description[:200],
+                    "amount_usd": str(amount),
+                },
+            )
+        except Exception as exc:
+            raise HTTPException(502, f"stripe_session_failed:{exc}") from exc
+        return session
+
+    return fulfill_purchase(
+        org.org_id,
+        kind=req.kind,
         actor=user.username,
-        action=action,
-        target_type="invoice",
-        target_id=invoice["id"],
-        target_label=description or invoice["id"],
-        detail=f"Dummy purchase {req.kind} ${amount:.2f}",
+        amount_usd=amount,
+        tokens=req.tokens,
+        gb=req.gb,
+        plan_id=req.plan_id,
+        module_id=req.module_id,
+        description=description,
+        commerce=commerce,
+        orgs=orgs,
+        users=users,
+        ops=ops,
     )
-    return invoice
+
+
+@router.post("/org/purchases/confirm")
+async def confirm_purchase(
+    req: ConfirmPurchaseRequest,
+    org: OrgContext = Depends(require_org_owner),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+    commerce: CommerceStore = Depends(get_commerce_store),
+    orgs: OrgStore = Depends(get_org_store),
+    users: UserStore = Depends(get_user_store),
+):
+    if not stripe_enabled():
+        raise HTTPException(400, "stripe_not_configured")
+    try:
+        session = retrieve_paid_session(req.session_id.strip())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, f"stripe_retrieve_failed:{exc}") from exc
+
+    if session["org_id"] and session["org_id"] != org.org_id:
+        raise HTTPException(403, "session_org_mismatch")
+    meta = session["metadata"]
+    kind = meta.get("kind") or ""
+    if kind not in ("tokens", "storage", "upgrade", "addon"):
+        raise HTTPException(400, "session_not_purchase")
+    tokens = int(meta["tokens"]) if meta.get("tokens") else None
+    gb = int(meta["gb"]) if meta.get("gb") else None
+    plan_id = meta.get("plan_id") or None
+    module_id = meta.get("module_id") or None
+    amount = float(meta.get("amount_usd") or 0)
+    if session["amount_total"]:
+        amount = session["amount_total"] / 100.0
+    try:
+        return fulfill_purchase(
+            org.org_id,
+            kind=kind,
+            actor=user.username,
+            amount_usd=amount,
+            tokens=tokens,
+            gb=gb,
+            plan_id=plan_id,
+            module_id=module_id,
+            description=meta.get("description") or "",
+            stripe_session_id=session["id"],
+            commerce=commerce,
+            orgs=orgs,
+            users=users,
+            ops=ops,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/org/invites", status_code=201)

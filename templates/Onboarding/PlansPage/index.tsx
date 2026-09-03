@@ -54,8 +54,7 @@ const PlansPage = () => {
                 </h1>
                 <p className="mt-2 max-w-2xl text-label-sm text-sub-600">
                     Super Admin approved {company?.name ?? session?.companyName ?? "your company"}.
-                    Select a package, then complete dummy payment. Stripe comes
-                    later.
+                    Select a package, then pay with Stripe Checkout to unlock storage and token limits.
                 </p>
 
                 <div className="mt-8 grid gap-4 md:grid-cols-2">

@@ -356,3 +356,11 @@ CREATE TABLE IF NOT EXISTS org_subscriptions (
     sell_tokens_per_usd_override DOUBLE PRECISION,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS stripe_fulfillments (
+    session_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);

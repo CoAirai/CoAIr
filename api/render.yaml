@@ -1,0 +1,38 @@
+# Render Blueprint — COAir API (Docker)
+# Connect repo: https://github.com/CoAirai/CoAIr
+# In Render: New → Blueprint → select repo → set Root Directory to repo root (this file lives in api/)
+#
+# After deploy, set secrets in the Render dashboard (not in this file):
+# GOOGLE_API_KEY, JWT_SECRET, SUPABASE_*, QDRANT_URL, QDRANT_API_KEY, RESEND_API_KEY, etc.
+
+services:
+  - type: web
+    name: coair-api
+    runtime: docker
+    rootDir: api
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_MODE
+        value: api
+      - key: VECTOR_STORE_BACKEND
+        value: qdrant
+      - key: EMBEDDING_PROVIDER
+        value: fastembed
+      - key: LOCAL_EMBEDDING_MODEL
+        value: BAAI/bge-base-en-v1.5
+      - key: QDRANT_COLLECTION
+        value: coair
+      - key: QDRANT_STRICT_MODE
+        value: false
+      - key: FORENSIC_NATIVE_UI_V1
+        value: false
+      - key: CHRONOLOGY_PIPELINE_VERSION
+        value: v2
+      - key: MAX_LLM_CALLS
+        value: "12"
+      - key: JWT_TTL_DAYS
+        value: "7"
+      - key: RESEND_FROM_EMAIL
+        value: COAir <noreply@coair.ai>

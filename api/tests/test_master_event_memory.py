@@ -54,6 +54,12 @@ def test_standard_gcs_uri_resolves_to_provider_object_name():
     ) == "canonical-events/p1/version/canonical-text.jsonl.gz"
 
 
+def test_standard_s3_uri_resolves_to_provider_object_name():
+    assert canonical_artifacts._remote_blob_name(
+        "s3://coairsuite-aws-s3-uae/canonical-events/p1/version/canonical-text.jsonl.gz"
+    ) == "canonical-events/p1/version/canonical-text.jsonl.gz"
+
+
 def test_date_span_and_project_scoped_cluster_identity():
     segment = _segment("On 14 March 2024, Contractor notified Engineer of a 10 day delay.")
     window = discover_candidates(segment)[0]

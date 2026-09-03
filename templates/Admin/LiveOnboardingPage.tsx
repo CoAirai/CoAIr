@@ -54,7 +54,7 @@ const LiveOnboardingPage = () => {
         <div className="space-y-6">
             <PageHeader
                 title="Onboarding"
-                description="Approve public access requests. The owner then signs in, chooses a package, and completes dummy payment."
+                description="Approve public access requests. The owner then signs in, chooses a package, and pays with Stripe Checkout."
             />
             {preview ? <PreviewBanner /> : null}
             <AccessRequestsPanel

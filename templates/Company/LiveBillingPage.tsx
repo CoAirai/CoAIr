@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
@@ -13,7 +14,15 @@ import type { ModuleId, Plan, PlanId } from "@/lib/admin/types";
 import type { Invoice, TopUpRequest } from "@/lib/admin/billingTypes";
 import { chargeUsdForTokens } from "@/lib/billing/tokenEconomics";
 import { apiErrorMessage, listPackages } from "@/lib/coair/commerce";
-import { createPurchase, createOrgTopup, listOrgInvoices, listOrgTopups, readPlatformStatus } from "@/lib/coair/ops";
+import {
+    confirmPurchase,
+    createPurchase,
+    createOrgTopup,
+    listOrgInvoices,
+    listOrgTopups,
+    mapInvoice,
+    readPlatformStatus,
+} from "@/lib/coair/ops";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 
 const TOKEN_AMOUNTS = [1000, 5000, 10000] as const;
@@ -66,6 +75,8 @@ type CheckoutState =
 
 const LiveCompanyBillingPage = () => {
     const { session } = useAuth();
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const token = session?.accessToken ?? "";
     const { org, me, users, refresh, error: orgError } = useLiveOrg();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -75,6 +86,9 @@ const LiveCompanyBillingPage = () => {
     const [plans, setPlans] = useState<Plan[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [checkout, setCheckout] = useState<CheckoutState>(null);
+    const confirming = useRef(false);
+    const sessionId = searchParams.get("session_id");
+    const cancelled = searchParams.get("cancelled") === "1";
 
     const loadInvoices = useCallback(async () => {
         if (!token) return;
@@ -96,6 +110,26 @@ const LiveCompanyBillingPage = () => {
     useEffect(() => {
         void loadInvoices();
     }, [loadInvoices]);
+
+    useEffect(() => {
+        if (!token || !sessionId || confirming.current) return;
+        confirming.current = true;
+        void confirmPurchase(token, sessionId)
+            .then(async (invoice) => {
+                setInvoices((prev) => {
+                    const mapped = mapInvoice(invoice);
+                    if (prev.some((row) => row.id === mapped.id)) return prev;
+                    return [mapped, ...prev];
+                });
+                await Promise.all([loadInvoices(), refresh()]);
+                setError(null);
+                router.replace("/company/billing");
+            })
+            .catch((err) => {
+                confirming.current = false;
+                setError(apiErrorMessage(err));
+            });
+    }, [token, sessionId, loadInvoices, refresh, router]);
 
     useEffect(() => {
         if (!token) return;
@@ -139,33 +173,37 @@ const LiveCompanyBillingPage = () => {
         if (!checkout) return { ok: false, error: "No purchase selected" };
         try {
             if (checkout.kind === "tokens") {
-                await createPurchase(token, {
+                const result = await createPurchase(token, {
                     kind: "tokens",
                     amount_usd: checkout.priceUsd,
                     tokens: checkout.amount,
                     description: checkout.label,
                 });
+                if (result.redirected) return { ok: true };
             } else if (checkout.kind === "storage") {
-                await createPurchase(token, {
+                const result = await createPurchase(token, {
                     kind: "storage",
                     amount_usd: checkout.priceUsd,
                     gb: checkout.gb,
                     description: checkout.label,
                 });
+                if (result.redirected) return { ok: true };
             } else if (checkout.kind === "upgrade") {
-                await createPurchase(token, {
+                const result = await createPurchase(token, {
                     kind: "upgrade",
                     amount_usd: checkout.priceUsd,
                     plan_id: checkout.planId,
                     description: `Upgrade to ${checkout.planName}`,
                 });
+                if (result.redirected) return { ok: true };
             } else {
-                await createPurchase(token, {
+                const result = await createPurchase(token, {
                     kind: "addon",
                     amount_usd: checkout.priceUsd,
                     module_id: checkout.moduleId,
                     description: checkout.label,
                 });
+                if (result.redirected) return { ok: true };
             }
             await Promise.all([loadInvoices(), refresh()]);
             return { ok: true };
@@ -187,7 +225,7 @@ const LiveCompanyBillingPage = () => {
 
     const checkoutSummary =
         checkout?.kind === "upgrade"
-            ? `Switch your plan to ${checkout.planName}. Dummy card checkout writes a paid invoice.`
+            ? `Switch your plan to ${checkout.planName}. You will pay securely via Stripe.`
             : checkout?.kind === "tokens"
               ? `Add ${checkout.label} to your company token pool.`
               : checkout?.kind === "storage"
@@ -207,8 +245,13 @@ const LiveCompanyBillingPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Billing"
-                description="Live invoices and dummy purchases. Card details are not charged."
+                description="Live invoices and Stripe Checkout for upgrades, storage, and token packs."
             />
+            {cancelled ? (
+                <p className="text-label-sm text-amber-600">
+                    Checkout was cancelled. No charge was made.
+                </p>
+            ) : null}
             {orgError || error ? (
                 <p className="text-label-sm text-red-500">
                     {error ?? orgError}

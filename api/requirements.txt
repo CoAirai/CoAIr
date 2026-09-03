@@ -73,7 +73,10 @@ PyJWT>=2.8.0
 cryptography>=42.0.0
 
 # Cloud Storage (table persistence)
+boto3>=1.34.0
 google-cloud-storage>=2.14.0
+# Stripe Checkout (optional — empty STRIPE_SECRET_KEY keeps dummy fulfill)
+stripe>=11.0.0
 # Canonical master-event memory (Cloud SQL PostgreSQL in production).  The pool
 # extra is used by Cloud Run workers so a model call never holds a DB connection.
 psycopg[binary,pool]>=3.2.0

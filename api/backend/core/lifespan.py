@@ -53,12 +53,12 @@ def _startup_sync():
     from src.chronology_prompts import validate_chronology_runtime
     validate_chronology_runtime()
 
-    # ── Step 1: Download ALL shared state from GCS FIRST ──
+    # ── Step 1: Download ALL shared state from object storage FIRST ──
     # This MUST happen before loading any singletons.
-    # Cloud Run instances are ephemeral — local disk may be stale or empty.
-    print("[Startup] Syncing from GCS...")
+    # Cloud Run / VPS instances are ephemeral — local disk may be stale or empty.
     try:
         from src.gcs_storage import (
+            backend_name,
             sync_document_registry_from_gcs,
             sync_catalog_from_gcs,
             sync_all_parquets_from_gcs,
@@ -66,15 +66,17 @@ def _startup_sync():
             sync_user_conversations_from_gcs,
             sync_review_sessions_from_gcs,
         )
+        storage = backend_name()
+        print(f"[Startup] Syncing from {storage}...")
         sync_document_registry_from_gcs()  # Registry FIRST
         sync_catalog_from_gcs()
         sync_all_parquets_from_gcs()
         sync_all_uploads_from_gcs()
         sync_user_conversations_from_gcs("default")
         sync_review_sessions_from_gcs()
-        print("[Startup] GCS sync complete")
+        print(f"[Startup] {storage} sync complete")
     except Exception as e:
-        print(f"[Startup] GCS sync error (non-fatal): {e}")
+        print(f"[Startup] Object storage sync error (non-fatal): {e}")
 
     # ── Step 1b: Repair JSON damaged by the old text-mode path normalizer ──
     # Until this release, config.normalize_stored_paths() rewrote every JSON file

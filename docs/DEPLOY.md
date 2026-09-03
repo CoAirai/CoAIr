@@ -4,10 +4,14 @@ This repo is a **monorepo**:
 
 | Path | What | Host |
 | --- | --- | --- |
-| `/` (repo root) | Next.js app — login, admin, user portals | **Vercel** |
+| `/` (repo root) | Next.js app — login, admin, user portals | **Vercel** or **Hostinger VPS** |
 | `/api` | FastAPI backend + Qdrant (Docker) | **VPS** (Hostinger, AWS, etc.) |
 
 Marketing site **coair.ai** stays separate.
+
+> **Deploying everything on Hostinger?** See **[DEPLOY-HOSTINGER.md](./DEPLOY-HOSTINGER.md)** for a full single-VPS guide (recommended over Vercel if you want one Hostinger bill).
+
+> **No VPS yet?** See **[DEPLOY-FREE.md](./DEPLOY-FREE.md)** — Vercel + Render + Qdrant Cloud ($0 to start).
 
 ---
 
@@ -152,6 +156,18 @@ VECTOR_STORE_BACKEND=qdrant
 QDRANT_URL=http://qdrant:6333
 QDRANT_API_KEY=generate-a-strong-local-key
 QDRANT_SERVER_API_KEY=same-as-QDRANT_API_KEY-for-prod-compose
+
+# Amazon S3 (UAE) — put access keys in api/.env, never in git or chat
+S3_BUCKET_NAME=coairsuite-aws-s3-uae
+AWS_REGION=me-central-1
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+
+# Stripe test mode (sk_test_ / pk_test_). Webhook secret optional for now —
+# Checkout confirms via success URL session_id. Empty STRIPE_SECRET_KEY = dummy fulfill.
+STRIPE_SECRET_KEY=
+STRIPE_PUBLISHABLE_KEY=
+STRIPE_WEBHOOK_SECRET=
 ```
 
 **Optional:** `SUPERADMIN_EMAIL=you@coair.ai` for first platform admin.

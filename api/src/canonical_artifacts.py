@@ -30,16 +30,21 @@ def _safe(value: str) -> str:
     return clean.strip("._")[:120] or "unknown"
 
 
-def _gcs_blob_name(uri: str) -> str:
-    """Translate a standard gs://bucket/object URI to this app's object name."""
+def _remote_blob_name(uri: str) -> str:
+    """Translate gs:// or s3://bucket/object URI to this app's object name."""
     value = str(uri or "")
-    if not value.startswith("gs://"):
-        return value
-    bucket_and_blob = value[5:]
-    bucket, separator, blob = bucket_and_blob.partition("/")
-    if not separator or not bucket or not blob:
-        raise ValueError("canonical_artifact_gcs_uri_invalid")
-    return blob
+    for scheme in ("gs://", "s3://"):
+        if value.startswith(scheme):
+            rest = value[len(scheme):]
+            bucket, separator, blob = rest.partition("/")
+            if not separator or not bucket or not blob:
+                raise ValueError("canonical_artifact_uri_invalid")
+            return blob
+    return value
+
+
+def _gcs_blob_name(uri: str) -> str:
+    return _remote_blob_name(uri)
 
 
 @dataclass(frozen=True)
@@ -207,12 +212,12 @@ def write_canonical_artifact(
 
     uri = str(out_path)
     try:
-        from .gcs_storage import GCS_BUCKET_NAME, is_enabled, upload_file
+        from .gcs_storage import is_enabled, object_uri, upload_file
         if is_enabled():
             blob = f"canonical-events/{_safe(project_id)}/{version_id}/canonical-text.jsonl.gz"
             if not upload_file(str(out_path), blob):
                 raise RuntimeError("canonical_artifact_upload_failed")
-            uri = f"gs://{GCS_BUCKET_NAME}/{blob}"
+            uri = object_uri(blob)
     except RuntimeError:
         raise
     except Exception as exc:
@@ -228,8 +233,8 @@ def write_canonical_artifact(
 
 def read_canonical_artifact(uri: str, *, project_id: str = "", version_id: str = "") -> List[CanonicalSegment]:
     path: Path
-    if str(uri).startswith("gs://"):
-        blob = _gcs_blob_name(uri)
+    if str(uri).startswith("gs://") or str(uri).startswith("s3://"):
+        blob = _remote_blob_name(uri)
         path = CANONICAL_ROOT / _safe(project_id) / _safe(version_id) / "canonical-text.jsonl.gz"
         if not path.exists():
             from .gcs_storage import download_file
@@ -255,8 +260,8 @@ def read_canonical_artifact(uri: str, *, project_id: str = "", version_id: str =
 
 def purge_canonical_artifact(uri: str) -> None:
     version_hint = ""
-    if str(uri).startswith("gs://"):
-        blob = _gcs_blob_name(uri)
+    if str(uri).startswith("gs://") or str(uri).startswith("s3://"):
+        blob = _remote_blob_name(uri)
         parts = blob.split("/")
         if len(parts) >= 3:
             version_hint = parts[-2]

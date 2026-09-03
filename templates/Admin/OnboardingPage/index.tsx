@@ -67,7 +67,7 @@ const OnboardingPage = () => {
                             Waiting for package
                         </h2>
                         <p className="mt-1 text-label-xs text-sub-600">
-                            Approved companies that have not finished dummy
+                            Approved companies that have not finished Stripe
                             checkout yet.
                         </p>
                     </div>
