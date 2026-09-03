@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "@/components/Image";
@@ -8,6 +8,15 @@ import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { adminOrigin, homeUrlForRole, signInUrl } from "@/lib/auth/hosts";
+import { readSharedItem, SIGNED_OUT_KEY } from "@/lib/auth/sharedStorage";
+
+function hasSignedOutMarker(): boolean {
+    if (typeof window === "undefined") return false;
+    return (
+        readSharedItem(SIGNED_OUT_KEY) === "1" ||
+        sessionStorage.getItem(SIGNED_OUT_KEY) === "1"
+    );
+}
 
 const AdminSignInPage = () => {
     const router = useRouter();
@@ -18,14 +27,29 @@ const AdminSignInPage = () => {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    /** After logout, do not bounce into /admin until the user submits this form. */
+    const allowAutoEnter = useRef(false);
 
     useEffect(() => {
         if (!signedOut) return;
-        void signOut();
-    }, [signedOut, signOut]);
+        let cancelled = false;
+        void (async () => {
+            await signOut();
+            if (!cancelled) {
+                router.replace("/admin/sign-in");
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [signedOut, signOut, router]);
 
     useEffect(() => {
-        if (!ready || signedOut || !session) return;
+        if (!ready || !session || signedOut) return;
+        // Block auto-login while the shared logout marker is set.
+        if (hasSignedOutMarker() && !allowAutoEnter.current) {
+            return;
+        }
         if (session.role === "super_admin") {
             router.replace("/admin");
             return;
@@ -56,6 +80,7 @@ const AdminSignInPage = () => {
                 );
                 return;
             }
+            allowAutoEnter.current = true;
             router.replace("/admin");
         } finally {
             setSubmitting(false);

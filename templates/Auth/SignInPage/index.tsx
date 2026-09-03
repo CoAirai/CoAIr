@@ -8,7 +8,7 @@ import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { useAdminData } from "@/context/AdminDataContext";
-import { adminSignInUrl, homeUrlForRole } from "@/lib/auth/hosts";
+import { adminSignInUrl } from "@/lib/auth/hosts";
 import { postLoginUrl } from "@/lib/auth/postLoginPath";
 import { MFA_CHALLENGE_KEY } from "@/lib/coair/liveLogin";
 
@@ -30,9 +30,8 @@ const SignInPage = () => {
 
     useEffect(() => {
         if (!ready || !session || signedOut) return;
-        // Super admins belong on admin.coair.ai — leave this workspace login alone.
+        // Never auto-enter the Super Admin dashboard from workspace login.
         if (session.role === "super_admin") {
-            window.location.assign(homeUrlForRole("super_admin"));
             return;
         }
         window.location.assign(postLoginUrl(session, companies));
@@ -65,9 +64,6 @@ const SignInPage = () => {
                 setError(
                     "Platform admins must sign in at the Super Admin portal."
                 );
-                window.setTimeout(() => {
-                    window.location.assign(adminSignInUrl());
-                }, 600);
                 return;
             }
             window.location.assign(postLoginUrl(result.session, companies));

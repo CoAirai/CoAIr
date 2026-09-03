@@ -26,6 +26,7 @@ import {
 } from "@/lib/auth/sharedStorage";
 import { CoairApiError } from "@/lib/coair/client";
 import { tryLiveLogin, sessionFromLiveToken } from "@/lib/coair/liveLogin";
+import { portalKindFromHost } from "@/lib/auth/hosts";
 import {
     authEmailFromUsername,
     getSupabaseBrowser,
@@ -75,6 +76,13 @@ function markSignedOut(): void {
 function clearSignedOutFlag(): void {
     removeSharedItem(SIGNED_OUT_KEY);
     sessionStorage.removeItem(SIGNED_OUT_KEY);
+}
+
+/** Workspace login must not adopt platform-admin sessions (separate admin portal). */
+function shouldIgnoreSessionOnThisPortal(session: AuthSession): boolean {
+    if (typeof window === "undefined") return false;
+    const portal = portalKindFromHost(window.location.host);
+    return portal === "login" && session.role === "super_admin";
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -127,10 +135,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         async function adoptToken(token: string) {
             try {
                 const live = await sessionFromLiveToken(token);
-                if (!cancelled) {
-                    persist(live);
-                    setSession(live);
+                if (cancelled) return;
+                if (shouldIgnoreSessionOnThisPortal(live)) {
+                    // Keep shared cookies for admin.coair.ai; stay logged-out on login portal.
+                    setSession(null);
+                    return;
                 }
+                persist(live);
+                setSession(live);
             } catch (error) {
                 const unauthorized =
                     error instanceof CoairApiError && error.status === 401;
@@ -140,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
                 const stored = readStoredSession();
-                if (!cancelled && stored) {
+                if (!cancelled && stored && !shouldIgnoreSessionOnThisPortal(stored)) {
                     setSession(stored);
                 }
             }
@@ -152,6 +164,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (!base) {
                     void adoptToken(token);
                     return prev;
+                }
+                if (shouldIgnoreSessionOnThisPortal(base)) {
+                    return null;
                 }
                 const updated = { ...base, accessToken: token };
                 persist(updated);
@@ -191,8 +206,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 const stored = readStoredSession();
                 if (stored && !cancelled) {
-                    setSession(stored);
-                    setReady(true);
+                    if (shouldIgnoreSessionOnThisPortal(stored)) {
+                        setSession(null);
+                    } else {
+                        setSession(stored);
+                        setReady(true);
+                    }
                 }
 
                 const supabase = getSupabaseBrowser();
@@ -222,6 +241,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             if (event === "SIGNED_OUT") {
                 persist(null);
+                // Preserve intentional logout across portals if the marker was set.
+                if (
+                    sessionStorage.getItem(SIGNED_OUT_KEY) === "1" ||
+                    readSharedItem(SIGNED_OUT_KEY) === "1"
+                ) {
+                    markSignedOut();
+                }
                 setSession(null);
                 return;
             }
