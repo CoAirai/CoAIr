@@ -369,7 +369,7 @@ def build_email(
             f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
             f"Security notice for <strong style=\"color:#0E121B\">{escape(company)}</strong>.</p>"
             f"{_email_notice(detail)}"
-            f"{_email_button(reset_base, 'Reset password if this wasn't you')}"
+            f"{_email_button(reset_base, 'Reset password if this was not you')}"
             f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">"
             f"You receive these alerts when Email notifications are enabled in Settings.</p>"
         )
