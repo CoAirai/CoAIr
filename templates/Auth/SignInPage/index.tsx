@@ -16,7 +16,7 @@ const SignInPage = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const signedOut = searchParams.get("signedOut") === "1";
-    const { signIn, signOut } = useAuth();
+    const { session, ready, signIn, signOut } = useAuth();
     const { companies } = useAdminData();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -27,6 +27,11 @@ const SignInPage = () => {
         if (!signedOut) return;
         void signOut();
     }, [signedOut, signOut]);
+
+    useEffect(() => {
+        if (!ready || !session || signedOut) return;
+        portalNavigate(router, postLoginUrl(session, companies));
+    }, [ready, session, signedOut, companies, router]);
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
@@ -50,7 +55,10 @@ const SignInPage = () => {
                 setError(result.error);
                 return;
             }
-            portalNavigate(router, postLoginUrl(result.session, companies));
+            // Always hard-navigate to the role portal so login.coair.ai does not
+            // soft-route into /admin (middleware would bounce that back to sign-in).
+            const dest = postLoginUrl(result.session, companies);
+            window.location.assign(dest);
         } finally {
             setSubmitting(false);
         }

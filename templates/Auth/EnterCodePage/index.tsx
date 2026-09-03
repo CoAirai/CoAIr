@@ -2,14 +2,12 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { useAdminData } from "@/context/AdminDataContext";
 import { postLoginUrl } from "@/lib/auth/postLoginPath";
-import { portalNavigate } from "@/lib/auth/portalNav";
 import { apiErrorMessage } from "@/lib/coair/commerce";
 import {
     MFA_CHALLENGE_KEY,
@@ -20,7 +18,6 @@ import { verifyMfa } from "@/lib/coair/ops";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
 const EnterCodePage = () => {
-    const router = useRouter();
     const { applySession } = useAuth();
     const { companies } = useAdminData();
     const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
@@ -71,7 +68,7 @@ const EnterCodePage = () => {
                 verified.user
             );
             applySession(session);
-            portalNavigate(router, postLoginUrl(session, companies));
+            window.location.assign(postLoginUrl(session, companies));
         } catch (err) {
             setError(apiErrorMessage(err));
         } finally {

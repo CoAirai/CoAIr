@@ -65,4 +65,10 @@ describe("portal hosts", () => {
         };
         expect(homeUrlForSession(session)).toBe("https://user.coair.ai/workspace");
     });
+
+    it("recognizes production hosts without complete env", () => {
+        expect(portalKindFromHost("login.coair.ai")).toBe("login");
+        expect(portalKindFromHost("admin.coair.ai")).toBe("admin");
+        expect(portalKindFromHost("user.coair.ai")).toBe("user");
+    });
 });
