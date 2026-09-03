@@ -522,6 +522,9 @@ def _send_via_resend(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Cloudflare / Resend reject bare Python-urllib clients (error 1010).
+            "User-Agent": "COAir-API/1.0 (+https://coair.ai)",
+            "Accept": "application/json",
         },
     )
     try:
