@@ -24,8 +24,11 @@ type Props = {
 
 const Settings = ({ open, onClose, changePassword: changePasswordProp }: Props) => {
     const [activeId, setActiveId] = useState(0);
-    const { changePassword: authChangePassword } = useAuth();
+    const { changePassword: authChangePassword, session } = useAuth();
     const changePassword = changePasswordProp ?? authChangePassword;
+    const visibleMenu = menu.filter((item) =>
+        item.id === 5 ? session?.role === "member" : true
+    );
 
     useEffect(() => {
         if (open) setActiveId(0);
@@ -49,7 +52,7 @@ const Settings = ({ open, onClose, changePassword: changePasswordProp }: Props) 
                 </div>
                 <div className="flex grow max-md:block">
                     <div className="flex flex-col gap-2 shrink-0 w-50 pr-4 border-r border-stroke-soft-200 max-lg:w-40 max-md:flex-row max-md:gap-4 max-md:w-auto max-md:mb-4 max-md:overflow-auto max-md:scrollbar-none max-md:-mx-4 max-md:px-4 max-md:border-0">
-                        {menu.map((item) => (
+                        {visibleMenu.map((item) => (
                             <button
                                 className={`group flex items-center gap-2 h-10 transition-colors hover:text-strong-950 max-md:shrink-0 ${
                                     activeId === item.id
@@ -72,7 +75,7 @@ const Settings = ({ open, onClose, changePassword: changePasswordProp }: Props) 
                         ))}
                     </div>
                     <div className="grow pl-4 max-md:pl-0">
-                        {menu
+                        {visibleMenu
                             .filter((item) => item.id === activeId)
                             .map((item) => (
                                 <div
