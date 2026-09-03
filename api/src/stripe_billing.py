@@ -91,6 +91,29 @@ def create_checkout_session(
     return {"checkout_url": url, "session_id": str(session.id)}
 
 
+def _metadata_dict(value: Any) -> Dict[str, str]:
+    """Convert Stripe metadata StripeObject / dict into a plain str→str map."""
+    if value is None:
+        return {}
+    if hasattr(value, "to_dict"):
+        try:
+            value = value.to_dict()
+        except Exception:
+            pass
+    if isinstance(value, dict):
+        return {str(k): str(v) for k, v in value.items() if v is not None}
+    # Older SDKs expose key access without being a real dict.
+    out: Dict[str, str] = {}
+    try:
+        for key in ("org_id", "kind", "plan_id", "tokens", "gb", "module_id", "description", "amount_usd", "flow"):
+            item = value.get(key) if hasattr(value, "get") else getattr(value, key, None)
+            if item is not None:
+                out[key] = str(item)
+    except Exception:
+        return {}
+    return out
+
+
 def retrieve_paid_session(session_id: str) -> Dict[str, Any]:
     if not stripe_enabled():
         raise RuntimeError("stripe_not_configured")
@@ -102,13 +125,17 @@ def retrieve_paid_session(session_id: str) -> Dict[str, Any]:
     amount_total = int(getattr(session, "amount_total", 0) or 0)
     if status not in {"paid", "no_payment_required"} and amount_total > 0:
         raise ValueError("session_not_paid")
-    meta = dict(getattr(session, "metadata", None) or {})
+    meta = _metadata_dict(getattr(session, "metadata", None))
     return {
         "id": str(session.id),
         "payment_status": status,
         "amount_total": amount_total,
-        "metadata": {str(k): str(v) for k, v in meta.items()},
-        "org_id": str(meta.get("org_id") or getattr(session, "client_reference_id", "") or ""),
+        "metadata": meta,
+        "org_id": str(
+            meta.get("org_id")
+            or getattr(session, "client_reference_id", "")
+            or ""
+        ),
     }
 
 
