@@ -1,7 +1,14 @@
-import { FormEvent, useState } from "react";
+"use client";
+
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Switch from "@/components/Switch";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
+import { useAuth } from "@/context/AuthContext";
+import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
+import { updateMyProfile } from "@/lib/coair/org";
+import { readMfaEnabled, writeMfaEnabled } from "@/lib/settings/localPrefs";
 
 type Props = {
     changePassword?: (
@@ -13,12 +20,32 @@ type Props = {
 };
 
 const Security = ({ changePassword }: Props) => {
-    const [authentication, setAuthentication] = useState(true);
+    const router = useRouter();
+    const { session, signOut } = useAuth();
+    const [authentication, setAuthentication] = useState(false);
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [success, setSuccess] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [loggingOut, setLoggingOut] = useState(false);
+
+    useEffect(() => {
+        setAuthentication(readMfaEnabled());
+    }, []);
+
+    const onToggleMfa = async (checked: boolean) => {
+        setAuthentication(checked);
+        writeMfaEnabled(checked);
+        const token = session?.accessToken;
+        if (token && session?.source === "live") {
+            try {
+                await updateMyProfile(token, { mfa_enabled: checked });
+            } catch {
+                /* local preference still saved */
+            }
+        }
+    };
 
     const onSubmitPassword = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -44,6 +71,16 @@ const Security = ({ changePassword }: Props) => {
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
+    };
+
+    const onLogoutAll = async () => {
+        setLoggingOut(true);
+        try {
+            await signOut();
+            redirectToSignInAfterLogout(router);
+        } finally {
+            setLoggingOut(false);
+        }
     };
 
     return (
@@ -90,7 +127,11 @@ const Security = ({ changePassword }: Props) => {
                         isSmall
                     />
                     <div className="flex flex-wrap items-center gap-3">
-                        <Button className="!h-10 !rounded-[0.625rem]" isBlue>
+                        <Button
+                            type="submit"
+                            className="!h-10 !rounded-[0.625rem]"
+                            isBlue
+                        >
                             Update password
                         </Button>
                         {success && (
@@ -109,17 +150,16 @@ const Security = ({ changePassword }: Props) => {
             <div className="flex justify-between gap-6 mb-3 pb-3 border-b border-stroke-soft-200">
                 <div className="max-w-101">
                     <div className="text-label-md">
-                        Mlti-factor authentication
+                        Multi-factor authentication
                     </div>
                     <div className="text-sub-600">
-                        Require an extra security challenge when logging in. If
-                        you are unable to pass this challenge, you will have the
-                        option to recover your account via email.
+                        Prefer an extra security challenge when logging in. Your
+                        preference is saved for this account.
                     </div>
                 </div>
                 <Switch
                     checked={authentication}
-                    onChange={setAuthentication}
+                    onChange={(checked) => void onToggleMfa(checked)}
                     isSmall
                 />
             </div>
@@ -127,16 +167,19 @@ const Security = ({ changePassword }: Props) => {
                 <div className="max-w-101">
                     <div className="text-label-md">Log out of all devices</div>
                     <div className="text-sub-600">
-                        Log out of all active sessions across all devices,
-                        including your current session. It may take up to 30
-                        minutes for other devices to be logged out.
+                        Ends your current session on this browser and clears
+                        shared portal sign-in. Sign in again on other devices if
+                        needed.
                     </div>
                 </div>
                 <Button
+                    type="button"
                     className="shrink-0 !h-10 !rounded-[0.625rem] !bg-weak-50"
                     isStroke
+                    disabled={loggingOut}
+                    onClick={() => void onLogoutAll()}
                 >
-                    Log out all
+                    {loggingOut ? "Signing out…" : "Log out all"}
                 </Button>
             </div>
         </div>

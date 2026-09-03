@@ -120,3 +120,21 @@ export async function updateMyNotificationPrefs(
         }
     );
 }
+
+export async function updateMyProfile(
+    token: string,
+    body: {
+        display_name?: string;
+        phone?: string;
+        improve_model?: boolean;
+        mfa_enabled?: boolean;
+    }
+) {
+    return coairFetch<{
+        user: {
+            username?: string;
+            display_name?: string;
+            features?: Record<string, unknown>;
+        };
+    }>("/auth/me", { method: "PATCH", token, body });
+}

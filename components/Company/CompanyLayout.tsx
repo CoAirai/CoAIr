@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import AvatarMenu from "@/components/AvatarMenu";
 import Icon from "@/components/Icon";
 import Image from "@/components/Image";
@@ -24,8 +24,17 @@ const CompanyLayout = ({ children }: Props) => {
     const [collapsed, setCollapsed] = useState(false);
     const [openSettings, setOpenSettings] = useState(false);
     const router = useRouter();
+    const pathname = usePathname();
     const { session, signOut, changePassword: changeLivePassword } = useAuth();
     const { company, users, changePassword } = useCompanyData();
+
+    // Legacy /company/settings URL opens the same user settings popup.
+    useEffect(() => {
+        if (pathname === "/company/settings") {
+            setOpenSettings(true);
+            router.replace("/company");
+        }
+    }, [pathname, router]);
 
     const adminUser = useMemo(
         () => users.find((user) => user.role === "admin") ?? users[0] ?? null,
@@ -119,7 +128,9 @@ const CompanyLayout = ({ children }: Props) => {
                     <div className="grow overflow-auto scrollbar-none">
                         <CompanyNav
                             collapsed={collapsed}
+                            settingsOpen={openSettings}
                             onNavigate={() => setMobileOpen(false)}
+                            onOpenSettings={() => setOpenSettings(true)}
                         />
                     </div>
                 </div>

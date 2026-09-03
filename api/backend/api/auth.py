@@ -271,6 +271,44 @@ async def update_my_notifications(
     return {"features": refreshed.get("features") or features}
 
 
+class ProfileUpdateRequest(BaseModel):
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    phone: Optional[str] = Field(default=None, max_length=40)
+    improve_model: Optional[bool] = None
+    mfa_enabled: Optional[bool] = None
+
+
+@router.patch("/auth/me")
+async def update_my_profile(
+    req: ProfileUpdateRequest,
+    user: UserContext = Depends(get_current_user),
+    store: UserStore = Depends(get_user_store),
+):
+    record = store.get_user(user.username)
+    if not record:
+        raise HTTPException(401, "unknown_user")
+    features = dict(record.get("features") or {})
+    updates: Dict[str, Any] = {}
+    if req.display_name is not None:
+        name = req.display_name.strip()
+        if not name:
+            raise HTTPException(400, "display_name_required")
+        updates["display_name"] = name
+    if req.phone is not None:
+        features["phone"] = req.phone.strip()
+    if req.improve_model is not None:
+        features["improve_model"] = bool(req.improve_model)
+    if req.mfa_enabled is not None:
+        features["mfa_enabled"] = bool(req.mfa_enabled)
+    if features != dict(record.get("features") or {}):
+        updates["features"] = features
+    if updates:
+        store.update_user(user.username, **updates)
+    refreshed = store.get_user(user.username) or record
+    usage = store.get_billing_summary(user.username)
+    return {"user": _user_payload(refreshed, usage)}
+
+
 @router.post("/auth/logout")
 async def logout():
     return {"ok": True}

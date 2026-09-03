@@ -528,3 +528,7 @@ export function useCompanyData() {
     }
     return ctx;
 }
+
+export function useCompanyDataOptional() {
+    return useContext(CompanyDataContext);
+}

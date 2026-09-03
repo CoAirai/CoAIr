@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/components/Modal";
 import Icon from "@/components/Icon";
 import { useAuth } from "@/context/AuthContext";
@@ -25,6 +25,10 @@ const Settings = ({ open, onClose, changePassword: changePasswordProp }: Props) 
     const [activeId, setActiveId] = useState(0);
     const { changePassword: authChangePassword } = useAuth();
     const changePassword = changePasswordProp ?? authChangePassword;
+
+    useEffect(() => {
+        if (open) setActiveId(0);
+    }, [open]);
 
     return (
         <>
