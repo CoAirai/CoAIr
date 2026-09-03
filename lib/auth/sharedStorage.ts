@@ -24,23 +24,51 @@ function cookieSuffix(): string {
     return parts.join("; ");
 }
 
-export function readSharedItem(key: string): string | null {
+export function readSharedCookie(key: string): string | null {
     if (typeof window === "undefined") return null;
     const match = document.cookie.match(
         new RegExp(`(?:^|; )${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}=([^;]*)`)
     );
-    if (match?.[1]) {
-        try {
-            return decodeURIComponent(match[1]);
-        } catch {
-            return match[1];
-        }
+    if (!match?.[1]) return null;
+    try {
+        return decodeURIComponent(match[1]);
+    } catch {
+        return match[1];
     }
+}
+
+export function readSharedItem(key: string): string | null {
+    if (typeof window === "undefined") return null;
+    const fromCookie = readSharedCookie(key);
+    if (fromCookie !== null) return fromCookie;
     try {
         return localStorage.getItem(key);
     } catch {
         return null;
     }
+}
+
+/** Cross-subdomain logout uses the cookie only — ignore orphan localStorage on siblings. */
+export function isSharedSignedOut(): boolean {
+    if (typeof window === "undefined") return false;
+    if (new URLSearchParams(window.location.search).get("signedOut") === "1") {
+        return true;
+    }
+    if (readSharedCookie(SIGNED_OUT_KEY) === "1") {
+        return true;
+    }
+    // Scrub stale per-origin copies left after login cleared the shared cookie.
+    try {
+        localStorage.removeItem(SIGNED_OUT_KEY);
+    } catch {
+        /* ignore */
+    }
+    try {
+        sessionStorage.removeItem(SIGNED_OUT_KEY);
+    } catch {
+        /* ignore */
+    }
+    return false;
 }
 
 export function writeSharedItem(key: string, value: string, cookie = true): void {

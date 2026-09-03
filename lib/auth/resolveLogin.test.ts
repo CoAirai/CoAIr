@@ -67,7 +67,7 @@ describe("resolveLogin", () => {
 });
 
 describe("homePathForSession", () => {
-    it("sends live API sessions to the connected workspace", () => {
+    it("sends live company admins to the company portal", () => {
         const session = {
             email: "acme-admin",
             name: "Company SuperAdmin",
@@ -76,7 +76,7 @@ describe("homePathForSession", () => {
             userId: "acme-admin",
             source: "live" as const,
         };
-        expect(homePathForSession(session)).toBe("/workspace");
+        expect(homePathForSession(session)).toBe("/company");
     });
 
     it("sends live owners who still need a package to checkout", () => {

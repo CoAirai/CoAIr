@@ -43,6 +43,7 @@ export function homePathForSession(
         if (session.needsCheckout || company?.needsCheckout) {
             return "/onboarding/plans";
         }
+        if (session.role === "company_admin") return "/company";
         return "/workspace";
     }
     if (session.role === "super_admin") return "/admin";

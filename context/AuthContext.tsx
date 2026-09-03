@@ -20,6 +20,7 @@ import {
     ACCESS_TOKEN_KEY,
     SIGNED_OUT_KEY,
     clearSharedAuth,
+    isSharedSignedOut,
     readSharedItem,
     removeSharedItem,
     writeSharedItem,
@@ -60,12 +61,7 @@ type AuthContextValue = {
 };
 
 function isSignedOutFlag(): boolean {
-    if (typeof window === "undefined") return false;
-    return (
-        readSharedItem(SIGNED_OUT_KEY) === "1" ||
-        sessionStorage.getItem(SIGNED_OUT_KEY) === "1" ||
-        new URLSearchParams(window.location.search).get("signedOut") === "1"
-    );
+    return isSharedSignedOut();
 }
 
 function markSignedOut(): void {
@@ -241,11 +237,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             if (event === "SIGNED_OUT") {
                 persist(null);
-                // Preserve intentional logout across portals if the marker was set.
-                if (
-                    sessionStorage.getItem(SIGNED_OUT_KEY) === "1" ||
-                    readSharedItem(SIGNED_OUT_KEY) === "1"
-                ) {
+                // Preserve intentional logout across portals if the shared cookie was set.
+                if (isSharedSignedOut()) {
                     markSignedOut();
                 }
                 setSession(null);
