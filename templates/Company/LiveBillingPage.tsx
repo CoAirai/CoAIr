@@ -13,18 +13,15 @@ import { CompanyContentSkeleton } from "@/components/Skeleton/portals";
 import { useAuth } from "@/context/AuthContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
 import type { Plan, PlanId } from "@/lib/admin/types";
-import type { Invoice, TopUpRequest } from "@/lib/admin/billingTypes";
+import type { Invoice } from "@/lib/admin/billingTypes";
 import { chargeUsdForTokens } from "@/lib/billing/tokenEconomics";
 import { apiErrorMessage, listPackages } from "@/lib/coair/commerce";
 import {
     confirmPurchase,
     createPurchase,
-    createOrgTopup,
     getOrgInvoice,
     listOrgInvoices,
-    listOrgTopups,
     mapInvoice,
-    readPlatformStatus,
 } from "@/lib/coair/ops";
 import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
@@ -75,15 +72,8 @@ const LiveCompanyBillingPage = () => {
     const { org, me, users, refresh, error: orgError, loading: orgLoading } =
         useLiveOrg();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
-    const [topupRequests, setTopupRequests] = useState<TopUpRequest[]>([]);
-    const [topupsEnabled, setTopupsEnabled] = useState(false);
     const [tokenAmountInput, setTokenAmountInput] = useState("5000");
-    const [tokenNote, setTokenNote] = useState("");
     const [storageGbInput, setStorageGbInput] = useState("50");
-    const [customRequirement, setCustomRequirement] = useState("");
-    const [customBudgetInput, setCustomBudgetInput] = useState("");
-    const [customSubmitting, setCustomSubmitting] = useState(false);
-    const [tokenRequesting, setTokenRequesting] = useState(false);
     const [plans, setPlans] = useState<Plan[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [billingReady, setBillingReady] = useState(false);
@@ -99,14 +89,8 @@ const LiveCompanyBillingPage = () => {
             return;
         }
         try {
-            const [invoiceRows, requestRows, status] = await Promise.all([
-                listOrgInvoices(token),
-                listOrgTopups(token).catch(() => []),
-                readPlatformStatus(token).catch(() => null),
-            ]);
+            const invoiceRows = await listOrgInvoices(token);
             setInvoices(invoiceRows);
-            setTopupRequests(requestRows);
-            setTopupsEnabled(Boolean(status?.flags?.topups));
             setError(null);
         } catch (err) {
             setError(apiErrorMessage(err));
@@ -165,7 +149,6 @@ const LiveCompanyBillingPage = () => {
     const tokenPriceUsd = chargeUsdForTokens(tokenAmount, sellRate);
     const storageGb = Math.max(0, Math.floor(Number(storageGbInput) || 0));
     const storagePriceUsd = storageGb * STORAGE_USD_PER_GB;
-    const customBudgetUsd = Math.max(0, Number(customBudgetInput) || 0);
 
     const upgradePlans = useMemo(
         () =>
@@ -214,57 +197,6 @@ const LiveCompanyBillingPage = () => {
         }
     };
 
-    const requestTokenTopup = async () => {
-        if (tokenAmount < 1) {
-            setError("Enter how many tokens you need.");
-            return;
-        }
-        setTokenRequesting(true);
-        try {
-            await createOrgTopup(token, {
-                tokens: tokenAmount,
-                amountUsd: tokenPriceUsd,
-                reason:
-                    tokenNote.trim() ||
-                    `Request ${numberFormatter.format(tokenAmount)} tokens`,
-            });
-            setError(null);
-            await loadInvoices();
-        } catch (err) {
-            setError(apiErrorMessage(err));
-        } finally {
-            setTokenRequesting(false);
-        }
-    };
-
-    const submitCustomRequest = async () => {
-        const requirement = customRequirement.trim();
-        if (requirement.length < 3) {
-            setError("Describe what you need for the custom purchase request.");
-            return;
-        }
-        setCustomSubmitting(true);
-        try {
-            const estimatedTokens =
-                customBudgetUsd > 0
-                    ? Math.max(1, Math.round(customBudgetUsd * sellRate))
-                    : 1;
-            await createOrgTopup(token, {
-                tokens: estimatedTokens,
-                amountUsd: customBudgetUsd,
-                reason: requirement,
-            });
-            setCustomRequirement("");
-            setCustomBudgetInput("");
-            setError(null);
-            await loadInvoices();
-        } catch (err) {
-            setError(apiErrorMessage(err));
-        } finally {
-            setCustomSubmitting(false);
-        }
-    };
-
     const checkoutTitle =
         checkout?.kind === "upgrade"
             ? `Upgrade to ${checkout.planName}`
@@ -294,7 +226,7 @@ const LiveCompanyBillingPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Billing"
-                description="Invoices, custom token and storage purchases, plan upgrades, and custom requests."
+                description="Invoices, token and storage purchases, and plan upgrades."
             />
             {cancelled ? (
                 <p className="text-label-sm text-amber-600">
@@ -439,8 +371,7 @@ const LiveCompanyBillingPage = () => {
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
                         Enter the tokens you need. Priced at {sellRate} tokens
-                        per $1. Pay with Stripe, or request Super Admin approval
-                        when top-ups are enabled.
+                        per $1.
                     </p>
                     <label className="mt-4 block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
@@ -458,69 +389,27 @@ const LiveCompanyBillingPage = () => {
                             placeholder="e.g. 8000"
                         />
                     </label>
-                    <label className="mt-3 block">
-                        <span className="mb-1.5 block text-label-xs text-sub-600">
-                            Note (optional)
-                        </span>
-                        <input
-                            value={tokenNote}
-                            onChange={(event) => setTokenNote(event.target.value)}
-                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                            placeholder="Why you need more tokens"
-                        />
-                    </label>
                     <p className="mt-3 text-label-sm text-strong-950">
                         Estimated:{" "}
                         {tokenAmount > 0
                             ? currencyFormatter.format(tokenPriceUsd)
                             : "—"}
                     </p>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                        <button
-                            type="button"
-                            disabled={tokenAmount < 1}
-                            onClick={() =>
-                                setCheckout({
-                                    kind: "tokens",
-                                    amount: tokenAmount,
-                                    priceUsd: tokenPriceUsd,
-                                    label: `${numberFormatter.format(tokenAmount)} tokens`,
-                                })
-                            }
-                            className="h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
-                        >
-                            Buy with Stripe
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                !topupsEnabled ||
-                                tokenAmount < 1 ||
-                                tokenRequesting
-                            }
-                            onClick={() => void requestTokenTopup()}
-                            className="h-9 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
-                        >
-                            {tokenRequesting
-                                ? "Requesting…"
-                                : "Request approval"}
-                        </button>
-                    </div>
-                    {!topupsEnabled ? (
-                        <p className="mt-2 text-label-xs text-sub-600">
-                            Approval requests are off. You can still buy with
-                            Stripe, or ask Super Admin to enable top-ups.
-                        </p>
-                    ) : null}
-                    {topupRequests.length > 0 ? (
-                        <p className="mt-3 text-label-xs text-sub-600">
-                            Latest request: {topupRequests[0].status} ·{" "}
-                            {numberFormatter.format(
-                                topupRequests[0].tokensRequested
-                            )}{" "}
-                            tokens
-                        </p>
-                    ) : null}
+                    <button
+                        type="button"
+                        disabled={tokenAmount < 1}
+                        onClick={() =>
+                            setCheckout({
+                                kind: "tokens",
+                                amount: tokenAmount,
+                                priceUsd: tokenPriceUsd,
+                                label: `${numberFormatter.format(tokenAmount)} tokens`,
+                            })
+                        }
+                        className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
+                    >
+                        Buy with Stripe
+                    </button>
                 </section>
 
                 <section className="surface-panel p-5">
@@ -612,61 +501,6 @@ const LiveCompanyBillingPage = () => {
                         ))}
                     </div>
                 )}
-            </section>
-
-            <section className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">
-                    Custom purchase request
-                </h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    Chat, Chronology, and Forensic modules are included with your
-                    package. Use this for anything else you need — Super Admin
-                    reviews the request.
-                </p>
-                <label className="mt-4 block">
-                    <span className="mb-1.5 block text-label-xs text-sub-600">
-                        What do you need?
-                    </span>
-                    <textarea
-                        value={customRequirement}
-                        onChange={(event) =>
-                            setCustomRequirement(event.target.value)
-                        }
-                        rows={4}
-                        className="w-full rounded-xl border border-stroke-soft-200 px-3 py-2 text-label-sm outline-none focus:border-blue-500"
-                        placeholder="Describe the purchase or capacity you need…"
-                    />
-                </label>
-                <label className="mt-3 block max-w-xs">
-                    <span className="mb-1.5 block text-label-xs text-sub-600">
-                        Estimated budget (USD, optional)
-                    </span>
-                    <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={customBudgetInput}
-                        onChange={(event) =>
-                            setCustomBudgetInput(event.target.value)
-                        }
-                        className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                        placeholder="0.00"
-                    />
-                </label>
-                <button
-                    type="button"
-                    disabled={!topupsEnabled || customSubmitting}
-                    onClick={() => void submitCustomRequest()}
-                    className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
-                >
-                    {customSubmitting ? "Submitting…" : "Submit request"}
-                </button>
-                {!topupsEnabled ? (
-                    <p className="mt-2 text-label-xs text-sub-600">
-                        Custom requests require the platform top-ups flag. Ask
-                        Super Admin to enable it, or open a ticket.
-                    </p>
-                ) : null}
             </section>
 
             <CheckoutModal

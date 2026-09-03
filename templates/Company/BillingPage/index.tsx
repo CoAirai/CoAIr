@@ -64,8 +64,6 @@ const BillingPage = () => {
     const [checkout, setCheckout] = useState<CheckoutState>(null);
     const [tokenAmountInput, setTokenAmountInput] = useState("5000");
     const [storageGbInput, setStorageGbInput] = useState("50");
-    const [customRequirement, setCustomRequirement] = useState("");
-    const [customNote, setCustomNote] = useState<string | null>(null);
     const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
 
     const sellRate = effectiveSellRate(
@@ -396,45 +394,6 @@ const BillingPage = () => {
                         ))}
                     </div>
                 )}
-            </section>
-
-            <section className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">
-                    Custom purchase request
-                </h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    Modules are included with your package. Describe any other
-                    purchase you need.
-                </p>
-                <textarea
-                    value={customRequirement}
-                    onChange={(event) => {
-                        setCustomRequirement(event.target.value);
-                        setCustomNote(null);
-                    }}
-                    rows={4}
-                    className="mt-4 w-full rounded-xl border border-stroke-soft-200 px-3 py-2 text-label-sm outline-none focus:border-blue-500"
-                    placeholder="Describe what you need…"
-                />
-                <button
-                    type="button"
-                    onClick={() => {
-                        if (customRequirement.trim().length < 3) {
-                            setCustomNote("Add a short description first.");
-                            return;
-                        }
-                        setCustomNote(
-                            "Request saved locally. On live billing this goes to Super Admin for approval."
-                        );
-                        setCustomRequirement("");
-                    }}
-                    className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
-                >
-                    Submit request
-                </button>
-                {customNote ? (
-                    <p className="mt-2 text-label-xs text-sub-600">{customNote}</p>
-                ) : null}
             </section>
 
             <CheckoutModal
