@@ -77,6 +77,8 @@ function clearSignedOutFlag(): void {
     sessionStorage.removeItem(SIGNED_OUT_KEY);
 }
 
+const AuthContext = createContext<AuthContextValue | null>(null);
+
 function persist(session: AuthSession | null) {
     if (typeof window === "undefined") {
         return;
