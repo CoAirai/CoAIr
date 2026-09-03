@@ -7,9 +7,12 @@ import QuotaBar from "@/components/Admin/QuotaBar";
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import CheckoutModal from "@/components/Company/CheckoutModal";
+import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
+import type { Invoice } from "@/lib/admin/billingTypes";
 import type { PlanId } from "@/lib/admin/types";
+import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
 import {
     chargeUsdForTokens,
     effectiveSellRate,
@@ -63,6 +66,7 @@ const BillingPage = () => {
     const [storageGbInput, setStorageGbInput] = useState("50");
     const [customRequirement, setCustomRequirement] = useState("");
     const [customNote, setCustomNote] = useState<string | null>(null);
+    const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
 
     const sellRate = effectiveSellRate(
         tokenEconomics,
@@ -177,7 +181,7 @@ const BillingPage = () => {
                     </p>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="surface-table w-full min-w-[640px] text-left">
+                    <table className="surface-table w-full min-w-[720px] text-left">
                         <thead>
                             <tr>
                                 <th>Invoice</th>
@@ -185,6 +189,7 @@ const BillingPage = () => {
                                 <th>Status</th>
                                 <th>Issued</th>
                                 <th>Due</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stroke-soft-200">
@@ -211,6 +216,31 @@ const BillingPage = () => {
                                     </td>
                                     <td className="text-sub-600">
                                         {formatDate(invoice.dueAt)}
+                                    </td>
+                                    <td>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setViewInvoice(invoice)
+                                                }
+                                                className="h-8 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-strong-950 hover:bg-weak-50"
+                                            >
+                                                View
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    downloadInvoicePdf(
+                                                        invoice,
+                                                        company.name
+                                                    )
+                                                }
+                                                className="h-8 rounded-lg bg-blue-500 px-3 text-label-xs text-white-0 hover:bg-blue-600"
+                                            >
+                                                Download
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -414,6 +444,11 @@ const BillingPage = () => {
                 summary={checkoutSummary}
                 amountLabel={checkoutAmount}
                 onConfirm={handleConfirm}
+            />
+            <InvoiceDetailModal
+                invoice={viewInvoice}
+                companyName={company.name}
+                onClose={() => setViewInvoice(null)}
             />
         </div>
     );

@@ -8,6 +8,7 @@ import QuotaBar from "@/components/Admin/QuotaBar";
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import CheckoutModal from "@/components/Company/CheckoutModal";
+import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
 import { CompanyContentSkeleton } from "@/components/Skeleton/portals";
 import { useAuth } from "@/context/AuthContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
@@ -19,11 +20,13 @@ import {
     confirmPurchase,
     createPurchase,
     createOrgTopup,
+    getOrgInvoice,
     listOrgInvoices,
     listOrgTopups,
     mapInvoice,
     readPlatformStatus,
 } from "@/lib/coair/ops";
+import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 
 /** Default storage list price when the company enters a custom GB amount. */
@@ -85,6 +88,7 @@ const LiveCompanyBillingPage = () => {
     const [error, setError] = useState<string | null>(null);
     const [billingReady, setBillingReady] = useState(false);
     const [checkout, setCheckout] = useState<CheckoutState>(null);
+    const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
     const confirming = useRef(false);
     const sessionId = searchParams.get("session_id");
     const cancelled = searchParams.get("cancelled") === "1";
@@ -352,7 +356,7 @@ const LiveCompanyBillingPage = () => {
                     </p>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="surface-table w-full min-w-[640px] text-left">
+                    <table className="surface-table w-full min-w-[720px] text-left">
                         <thead>
                             <tr>
                                 <th>Invoice</th>
@@ -360,6 +364,7 @@ const LiveCompanyBillingPage = () => {
                                 <th>Status</th>
                                 <th>Issued</th>
                                 <th>Due</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stroke-soft-200">
@@ -382,6 +387,38 @@ const LiveCompanyBillingPage = () => {
                                     </td>
                                     <td className="text-sub-600">
                                         {formatDate(invoice.dueAt)}
+                                    </td>
+                                    <td>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setViewInvoice(invoice);
+                                                    if (!token) return;
+                                                    void getOrgInvoice(
+                                                        token,
+                                                        invoice.id
+                                                    )
+                                                        .then(setViewInvoice)
+                                                        .catch(() => undefined);
+                                                }}
+                                                className="h-8 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-strong-950 hover:bg-weak-50"
+                                            >
+                                                View
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    downloadInvoicePdf(
+                                                        invoice,
+                                                        org?.org?.name
+                                                    )
+                                                }
+                                                className="h-8 rounded-lg bg-blue-500 px-3 text-label-xs text-white-0 hover:bg-blue-600"
+                                            >
+                                                Download
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -639,6 +676,11 @@ const LiveCompanyBillingPage = () => {
                 summary={checkoutSummary}
                 amountLabel={checkoutAmount}
                 onConfirm={handleConfirm}
+            />
+            <InvoiceDetailModal
+                invoice={viewInvoice}
+                companyName={org?.org?.name}
+                onClose={() => setViewInvoice(null)}
             />
         </div>
     );

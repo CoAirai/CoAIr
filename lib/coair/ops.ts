@@ -38,6 +38,7 @@ export function mapInvoice(row: CoairInvoice): Invoice {
         status: row.status,
         issuedAt: row.issued_at,
         dueAt: row.due_at,
+        description: row.description?.trim() || undefined,
     };
 }
 
@@ -59,6 +60,14 @@ export async function listOrgInvoices(token: string) {
         token,
     });
     return (payload.invoices ?? []).map(mapInvoice);
+}
+
+export async function getOrgInvoice(token: string, invoiceId: string) {
+    const payload = await coairFetch<CoairInvoice>(
+        `/org/invoices/${encodeURIComponent(invoiceId)}`,
+        { token }
+    );
+    return mapInvoice(payload);
 }
 
 export async function createPurchase(
@@ -119,6 +128,14 @@ export async function listAdminInvoices(token: string) {
         { token }
     );
     return (payload.invoices ?? []).map(mapInvoice);
+}
+
+export async function getAdminInvoice(token: string, invoiceId: string) {
+    const payload = await coairFetch<CoairInvoice>(
+        `/admin/invoices/${encodeURIComponent(invoiceId)}`,
+        { token }
+    );
+    return mapInvoice(payload);
 }
 
 export async function createAdminInvoice(

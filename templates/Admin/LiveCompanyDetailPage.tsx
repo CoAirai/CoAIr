@@ -11,6 +11,8 @@ import RightsToggleCells from "@/components/Admin/RightsToggleCells";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import type { Invoice } from "@/lib/admin/billingTypes";
+import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
+import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
 import {
     RIGHT_COLUMNS,
     rightsFromFeatures,
@@ -39,7 +41,7 @@ import { CoairApiError } from "@/lib/coair/client";
 import { startLiveImpersonation } from "@/lib/coair/impersonate";
 import { portalPush } from "@/lib/auth/portalNav";
 import { listAdminTickets } from "@/lib/coair/commerce";
-import { listAdminInvoices } from "@/lib/coair/ops";
+import { listAdminInvoices, getAdminInvoice } from "@/lib/coair/ops";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
 
 type Props = {
@@ -92,6 +94,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     const [org, setOrg] = useState<CoairAdminOrgDetail | null>(null);
     const [users, setUsers] = useState<CoairAdminUser[]>([]);
     const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
     const [loading, setLoading] = useState(true);
     const [missing, setMissing] = useState(false);
@@ -963,6 +966,9 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                         <th className="px-5 py-3 font-medium">
                                             Status
                                         </th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Actions
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stroke-soft-200">
@@ -994,6 +1000,45 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                                 <StatusBadge
                                                     status={invoice.status}
                                                 />
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setViewInvoice(
+                                                                invoice
+                                                            );
+                                                            if (!token) return;
+                                                            void getAdminInvoice(
+                                                                token,
+                                                                invoice.id
+                                                            )
+                                                                .then(
+                                                                    setViewInvoice
+                                                                )
+                                                                .catch(
+                                                                    () =>
+                                                                        undefined
+                                                                );
+                                                        }}
+                                                        className="h-8 rounded-lg border border-stroke-soft-200 px-3 text-label-xs text-strong-950 hover:bg-weak-50"
+                                                    >
+                                                        View
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            downloadInvoicePdf(
+                                                                invoice,
+                                                                org?.name
+                                                            )
+                                                        }
+                                                        className="h-8 rounded-lg bg-blue-500 px-3 text-label-xs text-white-0 hover:bg-blue-600"
+                                                    >
+                                                        Download
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -1072,6 +1117,11 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                 confirmLabel="Suspend"
                 tone="danger"
                 onConfirm={() => void setArchived(true)}
+            />
+            <InvoiceDetailModal
+                invoice={viewInvoice}
+                companyName={org?.name}
+                onClose={() => setViewInvoice(null)}
             />
         </div>
     );

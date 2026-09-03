@@ -60,6 +60,18 @@ async def list_org_invoices(
     return {"invoices": ops.list_invoices(org.org_id)}
 
 
+@router.get("/org/invoices/{invoice_id}")
+async def get_org_invoice(
+    invoice_id: str,
+    org: OrgContext = Depends(require_org_owner),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    invoice = ops.get_invoice(invoice_id)
+    if not invoice or invoice.get("company_id") != org.org_id:
+        raise HTTPException(404, "invoice_not_found")
+    return invoice
+
+
 def _purchase_amount_and_label(
     req: PurchaseRequest,
     commerce: CommerceStore,

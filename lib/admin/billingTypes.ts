@@ -7,6 +7,7 @@ export interface Invoice {
   status: InvoiceStatus;
   issuedAt: string;
   dueAt: string;
+  description?: string;
 }
 
 export type PaymentStatus = "succeeded" | "failed" | "pending";

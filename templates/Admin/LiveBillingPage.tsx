@@ -5,10 +5,12 @@ import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from "
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import PreviewBanner from "@/components/Admin/PreviewBanner";
+import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
 import { useAuth } from "@/context/AuthContext";
 import { INVOICES } from "@/lib/admin/billingDemoData";
 import { filterInvoices, getBillingStats } from "@/lib/admin/billingSelectors";
 import type { Invoice, InvoiceStatus } from "@/lib/admin/billingTypes";
+import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
 import { COMPANIES } from "@/lib/admin/demoData";
 import { withPreview } from "@/lib/admin/preview";
 import type { Coupon, CouponDiscountType } from "@/lib/admin/wave2Types";
@@ -16,6 +18,7 @@ import { apiErrorMessage } from "@/lib/coair/commerce";
 import {
     createAdminInvoice,
     createCoupon,
+    getAdminInvoice,
     listAdminInvoices,
     listCoupons,
     readTax,
@@ -63,6 +66,7 @@ const LiveBillingPage = () => {
     const [invoiceOrgId, setInvoiceOrgId] = useState("");
     const [invoiceAmount, setInvoiceAmount] = useState("100");
     const [invoiceDescription, setInvoiceDescription] = useState("");
+    const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
 
     const refresh = useCallback(async () => {
         if (!token) return;
@@ -412,7 +416,37 @@ const LiveBillingPage = () => {
                                             {formatDate(invoice.dueAt)}
                                         </td>
                                         <td className="px-5 py-4">
-                                            <div className="flex gap-2">
+                                            <div className="flex flex-wrap gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setViewInvoice(invoice);
+                                                        if (!token) return;
+                                                        void getAdminInvoice(
+                                                            token,
+                                                            invoice.id
+                                                        )
+                                                            .then(setViewInvoice)
+                                                            .catch(() => undefined);
+                                                    }}
+                                                    className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
+                                                >
+                                                    View
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        downloadInvoicePdf(
+                                                            invoice,
+                                                            companyNameById[
+                                                                invoice.companyId
+                                                            ]
+                                                        )
+                                                    }
+                                                    className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
+                                                >
+                                                    Download
+                                                </button>
                                                 {invoice.status === "past_due" ? (
                                                     <button
                                                         type="button"
@@ -437,12 +471,6 @@ const LiveBillingPage = () => {
                                                     >
                                                         Refund
                                                     </button>
-                                                ) : null}
-                                                {invoice.status !== "past_due" &&
-                                                invoice.status !== "paid" ? (
-                                                    <span className="text-label-xs text-sub-600">
-                                                        —
-                                                    </span>
                                                 ) : null}
                                             </div>
                                         </td>
@@ -611,6 +639,16 @@ const LiveBillingPage = () => {
                     </p>
                 ) : null}
             </section>
+
+            <InvoiceDetailModal
+                invoice={viewInvoice}
+                companyName={
+                    viewInvoice
+                        ? companyNameById[viewInvoice.companyId]
+                        : undefined
+                }
+                onClose={() => setViewInvoice(null)}
+            />
         </div>
     );
 };

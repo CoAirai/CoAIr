@@ -96,6 +96,18 @@ async def list_admin_invoices(
     return {"invoices": ops.list_invoices()}
 
 
+@router.get("/admin/invoices/{invoice_id}")
+async def get_admin_invoice(
+    invoice_id: str,
+    _admin: UserContext = Depends(require_admin),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    invoice = ops.get_invoice(invoice_id)
+    if not invoice:
+        raise HTTPException(404, "invoice_not_found")
+    return invoice
+
+
 @router.post("/admin/invoices", status_code=201)
 async def create_admin_invoice(
     req: InvoiceCreate,
