@@ -8,6 +8,7 @@ import QuotaBar from "@/components/Admin/QuotaBar";
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import CheckoutModal from "@/components/Company/CheckoutModal";
+import { CompanyContentSkeleton } from "@/components/Skeleton/portals";
 import { useAuth } from "@/context/AuthContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
 import type { ModuleId, Plan, PlanId } from "@/lib/admin/types";
@@ -78,20 +79,25 @@ const LiveCompanyBillingPage = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const token = session?.accessToken ?? "";
-    const { org, me, users, refresh, error: orgError } = useLiveOrg();
+    const { org, me, users, refresh, error: orgError, loading: orgLoading } =
+        useLiveOrg();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [topupRequests, setTopupRequests] = useState<TopUpRequest[]>([]);
     const [topupsEnabled, setTopupsEnabled] = useState(false);
     const [topupReason, setTopupReason] = useState("Need additional tokens");
     const [plans, setPlans] = useState<Plan[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [billingReady, setBillingReady] = useState(false);
     const [checkout, setCheckout] = useState<CheckoutState>(null);
     const confirming = useRef(false);
     const sessionId = searchParams.get("session_id");
     const cancelled = searchParams.get("cancelled") === "1";
 
     const loadInvoices = useCallback(async () => {
-        if (!token) return;
+        if (!token) {
+            setBillingReady(true);
+            return;
+        }
         try {
             const [invoiceRows, requestRows, status] = await Promise.all([
                 listOrgInvoices(token),
@@ -104,6 +110,8 @@ const LiveCompanyBillingPage = () => {
             setError(null);
         } catch (err) {
             setError(apiErrorMessage(err));
+        } finally {
+            setBillingReady(true);
         }
     }, [token]);
 
@@ -138,9 +146,11 @@ const LiveCompanyBillingPage = () => {
             .catch((err) => setError(apiErrorMessage(err)));
     }, [token]);
 
-    const planId = (org?.subscription?.plan_id as PlanId | undefined) ?? "pro";
-    const plan = getPlanById(planId, plans) ?? getPlanById(planId);
-    const currentPlanIndex = PLAN_ORDER.indexOf(planId);
+    const planId = org?.subscription?.plan_id as PlanId | undefined;
+    const plan = planId
+        ? getPlanById(planId, plans) ?? getPlanById(planId)
+        : undefined;
+    const currentPlanIndex = planId ? PLAN_ORDER.indexOf(planId) : -1;
     const sellRate =
         org?.subscription?.sell_tokens_per_usd_override &&
         org.subscription.sell_tokens_per_usd_override > 0
@@ -168,6 +178,10 @@ const LiveCompanyBillingPage = () => {
             ),
         [plans, currentPlanIndex]
     );
+
+    if (orgLoading || !billingReady) {
+        return <CompanyContentSkeleton />;
+    }
 
     const handleConfirm = async () => {
         if (!checkout) return { ok: false, error: "No purchase selected" };
@@ -263,7 +277,7 @@ const LiveCompanyBillingPage = () => {
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <StatCard
                         label="Plan"
-                        value={plan?.name ?? planId}
+                        value={plan?.name ?? planId ?? "—"}
                         hint={plan?.priceLabel ?? "—"}
                     />
                     <StatCard

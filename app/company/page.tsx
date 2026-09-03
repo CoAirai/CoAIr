@@ -1,13 +1,14 @@
 "use client";
 
-import { useAuth } from "@/context/AuthContext";
+import CompanySourceGate from "@/components/Company/CompanySourceGate";
 import LiveCompanyDashboardPage from "@/templates/Company/LiveDashboardPage";
 import DashboardPage from "@/templates/Company/DashboardPage";
 
 export default function Page() {
-    const { session } = useAuth();
-    if (session?.source === "live") {
-        return <LiveCompanyDashboardPage />;
-    }
-    return <DashboardPage />;
+    return (
+        <CompanySourceGate
+            live={<LiveCompanyDashboardPage />}
+            mock={<DashboardPage />}
+        />
+    );
 }

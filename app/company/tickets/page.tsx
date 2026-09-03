@@ -1,13 +1,14 @@
 "use client";
 
-import { useAuth } from "@/context/AuthContext";
+import CompanySourceGate from "@/components/Company/CompanySourceGate";
 import LiveTicketsPage from "@/templates/Company/LiveTicketsPage";
 import TicketsPage from "@/templates/Company/TicketsPage";
 
 export default function Page() {
-    const { session } = useAuth();
-    if (session?.source === "live") {
-        return <LiveTicketsPage />;
-    }
-    return <TicketsPage />;
+    return (
+        <CompanySourceGate
+            live={<LiveTicketsPage />}
+            mock={<TicketsPage />}
+        />
+    );
 }

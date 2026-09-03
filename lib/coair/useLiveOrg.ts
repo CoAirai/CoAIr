@@ -27,7 +27,7 @@ export function useLiveOrg() {
         null
     );
     const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     const refresh = useCallback(async () => {
         if (!enabled || !session?.accessToken) {
@@ -35,6 +35,7 @@ export function useLiveOrg() {
             setOrg(null);
             setOrgUsage(null);
             setMe(null);
+            setLoading(false);
             return;
         }
         setLoading(true);
