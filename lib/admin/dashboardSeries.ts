@@ -3,16 +3,6 @@ export type ChartPoint = {
     value: number;
 };
 
-export const TOKEN_SPEND_TREND: ChartPoint[] = [
-    { label: "May 26", value: 1180 },
-    { label: "Jun 9", value: 1420 },
-    { label: "Jun 23", value: 1360 },
-    { label: "Jul 7", value: 1680 },
-    { label: "Jul 21", value: 1910 },
-    { label: "Aug 4", value: 1740 },
-    { label: "Aug 11", value: 2080 },
-];
-
 export const TOKEN_USAGE_TREND: ChartPoint[] = [
     { label: "Mon", value: 12400 },
     { label: "Tue", value: 18200 },

@@ -33,7 +33,12 @@ const LiveDashboardPage = () => {
     const [weekly, setWeekly] = useState<ChartPoint[]>([]);
 
     useEffect(() => {
-        if (!token) return;
+        if (!token) {
+            setAudit([]);
+            setAuditReady(true);
+            setWeekly([]);
+            return;
+        }
         setAuditReady(false);
         void listAudit(token)
             .then((events) => {
