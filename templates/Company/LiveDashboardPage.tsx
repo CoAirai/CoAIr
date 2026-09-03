@@ -43,9 +43,14 @@ const LiveCompanyDashboardPage = () => {
                     hint={`of ${numberFormatter.format(usage?.token_limit ?? 0)}`}
                 />
                 <StatCard
-                    label="Credits left"
-                    value={numberFormatter.format(usage?.credits_remaining ?? 0)}
-                    hint={`of ${numberFormatter.format(usage?.credits_total ?? 0)}`}
+                    label="Tokens remaining"
+                    value={numberFormatter.format(
+                        Math.max(
+                            0,
+                            (usage?.token_limit ?? 0) - (usage?.used_tokens ?? 0)
+                        )
+                    )}
+                    hint="Same pool as token limit"
                 />
             </div>
         </PageEnter>
