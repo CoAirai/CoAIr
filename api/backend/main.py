@@ -46,6 +46,7 @@ from backend.api import (
     projects,
     reports,
     runs,
+    stripe_webhooks,
     tickets,
     usage,
 )
@@ -117,6 +118,8 @@ def create_app() -> FastAPI:
     app.include_router(
         access_requests.router, prefix="/api", tags=["access-requests"],
     )
+    # Stripe webhooks must stay public (signature-verified).
+    app.include_router(stripe_webhooks.router, prefix="/api", tags=["stripe"])
     app.include_router(projects.router, prefix="/api", tags=["projects"], dependencies=auth_dep)
     # Company self-administration. Authenticated only — an organization owner
     # must never inherit platform powers, so each route carries its own org gate.

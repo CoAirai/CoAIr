@@ -124,14 +124,16 @@ nginx -t
 systemctl reload nginx
 echo NGINX_OK
 
-# Monthly company token pool reset (1st of month 00:05 UTC).
-# Install once on the VPS host:
-#   cat > /etc/cron.d/coair-token-pool-reset <<'CRON'
+# Package auto-renew + token pool reset on renewal (not calendar month).
+# Stripe renewals: configure webhook https://api.coair.ai/api/stripe/webhook
+#   events: checkout.session.completed, invoice.paid, customer.subscription.updated,
+#           customer.subscription.deleted
+# Local/dummy renewals (no stripe_subscription_id):
+#   cat > /etc/cron.d/coair-subscription-renew <<'CRON'
 #   SHELL=/bin/bash
 #   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-#   5 0 1 * * root cd /opt/coair-api && docker compose -f docker-compose.vps.yml exec -T api python scripts/reset_org_token_pools.py >> /var/log/coair-token-reset.log 2>&1
+#   10 0 * * * root cd /opt/coair-api && docker compose -f docker-compose.vps.yml exec -T api python scripts/renew_org_subscriptions.py >> /var/log/coair-subscription-renew.log 2>&1
 #   CRON
-#   chmod 644 /etc/cron.d/coair-token-pool-reset
-#
-# One-time mid-cycle rebalance after shared-pool deploy:
-#   docker compose -f docker-compose.vps.yml exec -T api python scripts/rebalance_org_token_pools.py
+#   chmod 644 /etc/cron.d/coair-subscription-renew
+# Remove any legacy calendar-month token reset cron if present:
+#   rm -f /etc/cron.d/coair-token-pool-reset

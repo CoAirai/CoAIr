@@ -16,9 +16,13 @@ from src.org_store import OrgStore, get_org_store
 from src.email_delivery import send_coair_email
 from src.stripe_billing import (
     create_checkout_session,
+    create_plan_subscription_checkout,
     fulfill_purchase,
     retrieve_paid_session,
     stripe_enabled,
+    fulfill_plan,
+    _period_end_iso,
+    _stripe,
 )
 from src.supabase_auth import invite_or_recover, use_supabase_auth
 from src.user_store import UserStore, get_user_store
@@ -116,6 +120,16 @@ async def create_purchase(
 
     if stripe_enabled():
         if amount <= 0:
+            if req.kind == "upgrade" and req.plan_id:
+                return fulfill_plan(
+                    org.org_id,
+                    req.plan_id,
+                    user.username,
+                    commerce=commerce,
+                    orgs=orgs,
+                    users=users,
+                    ops=ops,
+                )
             return fulfill_purchase(
                 org.org_id,
                 kind=req.kind,
@@ -132,27 +146,53 @@ async def create_purchase(
                 ops=ops,
             )
         try:
-            session = create_checkout_session(
-                org_id=org.org_id,
-                amount_usd=amount,
-                description=description,
-                success_path="/company/billing?session_id={CHECKOUT_SESSION_ID}",
-                cancel_path="/company/billing?cancelled=1",
-                metadata={
-                    "flow": "billing",
-                    "kind": req.kind,
-                    "plan_id": req.plan_id or "",
-                    "tokens": str(req.tokens or ""),
-                    "gb": str(req.gb or ""),
-                    "module_id": req.module_id or "",
-                    "description": description[:200],
-                    "amount_usd": str(amount),
-                    "credit_username": "",
-                },
-            )
+            if req.kind == "upgrade":
+                if not req.plan_id:
+                    raise HTTPException(400, "plan_id_required")
+                session = create_plan_subscription_checkout(
+                    org_id=org.org_id,
+                    amount_usd=amount,
+                    description=description or f"Upgrade to {req.plan_id}",
+                    plan_id=req.plan_id,
+                    success_path="/company/billing?session_id={CHECKOUT_SESSION_ID}",
+                    cancel_path="/company/billing?cancelled=1",
+                    flow="billing",
+                )
+            else:
+                session = create_checkout_session(
+                    org_id=org.org_id,
+                    amount_usd=amount,
+                    description=description,
+                    success_path="/company/billing?session_id={CHECKOUT_SESSION_ID}",
+                    cancel_path="/company/billing?cancelled=1",
+                    metadata={
+                        "flow": "billing",
+                        "kind": req.kind,
+                        "plan_id": req.plan_id or "",
+                        "tokens": str(req.tokens or ""),
+                        "gb": str(req.gb or ""),
+                        "module_id": req.module_id or "",
+                        "description": description[:200],
+                        "amount_usd": str(amount),
+                        "credit_username": "",
+                    },
+                )
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(502, f"stripe_session_failed:{exc}") from exc
         return session
+
+    if req.kind == "upgrade" and req.plan_id:
+        return fulfill_plan(
+            org.org_id,
+            req.plan_id,
+            user.username,
+            commerce=commerce,
+            orgs=orgs,
+            users=users,
+            ops=ops,
+        )
 
     return fulfill_purchase(
         org.org_id,
@@ -194,6 +234,36 @@ async def confirm_purchase(
         raise HTTPException(403, "session_org_mismatch")
     meta = session["metadata"]
     kind = meta.get("kind") or ""
+    if kind == "plan":
+        plan_id = meta.get("plan_id") or ""
+        if not plan_id:
+            raise HTTPException(400, "session_missing_plan")
+        period_end = None
+        sub_id = session.get("subscription_id") or ""
+        if sub_id:
+            try:
+                sub = _stripe().Subscription.retrieve(sub_id)
+                ts = getattr(sub, "current_period_end", None)
+                if ts:
+                    period_end = _period_end_iso(from_ts=int(ts))
+            except Exception:
+                period_end = None
+        try:
+            return fulfill_plan(
+                org.org_id,
+                plan_id,
+                user.username,
+                stripe_session_id=session["id"],
+                stripe_customer_id=session.get("customer_id") or "",
+                stripe_subscription_id=sub_id,
+                current_period_end=period_end,
+                commerce=commerce,
+                orgs=orgs,
+                users=users,
+                ops=ops,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     if kind not in ("tokens", "storage", "upgrade", "addon"):
         raise HTTPException(400, "session_not_purchase")
     tokens = int(meta["tokens"]) if meta.get("tokens") else None

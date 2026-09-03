@@ -15,7 +15,12 @@ import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
 import type { Plan, PlanId } from "@/lib/admin/types";
 import type { Invoice } from "@/lib/admin/billingTypes";
 import { chargeUsdForTokens } from "@/lib/billing/tokenEconomics";
-import { apiErrorMessage, listPackages } from "@/lib/coair/commerce";
+import {
+    apiErrorMessage,
+    cancelOrgSubscription,
+    listPackages,
+    resumeOrgSubscription,
+} from "@/lib/coair/commerce";
 import {
     confirmPurchase,
     createPurchase,
@@ -69,7 +74,7 @@ const LiveCompanyBillingPage = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const token = session?.accessToken ?? "";
-    const { org, me, users, refresh, error: orgError, loading: orgLoading } =
+    const { org, me, refresh, error: orgError, loading: orgLoading } =
         useLiveOrg();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [tokenAmountInput, setTokenAmountInput] = useState("5000");
@@ -135,6 +140,11 @@ const LiveCompanyBillingPage = () => {
         ? getPlanById(planId, plans) ?? getPlanById(planId)
         : undefined;
     const currentPlanIndex = planId ? PLAN_ORDER.indexOf(planId) : -1;
+    const autoRenew = Boolean(org?.subscription?.auto_renew);
+    const cancelAtPeriodEnd = Boolean(org?.subscription?.cancel_at_period_end);
+    const periodEnd = org?.subscription?.current_period_end
+        ? formatDate(org.subscription.current_period_end)
+        : null;
     const sellRate =
         org?.subscription?.sell_tokens_per_usd_override &&
         org.subscription.sell_tokens_per_usd_override > 0
@@ -226,7 +236,7 @@ const LiveCompanyBillingPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Billing"
-                description="Invoices, token and storage purchases, and plan upgrades."
+                description="Invoices, token and storage purchases, and auto-renewing plans. Token pool resets when the package renews."
             />
             {cancelled ? (
                 <p className="text-label-sm text-amber-600">
@@ -258,11 +268,21 @@ const LiveCompanyBillingPage = () => {
                         hint={`${numberFormatter.format(storageUsedGb)} GB used`}
                     />
                     <StatCard
-                        label="Team size"
-                        value={numberFormatter.format(
-                            org?.counts?.members ?? users.length
-                        )}
-                        hint="Active seats on plan"
+                        label="Auto-renew"
+                        value={
+                            cancelAtPeriodEnd
+                                ? "Cancelling"
+                                : autoRenew
+                                  ? "On"
+                                  : "Off"
+                        }
+                        hint={
+                            periodEnd
+                                ? cancelAtPeriodEnd
+                                    ? `Ends ${periodEnd}`
+                                    : `Next renewal ${periodEnd}`
+                                : "Monthly subscription"
+                        }
                     />
                 </div>
                 <div className="mt-5 grid gap-5 lg:grid-cols-2">
@@ -278,6 +298,52 @@ const LiveCompanyBillingPage = () => {
                         unit="GB"
                     />
                 </div>
+                {planId && planId !== "demo" ? (
+                    <div className="mt-5 flex flex-wrap gap-2">
+                        {cancelAtPeriodEnd ? (
+                            <button
+                                type="button"
+                                className="h-10 rounded-full bg-blue-500 px-4 text-label-sm text-white-0"
+                                onClick={() =>
+                                    void resumeOrgSubscription(token)
+                                        .then(async () => {
+                                            setError(null);
+                                            await refresh();
+                                        })
+                                        .catch((err) =>
+                                            setError(apiErrorMessage(err))
+                                        )
+                                }
+                            >
+                                Resume auto-renew
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                className="h-10 rounded-full border border-stroke-soft-200 px-4 text-label-sm text-red-500"
+                                onClick={() => {
+                                    if (
+                                        !window.confirm(
+                                            "Cancel auto-renew? You keep this package until the current period ends. Token pool will not renew after that."
+                                        )
+                                    ) {
+                                        return;
+                                    }
+                                    void cancelOrgSubscription(token)
+                                        .then(async () => {
+                                            setError(null);
+                                            await refresh();
+                                        })
+                                        .catch((err) =>
+                                            setError(apiErrorMessage(err))
+                                        );
+                                }}
+                            >
+                                Cancel package
+                            </button>
+                        )}
+                    </div>
+                ) : null}
             </section>
 
             <section className="surface-panel overflow-hidden">

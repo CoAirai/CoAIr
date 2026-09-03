@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Calendar-month company token pool reset (1st of month, 00:00 UTC).
+"""Manual / ops helper: equal-split company token pools.
 
-Resets each active member's usage and equally splits the company pool.
+Preferred product path is package renewal (`renew_org_subscriptions.py` or
+Stripe `invoice.paid` webhook), which resets usage and re-splits the pool.
+
+This script remains for one-off ops. Do not schedule it on a calendar month
+for product renewals.
 
     python scripts/reset_org_token_pools.py
     python scripts/reset_org_token_pools.py --dry-run
     python scripts/reset_org_token_pools.py --org ORG_ID
-
-VPS cron (example, 1st of each month 00:05 UTC):
-
-    5 0 1 * * cd /opt/coair-api && docker compose -f docker-compose.vps.yml \\
-      exec -T api python scripts/reset_org_token_pools.py >> /var/log/coair-token-reset.log 2>&1
 """
 
 from __future__ import annotations

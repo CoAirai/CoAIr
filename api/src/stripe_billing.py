@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from .commerce_store import CommerceStore, gb_to_bytes, get_commerce_store
+from .logger import logger
 from .ops_store import OpsStore, get_ops_store
 from .org_store import OrgStore, get_org_store
 from .user_store import UserStore, get_user_store
@@ -21,11 +22,21 @@ def stripe_enabled() -> bool:
     return bool((os.getenv("STRIPE_SECRET_KEY") or "").strip())
 
 
+def webhook_secret() -> str:
+    return (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
+
+
 def _stripe():
     import stripe
 
     stripe.api_key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
     return stripe
+
+
+def _period_end_iso(*, days: int = 30, from_ts: Optional[int] = None) -> str:
+    if from_ts:
+        return datetime.fromtimestamp(int(from_ts), tz=timezone.utc).isoformat()
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
 
 def _portal_base(kind: str) -> str:
@@ -91,6 +102,68 @@ def create_checkout_session(
     return {"checkout_url": url, "session_id": str(session.id)}
 
 
+def create_plan_subscription_checkout(
+    *,
+    org_id: str,
+    amount_usd: float,
+    description: str,
+    plan_id: str,
+    success_path: str,
+    cancel_path: str,
+    flow: str = "billing",
+) -> Dict[str, str]:
+    """Monthly auto-renewing Stripe Checkout for a company package."""
+    if not stripe_enabled():
+        raise RuntimeError("stripe_not_configured")
+    cents = max(0, int(round(float(amount_usd) * 100)))
+    if cents <= 0:
+        raise ValueError("amount_must_be_positive")
+    base = _portal_base(flow)
+    success_url = f"{base}{success_path}"
+    if "{CHECKOUT_SESSION_ID}" not in success_url:
+        sep = "&" if "?" in success_url else "?"
+        success_url = f"{success_url}{sep}session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{base}{cancel_path}"
+    stripe = _stripe()
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        line_items=[
+            {
+                "quantity": 1,
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": cents,
+                    "recurring": {"interval": "month"},
+                    "product_data": {
+                        "name": (description[:120] or f"COAir {plan_id}"),
+                    },
+                },
+            }
+        ],
+        metadata={
+            "flow": flow,
+            "kind": "plan",
+            "plan_id": plan_id,
+            "org_id": org_id,
+            "description": description[:200],
+            "amount_usd": str(amount_usd),
+        },
+        subscription_data={
+            "metadata": {
+                "org_id": org_id,
+                "plan_id": plan_id,
+            }
+        },
+        client_reference_id=org_id[:200],
+    )
+    url = getattr(session, "url", None) or ""
+    if not url:
+        raise RuntimeError("stripe_session_missing_url")
+    return {"checkout_url": url, "session_id": str(session.id)}
+
+
 def _metadata_dict(value: Any) -> Dict[str, str]:
     """Convert Stripe metadata StripeObject / dict into a plain str→str map."""
     if value is None:
@@ -126,11 +199,16 @@ def retrieve_paid_session(session_id: str) -> Dict[str, Any]:
     if status not in {"paid", "no_payment_required"} and amount_total > 0:
         raise ValueError("session_not_paid")
     meta = _metadata_dict(getattr(session, "metadata", None))
+    subscription_id = getattr(session, "subscription", None) or ""
+    customer_id = getattr(session, "customer", None) or ""
     return {
         "id": str(session.id),
         "payment_status": status,
         "amount_total": amount_total,
         "metadata": meta,
+        "mode": str(getattr(session, "mode", "") or ""),
+        "subscription_id": str(subscription_id or ""),
+        "customer_id": str(customer_id or ""),
         "org_id": str(
             meta.get("org_id")
             or getattr(session, "client_reference_id", "")
@@ -176,6 +254,9 @@ def fulfill_plan(
     actor: str,
     *,
     stripe_session_id: str = "",
+    stripe_customer_id: str = "",
+    stripe_subscription_id: str = "",
+    current_period_end: Optional[str] = None,
     commerce: Optional[CommerceStore] = None,
     orgs: Optional[OrgStore] = None,
     users: Optional[UserStore] = None,
@@ -195,6 +276,24 @@ def fulfill_plan(
     if not plan:
         raise ValueError("plan_not_found")
 
+    previous = commerce.get_subscription(org_id)
+    old_sub_id = (previous.get("stripe_subscription_id") or "").strip()
+    if (
+        stripe_subscription_id
+        and old_sub_id
+        and old_sub_id != stripe_subscription_id
+        and stripe_enabled()
+    ):
+        try:
+            _stripe().Subscription.delete(old_sub_id)
+        except Exception as exc:
+            logger.warning(
+                "stripe_replace_old_subscription_failed org=%s sub=%s err=%s",
+                org_id,
+                old_sub_id,
+                exc,
+            )
+
     storage_bytes = gb_to_bytes(int(plan["storage_limit_gb"]))
     credits = float(plan["api_credits_usd"])
     token_limit = int(plan.get("query_cap") or 0)
@@ -204,12 +303,22 @@ def fulfill_plan(
         default_storage_bytes=storage_bytes,
         default_token_limit=token_limit,
     )
+    period_end = current_period_end or _period_end_iso()
     subscription = commerce.set_subscription(
-        org_id, plan_id=plan_id, needs_checkout=False,
+        org_id,
+        plan_id=plan_id,
+        needs_checkout=False,
+        stripe_customer_id=stripe_customer_id or None,
+        stripe_subscription_id=stripe_subscription_id or None,
+        status="active",
+        cancel_at_period_end=False,
+        current_period_end=period_end,
+        auto_renew=True,
     )
     record = orgs.get_org(org_id) or {}
     from src.org_quota import sync_org_member_quotas
 
+    # New package period: equal-split full pool and reset usage.
     sync_org_member_quotas(
         org_id,
         token_limit=token_limit,
@@ -217,6 +326,7 @@ def fulfill_plan(
         orgs=orgs,
         users=users,
         commerce=commerce,
+        reset_usage=True,
     )
     invoice = ops.create_invoice(
         org_id,
@@ -257,6 +367,251 @@ def fulfill_plan(
             payload=result,
         )
     return result
+
+
+def renew_package_period(
+    org_id: str,
+    *,
+    actor: str = "system:renewal",
+    period_end: Optional[str] = None,
+    amount_usd: Optional[float] = None,
+    stripe_invoice_id: str = "",
+    commerce: Optional[CommerceStore] = None,
+    orgs: Optional[OrgStore] = None,
+    users: Optional[UserStore] = None,
+    ops: Optional[OpsStore] = None,
+) -> Dict[str, Any]:
+    """On package renewal: reset usage and equal-split the company pool again."""
+    commerce = commerce or get_commerce_store()
+    orgs = orgs or get_org_store()
+    users = users or get_user_store()
+    ops = ops or get_ops_store()
+
+    sub = commerce.get_subscription(org_id)
+    plan_id = str(sub.get("plan_id") or "demo")
+    plan = commerce.get_plan(plan_id) or {}
+    from src.org_quota import resolve_org_token_limit, sync_org_member_quotas
+
+    token_limit = resolve_org_token_limit(
+        org_id, orgs=orgs, commerce=commerce
+    )
+    sync_org_member_quotas(
+        org_id,
+        token_limit=token_limit,
+        orgs=orgs,
+        users=users,
+        commerce=commerce,
+        reset_usage=True,
+    )
+    next_end = period_end or _period_end_iso()
+    subscription = commerce.set_subscription(
+        org_id,
+        plan_id=plan_id,
+        needs_checkout=False,
+        status="active",
+        cancel_at_period_end=False,
+        current_period_end=next_end,
+        auto_renew=True,
+    )
+    amount = float(
+        amount_usd
+        if amount_usd is not None
+        else (plan.get("api_credits_usd") or 0)
+    )
+    description = f"{plan.get('name') or plan_id} package renewal"
+    if stripe_invoice_id:
+        description = f"{description} ({stripe_invoice_id})"
+    invoice = ops.create_invoice(
+        org_id, amount_usd=amount, status="paid", description=description,
+    )
+    ops.record_audit(
+        actor=actor,
+        action="company.plan_renew",
+        target_type="company",
+        target_id=org_id,
+        target_label=org_id,
+        detail=f"Renewed {plan_id}; token pool reset",
+    )
+    logger.info(
+        "org_package_renewed org=%s plan=%s period_end=%s",
+        org_id,
+        plan_id,
+        next_end,
+    )
+    return {
+        "org_id": org_id,
+        "subscription": subscription,
+        "invoice": invoice,
+        "token_limit": token_limit,
+    }
+
+
+def cancel_package_subscription(
+    org_id: str,
+    *,
+    actor: str,
+    immediate: bool = False,
+    commerce: Optional[CommerceStore] = None,
+    orgs: Optional[OrgStore] = None,
+    ops: Optional[OpsStore] = None,
+) -> Dict[str, Any]:
+    commerce = commerce or get_commerce_store()
+    orgs = orgs or get_org_store()
+    ops = ops or get_ops_store()
+    sub = commerce.get_subscription(org_id)
+    plan_id = str(sub.get("plan_id") or "demo")
+    stripe_sub = (sub.get("stripe_subscription_id") or "").strip()
+
+    if stripe_sub and stripe_enabled():
+        stripe = _stripe()
+        if immediate:
+            stripe.Subscription.delete(stripe_sub)
+        else:
+            stripe.Subscription.modify(stripe_sub, cancel_at_period_end=True)
+
+    if immediate:
+        subscription = commerce.set_subscription(
+            org_id,
+            plan_id="demo",
+            needs_checkout=False,
+            status="canceled",
+            cancel_at_period_end=False,
+            auto_renew=False,
+            stripe_subscription_id="",
+        )
+        # Clear paid pool to demo defaults.
+        plan = commerce.get_plan("demo") or {}
+        token_limit = int(plan.get("query_cap") or 0)
+        storage_bytes = gb_to_bytes(int(plan.get("storage_limit_gb") or 0))
+        orgs.update_org(
+            org_id,
+            default_credits=float(plan.get("api_credits_usd") or 0),
+            default_storage_bytes=storage_bytes,
+            default_token_limit=token_limit,
+        )
+        from src.org_quota import sync_org_member_quotas
+        from src.user_store import get_user_store
+
+        sync_org_member_quotas(
+            org_id,
+            token_limit=token_limit,
+            storage_limit_bytes=storage_bytes,
+            orgs=orgs,
+            users=get_user_store(),
+            commerce=commerce,
+            reset_usage=False,
+        )
+    else:
+        subscription = commerce.set_subscription(
+            org_id,
+            plan_id=plan_id,
+            needs_checkout=False,
+            status="active",
+            cancel_at_period_end=True,
+            auto_renew=False,
+        )
+
+    ops.record_audit(
+        actor=actor,
+        action="company.plan_cancel",
+        target_type="company",
+        target_id=org_id,
+        target_label=org_id,
+        detail=(
+            "Cancelled package immediately"
+            if immediate
+            else "Cancelled auto-renew; access until period end"
+        ),
+    )
+    return {"subscription": subscription, "immediate": immediate}
+
+
+def resume_package_subscription(
+    org_id: str,
+    *,
+    actor: str,
+    commerce: Optional[CommerceStore] = None,
+    ops: Optional[OpsStore] = None,
+) -> Dict[str, Any]:
+    commerce = commerce or get_commerce_store()
+    ops = ops or get_ops_store()
+    sub = commerce.get_subscription(org_id)
+    plan_id = str(sub.get("plan_id") or "demo")
+    stripe_sub = (sub.get("stripe_subscription_id") or "").strip()
+    if stripe_sub and stripe_enabled():
+        _stripe().Subscription.modify(stripe_sub, cancel_at_period_end=False)
+    subscription = commerce.set_subscription(
+        org_id,
+        plan_id=plan_id,
+        needs_checkout=False,
+        status="active",
+        cancel_at_period_end=False,
+        auto_renew=True,
+    )
+    ops.record_audit(
+        actor=actor,
+        action="company.plan_resume",
+        target_type="company",
+        target_id=org_id,
+        target_label=org_id,
+        detail="Resumed package auto-renew",
+    )
+    return {"subscription": subscription}
+
+
+def sync_stripe_subscription_object(
+    subscription_obj: Any,
+    *,
+    commerce: Optional[CommerceStore] = None,
+) -> Optional[Dict[str, Any]]:
+    commerce = commerce or get_commerce_store()
+    meta = _metadata_dict(getattr(subscription_obj, "metadata", None))
+    org_id = (meta.get("org_id") or "").strip()
+    if not org_id:
+        # Look up by stripe subscription id
+        sub_id = str(getattr(subscription_obj, "id", "") or "")
+        for row in commerce.list_subscriptions():
+            if (row.get("stripe_subscription_id") or "") == sub_id:
+                org_id = row["org_id"]
+                break
+    if not org_id:
+        return None
+    current = commerce.get_subscription(org_id)
+    plan_id = (
+        (meta.get("plan_id") or "").strip()
+        or current.get("plan_id")
+        or "demo"
+    )
+    status = str(getattr(subscription_obj, "status", "") or "active")
+    cancel_at = bool(getattr(subscription_obj, "cancel_at_period_end", False))
+    period_end_ts = getattr(subscription_obj, "current_period_end", None)
+    period_end = (
+        _period_end_iso(from_ts=int(period_end_ts)) if period_end_ts else None
+    )
+    customer = getattr(subscription_obj, "customer", None)
+    return commerce.set_subscription(
+        org_id,
+        plan_id=plan_id,
+        needs_checkout=False,
+        stripe_customer_id=str(customer) if customer else None,
+        stripe_subscription_id=str(getattr(subscription_obj, "id", "") or ""),
+        status=status,
+        cancel_at_period_end=cancel_at,
+        current_period_end=period_end,
+        auto_renew=not cancel_at and status == "active",
+    )
+
+
+def find_org_id_for_stripe_subscription(
+    subscription_id: str,
+    *,
+    commerce: Optional[CommerceStore] = None,
+) -> str:
+    commerce = commerce or get_commerce_store()
+    for row in commerce.list_subscriptions():
+        if (row.get("stripe_subscription_id") or "") == subscription_id:
+            return str(row.get("org_id") or "")
+    return ""
 
 
 def fulfill_purchase(

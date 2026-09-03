@@ -192,4 +192,39 @@ export async function confirmCheckout(token: string, sessionId: string) {
     });
 }
 
+export async function cancelOrgSubscription(
+    token: string,
+    options: { immediate?: boolean } = {}
+) {
+    return coairFetch<{
+        subscription: {
+            plan_id?: string;
+            auto_renew?: boolean;
+            cancel_at_period_end?: boolean;
+            status?: string;
+            current_period_end?: string | null;
+        };
+        immediate: boolean;
+    }>("/org/subscription/cancel", {
+        method: "POST",
+        token,
+        body: { immediate: Boolean(options.immediate) },
+    });
+}
+
+export async function resumeOrgSubscription(token: string) {
+    return coairFetch<{
+        subscription: {
+            plan_id?: string;
+            auto_renew?: boolean;
+            cancel_at_period_end?: boolean;
+            status?: string;
+            current_period_end?: string | null;
+        };
+    }>("/org/subscription/resume", {
+        method: "POST",
+        token,
+    });
+}
+
 export { apiErrorMessage };

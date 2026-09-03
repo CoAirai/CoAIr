@@ -372,7 +372,13 @@ CREATE TABLE IF NOT EXISTS org_subscriptions (
     plan_id TEXT NOT NULL,
     needs_checkout INTEGER NOT NULL,
     sell_tokens_per_usd_override DOUBLE PRECISION,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    status TEXT,
+    cancel_at_period_end INTEGER,
+    current_period_end TEXT,
+    auto_renew INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS stripe_fulfillments (

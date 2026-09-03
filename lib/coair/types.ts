@@ -31,6 +31,11 @@ export type CoairOrgResponse = {
         plan_id?: string;
         needs_checkout?: boolean;
         sell_tokens_per_usd_override?: number | null;
+        status?: string;
+        auto_renew?: boolean;
+        cancel_at_period_end?: boolean;
+        current_period_end?: string | null;
+        stripe_subscription_id?: string | null;
     };
 };
 

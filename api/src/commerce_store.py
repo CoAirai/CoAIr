@@ -137,7 +137,13 @@ CREATE TABLE IF NOT EXISTS org_subscriptions (
     plan_id TEXT NOT NULL,
     needs_checkout INTEGER NOT NULL,
     sell_tokens_per_usd_override REAL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    status TEXT,
+    cancel_at_period_end INTEGER,
+    current_period_end TEXT,
+    auto_renew INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS stripe_fulfillments (
@@ -253,6 +259,7 @@ class CommerceStore:
         if not use_postgres():
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
+                self._ensure_subscription_columns(conn)
                 self._seed(conn)
         else:
             with self._connect() as conn:
@@ -262,6 +269,7 @@ class CommerceStore:
                     "kind TEXT NOT NULL, payload_json TEXT NOT NULL, "
                     "created_at TEXT NOT NULL)"
                 )
+                self._ensure_subscription_columns(conn)
                 self._seed(conn)
 
     @classmethod
@@ -275,6 +283,24 @@ class CommerceStore:
     def _connect(self):
         with connect(self.db_path) as conn:
             yield conn
+
+    def _ensure_subscription_columns(self, conn) -> None:
+        from .database import table_columns
+
+        cols = table_columns(conn, "org_subscriptions")
+        alterations = [
+            ("stripe_customer_id", "TEXT"),
+            ("stripe_subscription_id", "TEXT"),
+            ("status", "TEXT"),
+            ("cancel_at_period_end", "INTEGER"),
+            ("current_period_end", "TEXT"),
+            ("auto_renew", "INTEGER"),
+        ]
+        for name, col_type in alterations:
+            if name not in cols:
+                conn.execute(
+                    f"ALTER TABLE org_subscriptions ADD COLUMN {name} {col_type}"
+                )
 
     def _seed(self, conn) -> None:
         now = _now()
@@ -548,11 +574,32 @@ class CommerceStore:
                 "plan_id": "demo",
                 "needs_checkout": False,
                 "sell_tokens_per_usd_override": None,
+                "stripe_customer_id": None,
+                "stripe_subscription_id": None,
+                "status": "active",
+                "cancel_at_period_end": False,
+                "current_period_end": None,
+                "auto_renew": False,
             }
+        cancel_at = bool(row["cancel_at_period_end"] or 0)
+        auto_renew = row["auto_renew"]
+        if auto_renew is None:
+            auto_renew = not cancel_at and not bool(row["needs_checkout"])
+        else:
+            auto_renew = bool(auto_renew)
+        status = (row["status"] or "").strip() or (
+            "active" if not bool(row["needs_checkout"]) else "incomplete"
+        )
         return {
             "plan_id": row["plan_id"],
             "needs_checkout": bool(row["needs_checkout"]),
             "sell_tokens_per_usd_override": row["sell_tokens_per_usd_override"],
+            "stripe_customer_id": row["stripe_customer_id"],
+            "stripe_subscription_id": row["stripe_subscription_id"],
+            "status": status,
+            "cancel_at_period_end": cancel_at,
+            "current_period_end": row["current_period_end"],
+            "auto_renew": auto_renew,
         }
 
     def set_subscription(
@@ -562,22 +609,91 @@ class CommerceStore:
         plan_id: str,
         needs_checkout: bool,
         sell_tokens_per_usd_override: Optional[float] = None,
+        stripe_customer_id: Optional[str] = None,
+        stripe_subscription_id: Optional[str] = None,
+        status: Optional[str] = None,
+        cancel_at_period_end: Optional[bool] = None,
+        current_period_end: Optional[str] = None,
+        auto_renew: Optional[bool] = None,
     ) -> Dict[str, Any]:
         if plan_id not in PLAN_IDS:
             raise ValueError("plan_not_found")
+        current = self.get_subscription(org_id)
         now = _now()
+        next_cancel = (
+            current["cancel_at_period_end"]
+            if cancel_at_period_end is None
+            else bool(cancel_at_period_end)
+        )
+        next_auto = (
+            current["auto_renew"] if auto_renew is None else bool(auto_renew)
+        )
+        next_status = status or current.get("status") or (
+            "incomplete" if needs_checkout else "active"
+        )
+        next_customer = (
+            current.get("stripe_customer_id")
+            if stripe_customer_id is None
+            else (stripe_customer_id or None)
+        )
+        next_stripe_sub = (
+            current.get("stripe_subscription_id")
+            if stripe_subscription_id is None
+            else (stripe_subscription_id or None)
+        )
+        next_period_end = (
+            current.get("current_period_end")
+            if current_period_end is None
+            else current_period_end
+        )
         with self._write_lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO org_subscriptions (org_id, plan_id, needs_checkout, "
-                "sell_tokens_per_usd_override, updated_at) VALUES (?,?,?,?,?) "
-                "ON CONFLICT(org_id) DO UPDATE SET plan_id=excluded.plan_id, "
+                "INSERT INTO org_subscriptions ("
+                "org_id, plan_id, needs_checkout, sell_tokens_per_usd_override, "
+                "updated_at, stripe_customer_id, stripe_subscription_id, status, "
+                "cancel_at_period_end, current_period_end, auto_renew"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id) DO UPDATE SET "
+                "plan_id=excluded.plan_id, "
                 "needs_checkout=excluded.needs_checkout, "
                 "sell_tokens_per_usd_override=excluded.sell_tokens_per_usd_override, "
-                "updated_at=excluded.updated_at",
-                [org_id, plan_id, 1 if needs_checkout else 0,
-                 sell_tokens_per_usd_override, now],
+                "updated_at=excluded.updated_at, "
+                "stripe_customer_id=excluded.stripe_customer_id, "
+                "stripe_subscription_id=excluded.stripe_subscription_id, "
+                "status=excluded.status, "
+                "cancel_at_period_end=excluded.cancel_at_period_end, "
+                "current_period_end=excluded.current_period_end, "
+                "auto_renew=excluded.auto_renew",
+                [
+                    org_id,
+                    plan_id,
+                    1 if needs_checkout else 0,
+                    (
+                        sell_tokens_per_usd_override
+                        if sell_tokens_per_usd_override is not None
+                        else current.get("sell_tokens_per_usd_override")
+                    ),
+                    now,
+                    next_customer,
+                    next_stripe_sub,
+                    next_status,
+                    1 if next_cancel else 0,
+                    next_period_end,
+                    1 if next_auto else 0,
+                ],
             )
         return self.get_subscription(org_id)
+
+    def list_subscriptions(self) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT org_id FROM org_subscriptions").fetchall()
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            org_id = str(row["org_id"])
+            payload = self.get_subscription(org_id)
+            payload["org_id"] = org_id
+            out.append(payload)
+        return out
 
 
 def _merge_modules(
