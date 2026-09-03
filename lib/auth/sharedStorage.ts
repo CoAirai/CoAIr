@@ -1,5 +1,7 @@
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 export const ACCESS_TOKEN_KEY = "coair.accessToken";
+/** Shared across *.coair.ai so logout on one portal blocks restore on siblings. */
+export const SIGNED_OUT_KEY = "coair.signedOut";
 
 function cookieDomain(): string | undefined {
     if (typeof window === "undefined") return undefined;
@@ -85,6 +87,7 @@ export function clearSharedAuth(): void {
         .map((part) => part.split("=")[0]?.trim())
         .filter(Boolean);
     for (const name of names) {
+        if (name === SIGNED_OUT_KEY) continue;
         if (name.startsWith("coair.") || name.startsWith("sb-")) {
             removeSharedItem(name);
         }
@@ -93,7 +96,11 @@ export function clearSharedAuth(): void {
         const keys: string[] = [];
         for (let i = 0; i < localStorage.length; i += 1) {
             const key = localStorage.key(i);
-            if (key && (key.startsWith("coair.") || key.startsWith("sb-"))) {
+            if (
+                key &&
+                key !== SIGNED_OUT_KEY &&
+                (key.startsWith("coair.") || key.startsWith("sb-"))
+            ) {
                 keys.push(key);
             }
         }

@@ -27,8 +27,13 @@ export default function RequireCompanySession({
             redirectToSignIn(router);
             return;
         }
+        // Platform admins never use the company workspace portal.
+        if (session.role === "super_admin") {
+            portalNavigate(router, homeUrlForRole(session.role));
+            return;
+        }
         if (isLive) return;
-        if (!session.companyId || session.role === "super_admin") {
+        if (!session.companyId) {
             portalNavigate(router, homeUrlForRole(session.role));
         }
     }, [ready, session, router, isLive]);

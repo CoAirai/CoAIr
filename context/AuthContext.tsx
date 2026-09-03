@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth/resolveLogin";
 import {
     ACCESS_TOKEN_KEY,
+    SIGNED_OUT_KEY,
     clearSharedAuth,
     readSharedItem,
     removeSharedItem,
@@ -57,7 +58,24 @@ type AuthContextValue = {
     ) => Promise<{ ok: boolean; error?: string }>;
 };
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+function isSignedOutFlag(): boolean {
+    if (typeof window === "undefined") return false;
+    return (
+        readSharedItem(SIGNED_OUT_KEY) === "1" ||
+        sessionStorage.getItem(SIGNED_OUT_KEY) === "1" ||
+        new URLSearchParams(window.location.search).get("signedOut") === "1"
+    );
+}
+
+function markSignedOut(): void {
+    writeSharedItem(SIGNED_OUT_KEY, "1", true);
+    sessionStorage.setItem(SIGNED_OUT_KEY, "1");
+}
+
+function clearSignedOutFlag(): void {
+    removeSharedItem(SIGNED_OUT_KEY);
+    sessionStorage.removeItem(SIGNED_OUT_KEY);
+}
 
 function persist(session: AuthSession | null) {
     if (typeof window === "undefined") {
@@ -157,11 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
-                if (
-                    sessionStorage.getItem("coair.signedOut") ||
-                    new URLSearchParams(window.location.search).get("signedOut") === "1"
-                ) {
+                if (isSignedOutFlag()) {
                     persist(null);
+                    // Keep the shared signed-out marker so sibling portals don't revive.
+                    markSignedOut();
                     await getSupabaseBrowser()?.auth.signOut({ scope: "local" });
                     if (!cancelled) {
                         setSession(null);
@@ -207,7 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return;
             }
             if (next?.access_token) {
-                if (sessionStorage.getItem("coair.signedOut")) {
+                if (isSignedOutFlag()) {
                     return;
                 }
                 patchToken(next.access_token);
@@ -224,7 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         async (email: string, password: string): Promise<SignInResult> => {
             const live = await tryLiveLogin(email, password);
             if (live.ok) {
-                sessionStorage.removeItem("coair.signedOut");
+                clearSignedOutFlag();
                 persist(live.session);
                 setSession(live.session);
                 return live;
@@ -248,6 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (!isSupabaseAuthConfigured()) {
                 const mock = resolveLogin(email, password, users);
                 if (mock.ok) {
+                    clearSignedOutFlag();
                     persist(mock.session);
                     setSession(mock.session);
                     return mock;
@@ -259,6 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     const applySession = useCallback((next: AuthSession) => {
+        clearSignedOutFlag();
         persist(next);
         setSession(next);
     }, []);
@@ -266,13 +285,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const signOut = useCallback(async () => {
         persist(null);
         sessionStorage.removeItem(ADMIN_BACKUP_KEY);
-        sessionStorage.setItem("coair.signedOut", "1");
+        markSignedOut();
         setSession(null);
         const supabase = getSupabaseBrowser();
         if (supabase) {
             await supabase.auth.signOut({ scope: "local" });
         }
         persist(null);
+        // persist(null) must not wipe the shared logout marker.
+        markSignedOut();
     }, []);
 
     const updateSession = useCallback((patch: Partial<AuthSession>) => {
