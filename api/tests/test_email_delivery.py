@@ -15,6 +15,28 @@ def test_build_password_reset_includes_token(monkeypatch):
     assert "Reset password" in message["html"]
 
 
+def test_build_login_and_reset_alert(monkeypatch):
+    monkeypatch.setenv("COAIR_APP_URL", "http://localhost:3002")
+    login = build_email(
+        "login_alert",
+        "user@example.com",
+        name="User",
+        company_name="Acme",
+        description="You just signed in to COAir.",
+    )
+    assert "sign-in" in login["subject"].lower() or "Sign-in" in login["html"]
+    assert "You just signed in" in login["html"]
+
+    alert = build_email(
+        "password_reset_alert",
+        "owner@example.com",
+        company_name="Acme",
+        description="User (user@example.com) requested a password reset.",
+    )
+    assert "Password reset requested" in alert["subject"]
+    assert "User" in alert["html"]
+
+
 def test_build_team_invite_includes_logo_and_button(monkeypatch):
     monkeypatch.setenv("COAIR_APP_URL", "http://localhost:3002")
     message = build_email(

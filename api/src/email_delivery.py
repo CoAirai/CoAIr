@@ -20,6 +20,8 @@ EMAIL_KINDS = {
     "access_approved",
     "access_denied",
     "password_reset",
+    "password_reset_alert",
+    "login_alert",
     "invoice_issued",
     "invoice_paid",
     "invoice_refunded",
@@ -332,6 +334,49 @@ def build_email(
             "Reset your password",
             body,
             preheader="Use this link to choose a new COAir password",
+        )
+        return {"subject": subject, "text": text, "html": html}
+
+    if kind == "password_reset_alert":
+        subject = f"Password reset requested — {company}"
+        text = (
+            f"Hi {display},\n\n{detail}\n\n"
+            f"If this was unexpected, ask the teammate to confirm or reset access from company admin.\n"
+        )
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+            f"A password reset was requested for someone in <strong style=\"color:#0E121B\">{escape(company)}</strong>.</p>"
+            f"{_email_notice(detail)}"
+            f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">"
+            f"The teammate received the reset link by email. No action is required unless this looks suspicious.</p>"
+        )
+        html = _wrap_html(
+            "Password reset alert",
+            body,
+            preheader=f"Password reset requested for {company}",
+        )
+        return {"subject": subject, "text": text, "html": html}
+
+    if kind == "login_alert":
+        subject = f"New COAir sign-in — {company}"
+        text = (
+            f"Hi {display},\n\n{detail}\n\n"
+            f"If this wasn't you, reset your password right away:\n{reset_base}\n"
+        )
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+            f"Security notice for <strong style=\"color:#0E121B\">{escape(company)}</strong>.</p>"
+            f"{_email_notice(detail)}"
+            f"{_email_button(reset_base, 'Reset password if this wasn't you')}"
+            f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">"
+            f"You receive these alerts when Email notifications are enabled in Settings.</p>"
+        )
+        html = _wrap_html(
+            "New sign-in",
+            body,
+            preheader=detail,
         )
         return {"subject": subject, "text": text, "html": html}
 

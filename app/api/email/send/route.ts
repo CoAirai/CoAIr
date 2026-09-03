@@ -9,6 +9,8 @@ const KINDS = new Set<EmailKind>([
     "access_approved",
     "access_denied",
     "password_reset",
+    "password_reset_alert",
+    "login_alert",
     "invoice_issued",
     "invoice_paid",
     "invoice_refunded",

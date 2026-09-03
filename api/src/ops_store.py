@@ -683,6 +683,12 @@ class OpsStore:
             body=f"Reset link queued ({result.get('mode', 'unknown')})",
             secret=token,
         )
+        try:
+            from .auth_notify import notify_password_reset
+
+            notify_password_reset(username)
+        except Exception:
+            pass
         return token
 
     def consume_password_reset(self, token: str) -> str:

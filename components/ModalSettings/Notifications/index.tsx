@@ -52,8 +52,10 @@ const Notifications = () => {
     return (
         <div className="">
             <p className="mb-4 text-label-sm text-sub-600">
-                When Email is on, you receive all COAir email notifications —
-                invites, billing invoices, purchases, and account updates.
+                When Email is on, you receive COAir emails — invites, billing,
+                invoices, sign-in alerts, password-reset notices, and account
+                updates. Company admins also get alerts when teammates sign in
+                or request a password reset.
             </p>
             <div className="flex items-center mb-3 pb-3 border-b border-stroke-soft-200">
                 <div className="mr-auto">

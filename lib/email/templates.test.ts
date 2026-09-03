@@ -42,19 +42,25 @@ describe("email templates", () => {
         expect(email.html).toContain("Your invite is waiting");
     });
 
-    it("builds owner and access emails", () => {
-        const owner = buildEmail({
-            kind: "owner_invite",
-            to: "owner@acme.com",
-            companyName: "Acme",
+    it("builds login and password reset alert emails", () => {
+        const login = buildEmail({
+            kind: "login_alert",
+            to: "ada@acmebuilders.com",
+            name: "Ada",
+            companyName: "Acme Builders",
+            description: "You just signed in to COAir.",
         });
-        expect(owner.html).toContain("Your workspace is ready");
+        expect(login.subject).toMatch(/sign-in/i);
+        expect(login.html).toContain("You just signed in");
+        expect(login.html).toContain(emailLogoUrl());
 
-        const approved = buildEmail({
-            kind: "access_approved",
+        const alert = buildEmail({
+            kind: "password_reset_alert",
             to: "owner@acme.com",
             companyName: "Acme",
+            description: "Ada (ada@acme.com) requested a password reset.",
         });
-        expect(approved.html).toContain("You're approved");
+        expect(alert.subject).toMatch(/Password reset requested/i);
+        expect(alert.html).toContain("Ada");
     });
 });

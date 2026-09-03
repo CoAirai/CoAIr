@@ -179,6 +179,50 @@ export function buildEmail(payload: EmailPayload): BuiltEmail {
                 }),
             };
         }
+        case "password_reset_alert": {
+            const subject = `Password reset requested — ${company}`;
+            const text = `Hi ${name},\n\n${detail}\n\nIf this was unexpected, ask the teammate to confirm or reset access from company admin.\n`;
+            const body = [
+                `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#525866">Hi ${escapeHtml(name)},</p>`,
+                `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#525866">A password reset was requested for someone in <strong style="color:#0E121B">${escapeHtml(company)}</strong>.</p>`,
+                emailNotice(detail),
+                `<p style="margin:0;font-size:13px;line-height:20px;color:#868C98">The teammate received the reset link by email. No action is required unless this looks suspicious.</p>`,
+            ].join("");
+            return {
+                kind: payload.kind,
+                to: payload.to,
+                subject,
+                text,
+                html: wrapEmailHtml({
+                    title: "Password reset alert",
+                    preheader: `Password reset requested for ${company}`,
+                    body,
+                }),
+            };
+        }
+        case "login_alert": {
+            const subject = `New COAir sign-in — ${company}`;
+            const resetBase = `${loginOrigin()}/auth/reset-password`;
+            const text = `Hi ${name},\n\n${detail}\n\nIf this wasn't you, reset your password right away:\n${resetBase}\n`;
+            const body = [
+                `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#525866">Hi ${escapeHtml(name)},</p>`,
+                `<p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#525866">Security notice for <strong style="color:#0E121B">${escapeHtml(company)}</strong>.</p>`,
+                emailNotice(detail),
+                emailButton(resetBase, "Reset password if this wasn't you"),
+                `<p style="margin:0;font-size:13px;line-height:20px;color:#868C98">You receive these alerts when Email notifications are enabled in Settings.</p>`,
+            ].join("");
+            return {
+                kind: payload.kind,
+                to: payload.to,
+                subject,
+                text,
+                html: wrapEmailHtml({
+                    title: "New sign-in",
+                    preheader: detail,
+                    body,
+                }),
+            };
+        }
         case "invoice_issued":
         case "invoice_paid":
         case "invoice_refunded":

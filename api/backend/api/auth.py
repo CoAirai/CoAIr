@@ -163,6 +163,9 @@ async def login(
         if supabase_session
         else _issue_local_token(record)
     )
+    from src.auth_notify import notify_login
+
+    notify_login(record["username"], record=record, orgs=orgs)
     return {
         "access_token": token,
         "refresh_token": (supabase_session or {}).get("refresh_token"),
@@ -177,6 +180,7 @@ async def verify_mfa(
     req: MfaVerifyRequest,
     store: UserStore = Depends(get_user_store),
     ops: OpsStore = Depends(get_ops_store),
+    orgs: OrgStore = Depends(get_org_store),
 ):
     try:
         username = ops.consume_mfa_challenge(req.mfa_token, req.code)
@@ -188,6 +192,9 @@ async def verify_mfa(
     usage = store.get_billing_summary(username)
     pending = take_mfa_session(req.mfa_token)
     token = pending["access_token"] if pending else _issue_local_token(record)
+    from src.auth_notify import notify_login
+
+    notify_login(username, record=record, orgs=orgs)
     return {
         "access_token": token,
         "refresh_token": (pending or {}).get("refresh_token"),
