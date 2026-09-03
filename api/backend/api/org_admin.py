@@ -146,14 +146,7 @@ async def list_org_users(
     users: UserStore = Depends(get_user_store),
     projects: ProjectStore = Depends(get_project_store),
 ):
-    # Repair legacy 1M member caps so they match the company package.
-    try:
-        from src.org_quota import sync_org_member_quotas
-
-        sync_org_member_quotas(org.org_id, orgs=orgs, users=users)
-    except Exception:
-        pass
-
+    # Mid-cycle rebalance runs on invite/create — do not reshuffle every list.
     project_ids = {p["project_id"] for p in projects.list_for_org(org.org_id)}
     grants: Dict[str, int] = {}
     for project_id in project_ids:
@@ -184,14 +177,14 @@ async def create_org_user(
     only a platform operator can change — otherwise a company SuperAdmin could
     provision itself unlimited credits.
     """
-    from src.org_quota import resolve_org_token_limit
+    from src.org_token_pool import rebalance_equal_remaining
 
     username = req.username.strip()
     if "@" in username:
         username = username.lower()
     password = req.password or ""
-    package_tokens = resolve_org_token_limit(org.org_id, orgs=orgs)
     package_storage = int(org.policy.get("default_storage_bytes") or 0)
+    # Provisional limit; rebalance assigns equal share of remaining pool.
     if use_supabase_auth():
         if "@" not in username:
             raise HTTPException(400, "invite_email_required")
@@ -204,7 +197,7 @@ async def create_org_user(
                 plan_type=org.policy.get("default_plan_type", "demo"),
                 initial_credits=org.policy.get("default_credits", 0),
                 storage_limit_bytes=package_storage,
-                token_limit=package_tokens,
+                token_limit=0,
                 password=password,
             )
         except ValueError as exc:
@@ -215,6 +208,7 @@ async def create_org_user(
             orgs.add_member(org.org_id, record["username"], "member")
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
+        rebalance_equal_remaining(org.org_id, orgs=orgs, users=users)
         return _org_user(users, users.get_user(record["username"]) or record, "member")
     if len(password) < 6:
         raise HTTPException(400, "password_required")
@@ -224,7 +218,7 @@ async def create_org_user(
             password=password,
             display_name=req.display_name,
             role="user",
-            token_limit=package_tokens,
+            token_limit=0,
             features=_assignable_features(req.features),
             plan_type=org.policy.get("default_plan_type", "demo"),
             initial_credits=org.policy.get("default_credits", 0),
@@ -240,7 +234,9 @@ async def create_org_user(
         # invisible to its own creator and reachable by nobody.
         users.delete_user(username, soft=False)
         raise HTTPException(409, str(exc)) from exc
-    return _org_user(users, record, "member")
+    rebalance_equal_remaining(org.org_id, orgs=orgs, users=users)
+    refreshed = users.get_user(username) or record
+    return _org_user(users, refreshed, "member")
 
 
 @router.patch("/org/users/{username}")

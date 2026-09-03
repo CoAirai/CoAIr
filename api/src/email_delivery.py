@@ -26,6 +26,8 @@ EMAIL_KINDS = {
     "invoice_paid",
     "invoice_refunded",
     "purchase_receipt",
+    "token_request",
+    "token_request_resolved",
 }
 
 
@@ -411,6 +413,34 @@ def build_email(
             f"<a href=\"{billing_url}\" style=\"color:#335CFF;text-decoration:none;word-break:break-all\">{billing_url}</a></p>"
         )
         html = _wrap_html(title, body, preheader=f"{title} · {inv}")
+        return {"subject": subject, "text": text, "html": html}
+
+    if kind == "token_request":
+        subject = f"Token request for {company}"
+        team_url = f"{user_app_origin()}/company/team"
+        text = (
+            f"Hi {display},\n\n{detail}\n\nReview team requests: {team_url}\n"
+        )
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+            f"{escape(detail)}</p>"
+            f"{_email_button(team_url, 'Review request')}"
+        )
+        html = _wrap_html("Token request", body, preheader=detail[:80])
+        return {"subject": subject, "text": text, "html": html}
+
+    if kind == "token_request_resolved":
+        subject = f"Token request update · {company}"
+        settings_url = f"{user_app_origin()}/"
+        text = f"Hi {display},\n\n{detail}\n\nOpen COAir: {settings_url}\n"
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+            f"{escape(detail)}</p>"
+            f"{_email_button(settings_url, 'Open COAir')}"
+        )
+        html = _wrap_html("Token request update", body, preheader=detail[:80])
         return {"subject": subject, "text": text, "html": html}
 
     raise ValueError(f"unsupported_email_kind:{kind}")

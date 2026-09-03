@@ -7,6 +7,7 @@ import Notifications from "./Notifications";
 import Theme from "./Theme";
 import Security from "./Security";
 import DataControls from "./DataControls";
+import Tokens from "./Tokens";
 
 import { menu } from "./menu";
 
@@ -92,6 +93,7 @@ const Settings = ({ open, onClose, changePassword: changePasswordProp }: Props) 
                             <Security changePassword={changePassword} />
                         )}
                         {activeId === 4 && <DataControls />}
+                        {activeId === 5 && <Tokens />}
                     </div>
                 </div>
             </Modal>

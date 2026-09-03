@@ -271,6 +271,7 @@ def fulfill_purchase(
     module_id: Optional[str] = None,
     description: str = "",
     stripe_session_id: str = "",
+    credit_username: Optional[str] = None,
     commerce: Optional[CommerceStore] = None,
     orgs: Optional[OrgStore] = None,
     users: Optional[UserStore] = None,
@@ -339,7 +340,6 @@ def fulfill_purchase(
         add = int(tokens or 0)
         if add < 1:
             raise ValueError("tokens_required")
-        record = orgs.get_org(org_id) or {}
         from src.org_quota import resolve_org_token_limit, sync_org_member_quotas
 
         current = resolve_org_token_limit(
@@ -347,15 +347,32 @@ def fulfill_purchase(
         )
         new_limit = current + add
         orgs.update_org(org_id, default_token_limit=new_limit)
-        sync_org_member_quotas(
-            org_id,
-            token_limit=new_limit,
-            orgs=orgs,
-            users=users,
-            commerce=commerce,
-        )
+        credit_to = (credit_username or "").strip()
+        if credit_to:
+            members = {m["username"] for m in orgs.list_members(org_id)}
+            if credit_to not in members:
+                raise ValueError("credit_user_not_in_org")
+            recip = users.get_user(credit_to)
+            if not recip:
+                raise ValueError("credit_user_not_found")
+            users.update_user(
+                credit_to,
+                token_limit=int(recip.get("token_limit") or 0) + add,
+            )
+        else:
+            sync_org_member_quotas(
+                org_id,
+                token_limit=new_limit,
+                orgs=orgs,
+                users=users,
+                commerce=commerce,
+            )
         amount = amount or 0
-        description = description or f"Token pack {add}"
+        description = description or (
+            f"Token pack {add} for {credit_to}"
+            if credit_to
+            else f"Token pack {add}"
+        )
     else:
         description = description or f"Add-on {module_id or ''}".strip()
         amount = amount or 50

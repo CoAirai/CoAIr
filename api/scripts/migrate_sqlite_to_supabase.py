@@ -60,6 +60,7 @@ TABLES_BY_SQLITE = {
         "platform_settings",
         "announcements",
         "topup_requests",
+        "member_token_requests",
     ],
     "commerce.db": [
         "packages",

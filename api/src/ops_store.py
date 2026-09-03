@@ -164,6 +164,23 @@ CREATE TABLE IF NOT EXISTS topup_requests (
     resolved_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_topups_status ON topup_requests(status, created_at);
+
+CREATE TABLE IF NOT EXISTS member_token_requests (
+    request_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    tokens INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by TEXT,
+    fulfill_mode TEXT,
+    donor_username TEXT,
+    purchase_session_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_member_token_requests_org
+    ON member_token_requests(org_id, status, created_at);
 """
 
 
@@ -203,6 +220,31 @@ class OpsStore:
                 self._seed(conn)
         else:
             with self._connect() as conn:
+                # Ensure tables added after initial migration exist on older DBs.
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS member_token_requests (
+                        request_id TEXT PRIMARY KEY,
+                        org_id TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        tokens INTEGER NOT NULL,
+                        reason TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        resolved_by TEXT,
+                        fulfill_mode TEXT,
+                        donor_username TEXT,
+                        purchase_session_id TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_member_token_requests_org
+                        ON member_token_requests(org_id, status, created_at)
+                    """
+                )
                 self._seed(conn)
 
     @classmethod
@@ -983,6 +1025,134 @@ class OpsStore:
                 [status, resolved_at, resolved_by, request_id],
             )
         return self.get_topup(request_id) or current
+
+    # ── Member token requests (company pool) ────────────────
+
+    @staticmethod
+    def _member_token_request_row(row: DbRow) -> Dict[str, Any]:
+        return {
+            "id": row["request_id"],
+            "org_id": row["org_id"],
+            "username": row["username"],
+            "tokens": int(row["tokens"]),
+            "reason": row["reason"] or "",
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "resolved_at": row["resolved_at"],
+            "resolved_by": row["resolved_by"],
+            "fulfill_mode": row["fulfill_mode"],
+            "donor_username": row["donor_username"],
+            "purchase_session_id": row["purchase_session_id"],
+        }
+
+    def list_member_token_requests(
+        self,
+        *,
+        org_id: str,
+        username: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM member_token_requests WHERE org_id=?"
+        params: List[Any] = [org_id]
+        if username:
+            sql += " AND username=?"
+            params.append(username)
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._member_token_request_row(row) for row in rows]
+
+    def get_member_token_request(
+        self, request_id: str
+    ) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM member_token_requests WHERE request_id=?",
+                [request_id],
+            ).fetchone()
+        return self._member_token_request_row(row) if row else None
+
+    def create_member_token_request(
+        self,
+        *,
+        org_id: str,
+        username: str,
+        tokens: int,
+        reason: str,
+    ) -> Dict[str, Any]:
+        if tokens < 1:
+            raise ValueError("tokens_required")
+        request_id = f"mtr-{uuid.uuid4().hex[:12]}"
+        created = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO member_token_requests "
+                "(request_id, org_id, username, tokens, reason, status, "
+                "created_at, resolved_at, resolved_by, fulfill_mode, "
+                "donor_username, purchase_session_id) "
+                "VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,NULL,NULL)",
+                [
+                    request_id,
+                    org_id,
+                    username,
+                    int(tokens),
+                    (reason or "").strip(),
+                    "pending",
+                    created,
+                ],
+            )
+        return self.get_member_token_request(request_id) or {
+            "id": request_id,
+            "org_id": org_id,
+            "username": username,
+            "tokens": int(tokens),
+            "reason": (reason or "").strip(),
+            "status": "pending",
+            "created_at": created,
+            "resolved_at": None,
+            "resolved_by": None,
+            "fulfill_mode": None,
+            "donor_username": None,
+            "purchase_session_id": None,
+        }
+
+    def resolve_member_token_request(
+        self,
+        request_id: str,
+        status: str,
+        resolved_by: str,
+        *,
+        fulfill_mode: Optional[str] = None,
+        donor_username: Optional[str] = None,
+        purchase_session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if status not in ("approved", "denied"):
+            raise ValueError("invalid_token_request_status")
+        current = self.get_member_token_request(request_id)
+        if not current:
+            raise ValueError("token_request_not_found")
+        if current["status"] != "pending":
+            raise ValueError("token_request_already_resolved")
+        resolved_at = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE member_token_requests SET status=?, resolved_at=?, "
+                "resolved_by=?, fulfill_mode=?, donor_username=?, "
+                "purchase_session_id=? WHERE request_id=?",
+                [
+                    status,
+                    resolved_at,
+                    resolved_by,
+                    fulfill_mode,
+                    donor_username,
+                    purchase_session_id,
+                    request_id,
+                ],
+            )
+        return self.get_member_token_request(request_id) or current
 
 
 def get_ops_store() -> OpsStore:

@@ -103,6 +103,92 @@ export async function readAuthMe(token: string) {
     }>("/auth/me", { token });
 }
 
+export type CoairTokenPool = {
+    org_id: string;
+    pool: number;
+    total_used: number;
+    remaining: number;
+    member_count: number;
+    equal_share: number;
+    members: Array<{
+        username: string;
+        display_name?: string;
+        used_tokens: number;
+        token_limit: number;
+        remaining: number;
+    }>;
+};
+
+export type CoairMemberTokenRequest = {
+    id: string;
+    org_id: string;
+    username: string;
+    tokens: number;
+    reason: string;
+    status: string;
+    created_at: string;
+    resolved_at?: string | null;
+    resolved_by?: string | null;
+    fulfill_mode?: string | null;
+    donor_username?: string | null;
+    purchase_session_id?: string | null;
+};
+
+export async function readOrgTokenPool(token: string) {
+    return coairFetch<CoairTokenPool>("/org/token-pool", { token });
+}
+
+export async function listMemberTokenRequests(token: string) {
+    return coairFetch<{ requests: CoairMemberTokenRequest[] }>(
+        "/org/token-requests",
+        { token }
+    );
+}
+
+export async function createMemberTokenRequest(
+    token: string,
+    body: { tokens: number; reason?: string }
+) {
+    return coairFetch<CoairMemberTokenRequest>("/org/token-requests", {
+        method: "POST",
+        token,
+        body,
+    });
+}
+
+export async function approveMemberTokenRequest(
+    token: string,
+    requestId: string,
+    body: {
+        mode: "transfer" | "purchase";
+        from_username?: string;
+        tokens?: number;
+        amount_usd?: number;
+    }
+) {
+    return coairFetch<{
+        request?: CoairMemberTokenRequest;
+        transfer?: {
+            tokens: number;
+            from_username: string;
+            to_username: string;
+        };
+        invoice?: { id: string };
+        checkout?: { url?: string; id?: string };
+    }>(`/org/token-requests/${encodeURIComponent(requestId)}/approve`, {
+        method: "POST",
+        token,
+        body,
+    });
+}
+
+export async function denyMemberTokenRequest(token: string, requestId: string) {
+    return coairFetch<CoairMemberTokenRequest>(
+        `/org/token-requests/${encodeURIComponent(requestId)}/deny`,
+        { method: "POST", token }
+    );
+}
+
 export async function updateMyNotificationPrefs(
     token: string,
     prefs: { responses: boolean; push: boolean; email: boolean }

@@ -1,4 +1,4 @@
-"""Keep company member token/storage quotas aligned with the package."""
+"""Keep company member storage quotas aligned; token pool lives in org_token_pool."""
 
 from __future__ import annotations
 
@@ -51,8 +51,10 @@ def sync_org_member_quotas(
     orgs: Optional[OrgStore] = None,
     users: Optional[UserStore] = None,
     commerce: Optional[CommerceStore] = None,
+    reset_usage: bool = False,
+    equal_split: bool = True,
 ) -> Dict[str, Any]:
-    """Apply org package quotas to every member (not only the owner)."""
+    """Sync storage defaults and equally split the company token pool."""
     orgs = orgs or get_org_store()
     users = users or get_user_store()
     commerce = commerce or get_commerce_store()
@@ -69,7 +71,6 @@ def sync_org_member_quotas(
         else int(org.get("default_storage_bytes") or 0)
     )
 
-    # Persist corrected org default when it was still the legacy 1M.
     updates: Dict[str, Any] = {}
     if tokens > 0 and int(org.get("default_token_limit") or 0) != tokens:
         updates["default_token_limit"] = tokens
@@ -78,38 +79,57 @@ def sync_org_member_quotas(
     if updates:
         orgs.update_org(org_id, **updates)
 
-    synced = 0
-    for member in orgs.list_members(org_id):
-        username = str(member.get("username") or "")
-        if not username:
-            continue
-        try:
-            if tokens > 0:
-                users.update_user(username, token_limit=tokens)
-            if storage > 0:
-                try:
-                    users.billing.update_account(
-                        username, storage_limit_bytes=storage
-                    )
-                except Exception:
-                    pass
-            synced += 1
-        except Exception as exc:
-            logger.warning(
-                "org_quota_sync_failed org=%s user=%s err=%s",
+    if storage > 0:
+        for member in orgs.list_members(org_id):
+            username = str(member.get("username") or "")
+            if not username:
+                continue
+            try:
+                users.billing.update_account(
+                    username, storage_limit_bytes=storage
+                )
+            except Exception:
+                pass
+
+    pool_result: Dict[str, Any] = {}
+    if equal_split and tokens > 0:
+        from src.org_token_pool import (
+            rebalance_equal_full_pool,
+            rebalance_equal_remaining,
+        )
+
+        if reset_usage:
+            pool_result = rebalance_equal_full_pool(
                 org_id,
-                username,
-                exc,
+                reset_usage=True,
+                orgs=orgs,
+                users=users,
+                pool=tokens,
             )
+        else:
+            pool_result = rebalance_equal_remaining(
+                org_id, orgs=orgs, users=users, pool=tokens
+            )
+    elif tokens > 0:
+        # Legacy path: identical cap (avoid unless explicitly requested).
+        synced = 0
+        for member in orgs.list_members(org_id):
+            username = str(member.get("username") or "")
+            if not username:
+                continue
+            users.update_user(username, token_limit=tokens)
+            synced += 1
+        pool_result = {"synced": synced, "mode": "flat_cap"}
+
     logger.info(
-        "org_quota_synced org=%s members=%s token_limit=%s storage=%s",
+        "org_quota_synced org=%s token_pool=%s storage=%s equal_split=%s",
         org_id,
-        synced,
         tokens,
         storage,
+        equal_split,
     )
     return {
-        "synced": synced,
         "token_limit": tokens,
         "storage_limit_bytes": storage,
+        "pool": pool_result,
     }

@@ -1,15 +1,20 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import { bytesToGb } from "@/lib/admin/liveHelpers";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
+import { readOrgTokenPool, type CoairTokenPool } from "@/lib/coair/org";
+import { useAuth } from "@/context/AuthContext";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
 const LiveUsagePage = () => {
-    const { me, orgUsage, error } = useLiveOrg();
+    const { session } = useAuth();
+    const token = session?.accessToken ?? "";
+    const { me, orgUsage, users, error } = useLiveOrg();
     const { accountUsage } = useLiveWorkspace();
     const usage = accountUsage ?? me;
     const used = usage?.used_tokens ?? 0;
@@ -21,19 +26,97 @@ const LiveUsagePage = () => {
     const groups = orgUsage?.groups?.slice(0, 8) ?? [];
     const tokensConsumed =
         (totals?.prompt_tokens ?? 0) + (totals?.completion_tokens ?? 0);
+    const [pool, setPool] = useState<CoairTokenPool | null>(null);
+
+    useEffect(() => {
+        if (!token) return;
+        void readOrgTokenPool(token)
+            .then(setPool)
+            .catch(() => setPool(null));
+    }, [token, users]);
 
     return (
         <div className="page-stack">
             <PageHeader
                 title="Usage"
-                description="Token quota and storage for this company account."
+                description="Company token pool, equal shares, and storage."
             />
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
+            {pool ? (
+                <section className="surface-panel p-5">
+                    <h2 className="text-label-lg text-strong-950">
+                        Company token pool
+                    </h2>
+                    <p className="mt-1 text-label-xs text-sub-600">
+                        Package pool is split equally across active members.
+                        Equal share snapshot:{" "}
+                        {numberFormatter.format(pool.equal_share)} tokens each
+                        ({pool.member_count} members).
+                    </p>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                        <div>
+                            <p className="text-label-xs text-sub-600">Pool</p>
+                            <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
+                                {numberFormatter.format(pool.pool)}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-label-xs text-sub-600">
+                                Company used
+                            </p>
+                            <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
+                                {numberFormatter.format(pool.total_used)}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-label-xs text-sub-600">
+                                Company remaining
+                            </p>
+                            <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
+                                {numberFormatter.format(pool.remaining)}
+                            </p>
+                        </div>
+                    </div>
+                    <QuotaBar
+                        label="Company pool used"
+                        used={pool.total_used}
+                        limit={pool.pool || 1}
+                    />
+                    {pool.members.length > 0 ? (
+                        <ul className="mt-4 divide-y divide-stroke-soft-200">
+                            {pool.members.map((member) => (
+                                <li
+                                    key={member.username}
+                                    className="flex items-center justify-between py-2 text-label-sm"
+                                >
+                                    <span className="text-strong-950">
+                                        {member.display_name || member.username}
+                                    </span>
+                                    <span className="text-sub-600 tabular-nums">
+                                        {numberFormatter.format(
+                                            member.used_tokens
+                                        )}{" "}
+                                        /{" "}
+                                        {numberFormatter.format(
+                                            member.token_limit
+                                        )}{" "}
+                                        ·{" "}
+                                        {numberFormatter.format(
+                                            member.remaining
+                                        )}{" "}
+                                        left
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : null}
+                </section>
+            ) : null}
             <section className="grid gap-4 md:grid-cols-2">
                 <div className="surface-panel p-5">
-                    <p className="text-label-xs text-sub-600">Tokens</p>
+                    <p className="text-label-xs text-sub-600">Your tokens</p>
                     <p className="mt-1 text-label-xl text-strong-950">
                         {numberFormatter.format(used)} /{" "}
                         {numberFormatter.format(limit)}

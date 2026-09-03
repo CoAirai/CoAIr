@@ -24,4 +24,9 @@ export const menu = [
         name: "Data Controls",
         icon: "database",
     },
+    {
+        id: 5,
+        name: "Tokens",
+        icon: "analytic",
+    },
 ];

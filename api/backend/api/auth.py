@@ -248,18 +248,16 @@ async def me(
     record = store.get_user(user.username)
     if not record:
         raise HTTPException(401, "unknown_user")
-    # Soft-repair legacy 1M caps from the company package when the user loads.
+    # Soft-repair legacy 1M caps: rebalance remaining pool across the org once.
     try:
         membership = orgs.membership_for(user.username)
         if membership and int(record.get("token_limit") or 0) == 1_000_000:
-            from src.org_quota import resolve_org_token_limit
+            from src.org_token_pool import rebalance_equal_remaining
 
-            package_tokens = resolve_org_token_limit(
-                str(membership["org_id"]), orgs=orgs
+            rebalance_equal_remaining(
+                str(membership["org_id"]), orgs=orgs, users=store
             )
-            if package_tokens > 0 and package_tokens != 1_000_000:
-                store.update_user(user.username, token_limit=package_tokens)
-                record = store.get_user(user.username) or record
+            record = store.get_user(user.username) or record
     except Exception:
         pass
     usage = store.get_billing_summary(user.username)

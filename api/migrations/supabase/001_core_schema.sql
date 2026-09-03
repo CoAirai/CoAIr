@@ -306,6 +306,24 @@ CREATE TABLE IF NOT EXISTS topup_requests (
 
 CREATE INDEX IF NOT EXISTS idx_topups_status ON topup_requests(status, created_at);
 
+CREATE TABLE IF NOT EXISTS member_token_requests (
+    request_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    tokens INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by TEXT,
+    fulfill_mode TEXT,
+    donor_username TEXT,
+    purchase_session_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_member_token_requests_org
+    ON member_token_requests(org_id, status, created_at);
+
 -- ── Commerce ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tickets (
     ticket_id TEXT PRIMARY KEY,
