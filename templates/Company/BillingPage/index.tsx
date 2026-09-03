@@ -9,19 +9,13 @@ import StatusBadge from "@/components/Admin/StatusBadge";
 import CheckoutModal from "@/components/Company/CheckoutModal";
 import { useCompanyData } from "@/context/CompanyDataContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
-import type { ModuleId, PlanId } from "@/lib/admin/types";
+import type { PlanId } from "@/lib/admin/types";
 import {
     chargeUsdForTokens,
     effectiveSellRate,
 } from "@/lib/billing/tokenEconomics";
 
-const TOKEN_AMOUNTS = [1000, 5000, 10000] as const;
-
-const STORAGE_PACKS = [
-    { gb: 10 as const, priceUsd: 10, label: "10 GB" },
-    { gb: 50 as const, priceUsd: 40, label: "50 GB" },
-    { gb: 100 as const, priceUsd: 70, label: "100 GB" },
-];
+const STORAGE_USD_PER_GB = 1;
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -39,21 +33,16 @@ const formatDate = (date: string) =>
 type CheckoutState =
     | {
           kind: "tokens";
-          amount: 1000 | 5000 | 10000;
+          amount: number;
           priceUsd: number;
           label: string;
       }
-    | { kind: "storage"; gb: 10 | 50 | 100; priceUsd: number; label: string }
+    | { kind: "storage"; gb: number; priceUsd: number; label: string }
     | {
           kind: "upgrade";
           planId: PlanId;
           planName: string;
           priceLabel: string;
-      }
-    | {
-          kind: "addon";
-          moduleId: ModuleId;
-          label: string;
           priceUsd: number;
       }
     | null;
@@ -65,26 +54,24 @@ const BillingPage = () => {
         buyExtraTokens,
         buyExtraStorage,
         upgradePlan,
-        buyAddOn,
         plans,
         tokenEconomics,
     } = useCompanyData();
 
     const [checkout, setCheckout] = useState<CheckoutState>(null);
+    const [tokenAmountInput, setTokenAmountInput] = useState("5000");
+    const [storageGbInput, setStorageGbInput] = useState("50");
+    const [customRequirement, setCustomRequirement] = useState("");
+    const [customNote, setCustomNote] = useState<string | null>(null);
 
     const sellRate = effectiveSellRate(
         tokenEconomics,
         company.sellTokensPerUsdOverride
     );
-    const tokenPacks = useMemo(
-        () =>
-            TOKEN_AMOUNTS.map((amount) => ({
-                amount,
-                priceUsd: chargeUsdForTokens(amount, sellRate),
-                label: `${amount.toLocaleString()} tokens`,
-            })),
-        [sellRate]
-    );
+    const tokenAmount = Math.max(0, Math.floor(Number(tokenAmountInput) || 0));
+    const tokenPriceUsd = chargeUsdForTokens(tokenAmount, sellRate);
+    const storageGb = Math.max(0, Math.floor(Number(storageGbInput) || 0));
+    const storagePriceUsd = storageGb * STORAGE_USD_PER_GB;
 
     const plan = getPlanById(company.planId, plans);
     const currentPlanIndex = PLAN_ORDER.indexOf(company.planId);
@@ -108,9 +95,6 @@ const BillingPage = () => {
             buyExtraStorage(checkout.gb);
             return { ok: true };
         }
-        if (checkout.kind === "addon") {
-            return buyAddOn(checkout.moduleId);
-        }
         return upgradePlan(checkout.planId);
     };
 
@@ -121,9 +105,7 @@ const BillingPage = () => {
               ? "Buy extra tokens"
               : checkout?.kind === "storage"
                 ? "Buy extra storage"
-                : checkout?.kind === "addon"
-                  ? `Enable ${checkout.label}`
-                  : "";
+                : "";
 
     const checkoutSummary =
         checkout?.kind === "upgrade"
@@ -132,9 +114,7 @@ const BillingPage = () => {
               ? `Add ${checkout.label} to your company token pool.`
               : checkout?.kind === "storage"
                 ? `Add ${checkout.label} to your company storage limit.`
-                : checkout?.kind === "addon"
-                  ? `Unlock ${checkout.label} for everyone in this company.`
-                  : "";
+                : "";
 
     const checkoutAmount =
         checkout?.kind === "upgrade"
@@ -147,7 +127,7 @@ const BillingPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Billing"
-                description="View invoices, purchase add-ons, or upgrade your plan."
+                description="View invoices, purchase capacity, or upgrade your plan."
             />
 
             <section className="surface-panel p-5">
@@ -247,87 +227,99 @@ const BillingPage = () => {
             <div className="grid gap-6 xl:grid-cols-2">
                 <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
-                        Buy extra tokens
+                        Extra tokens
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        One-time packs added to your current token limit. Priced
-                        at {sellRate} tokens per $1.
-                        Overage is billed at the same rate.
+                        Enter the tokens you need. Priced at {sellRate} tokens
+                        per $1.
                     </p>
-                    <div className="mt-4 space-y-3">
-                        {tokenPacks.map((pack) => (
-                            <div
-                                key={pack.amount}
-                                className="flex items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                            >
-                                <div>
-                                    <p className="text-label-sm text-strong-950">
-                                        {pack.label}
-                                    </p>
-                                    <p className="text-label-xs text-sub-600">
-                                        {currencyFormatter.format(pack.priceUsd)}
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setCheckout({
-                                            kind: "tokens",
-                                            ...pack,
-                                        })
-                                    }
-                                    className="h-9 shrink-0 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
-                                >
-                                    Buy
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                    <label className="mt-4 block">
+                        <span className="mb-1.5 block text-label-xs text-sub-600">
+                            Tokens needed
+                        </span>
+                        <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={tokenAmountInput}
+                            onChange={(event) =>
+                                setTokenAmountInput(event.target.value)
+                            }
+                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        />
+                    </label>
+                    <p className="mt-3 text-label-sm text-strong-950">
+                        Estimated:{" "}
+                        {tokenAmount > 0
+                            ? currencyFormatter.format(tokenPriceUsd)
+                            : "—"}
+                    </p>
+                    <button
+                        type="button"
+                        disabled={tokenAmount < 1}
+                        onClick={() =>
+                            setCheckout({
+                                kind: "tokens",
+                                amount: tokenAmount,
+                                priceUsd: tokenPriceUsd,
+                                label: `${numberFormatter.format(tokenAmount)} tokens`,
+                            })
+                        }
+                        className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
+                    >
+                        Buy
+                    </button>
                 </section>
 
                 <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
-                        Buy extra storage
+                        Extra storage
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        One-time packs added to your storage limit.
+                        Enter how much storage you need ($
+                        {STORAGE_USD_PER_GB}/GB).
                     </p>
-                    <div className="mt-4 space-y-3">
-                        {STORAGE_PACKS.map((pack) => (
-                            <div
-                                key={pack.gb}
-                                className="flex items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                            >
-                                <div>
-                                    <p className="text-label-sm text-strong-950">
-                                        {pack.label}
-                                    </p>
-                                    <p className="text-label-xs text-sub-600">
-                                        {currencyFormatter.format(pack.priceUsd)}
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setCheckout({
-                                            kind: "storage",
-                                            ...pack,
-                                        })
-                                    }
-                                    className="h-9 shrink-0 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
-                                >
-                                    Buy
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                    <label className="mt-4 block">
+                        <span className="mb-1.5 block text-label-xs text-sub-600">
+                            Storage needed (GB)
+                        </span>
+                        <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={storageGbInput}
+                            onChange={(event) =>
+                                setStorageGbInput(event.target.value)
+                            }
+                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        />
+                    </label>
+                    <p className="mt-3 text-label-sm text-strong-950">
+                        Estimated:{" "}
+                        {storageGb > 0
+                            ? currencyFormatter.format(storagePriceUsd)
+                            : "—"}
+                    </p>
+                    <button
+                        type="button"
+                        disabled={storageGb < 1}
+                        onClick={() =>
+                            setCheckout({
+                                kind: "storage",
+                                gb: storageGb,
+                                priceUsd: storagePriceUsd,
+                                label: `${numberFormatter.format(storageGb)} GB`,
+                            })
+                        }
+                        className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
+                    >
+                        Buy
+                    </button>
                 </section>
             </div>
 
             <section className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">
-                    Upgrade plan
-                </h2>
+                <h2 className="text-label-lg text-strong-950">Upgrade plan</h2>
                 <p className="mt-1 text-label-xs text-sub-600">
                     Move to a higher tier. Blocked if current usage exceeds the
                     new plan limits.
@@ -363,6 +355,7 @@ const BillingPage = () => {
                                             planId: target.id,
                                             planName: target.name,
                                             priceLabel: target.priceLabel,
+                                            priceUsd: target.apiCreditsUsd,
                                         })
                                     }
                                     className="h-9 shrink-0 rounded-xl bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
@@ -377,67 +370,41 @@ const BillingPage = () => {
 
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">
-                    Module add-ons
+                    Custom purchase request
                 </h2>
                 <p className="mt-1 text-label-xs text-sub-600">
-                    Unlock Chronology or Forensic Delay Analysis for this
-                    company.
+                    Modules are included with your package. Describe any other
+                    purchase you need.
                 </p>
-                <div className="mt-4 space-y-3">
-                    {(
-                        [
-                            {
-                                id: "chronology" as const,
-                                label: "Chronology",
-                                priceUsd: 250,
-                            },
-                            {
-                                id: "forensic" as const,
-                                label: "Forensic Delay Analysis",
-                                priceUsd: 400,
-                            },
-                        ]
-                    ).map((addon) => {
-                        const owned = company.addOns.includes(addon.id);
-                        return (
-                            <div
-                                key={addon.id}
-                                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                            >
-                                <div>
-                                    <p className="text-label-sm text-strong-950">
-                                        {addon.label}
-                                    </p>
-                                    <p className="text-label-xs text-sub-600">
-                                        {owned
-                                            ? "Enabled for this company"
-                                            : `${currencyFormatter.format(addon.priceUsd)} / month`}
-                                    </p>
-                                </div>
-                                {owned ? (
-                                    <span className="text-label-sm text-green-600">
-                                        Active
-                                    </span>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            setCheckout({
-                                                kind: "addon",
-                                                moduleId: addon.id,
-                                                label: addon.label,
-                                                priceUsd: addon.priceUsd,
-                                            })
-                                        }
-                                        className="h-9 shrink-0 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
-                                    >
-                                        Enable
-                                    </button>
-                                )}
-                            </div>
+                <textarea
+                    value={customRequirement}
+                    onChange={(event) => {
+                        setCustomRequirement(event.target.value);
+                        setCustomNote(null);
+                    }}
+                    rows={4}
+                    className="mt-4 w-full rounded-xl border border-stroke-soft-200 px-3 py-2 text-label-sm outline-none focus:border-blue-500"
+                    placeholder="Describe what you need…"
+                />
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (customRequirement.trim().length < 3) {
+                            setCustomNote("Add a short description first.");
+                            return;
+                        }
+                        setCustomNote(
+                            "Request saved locally. On live billing this goes to Super Admin for approval."
                         );
-                    })}
-                </div>
+                        setCustomRequirement("");
+                    }}
+                    className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
+                >
+                    Submit request
+                </button>
+                {customNote ? (
+                    <p className="mt-2 text-label-xs text-sub-600">{customNote}</p>
+                ) : null}
             </section>
 
             <CheckoutModal

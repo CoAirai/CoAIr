@@ -55,8 +55,8 @@ type CompanyDataContextValue = {
     ) => { ok: boolean; error?: string };
     releaseUnused: (userId: string) => { ok: boolean; error?: string };
     setCanUseOverflow: (userId: string, value: boolean) => void;
-    buyExtraTokens: (amount: 1000 | 5000 | 10000) => void;
-    buyExtraStorage: (gb: 10 | 50 | 100) => void;
+    buyExtraTokens: (amount: number) => void;
+    buyExtraStorage: (gb: number) => void;
     upgradePlan: (planId: PlanId) => { ok: boolean; error?: string };
     buyAddOn: (moduleId: ModuleId) => { ok: boolean; error?: string };
     createTicket: (input: {
@@ -323,8 +323,8 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
     );
 
     const buyExtraTokens = useCallback(
-        (amount: 1000 | 5000 | 10000) => {
-            if (!company) return;
+        (amount: number) => {
+            if (!company || amount < 1) return;
 
             patchCompany(company.id, {
                 tokenLimit: company.tokenLimit + amount,
@@ -338,8 +338,8 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
     );
 
     const buyExtraStorage = useCallback(
-        (gb: 10 | 50 | 100) => {
-            if (!company) return;
+        (gb: number) => {
+            if (!company || gb < 1) return;
 
             patchCompany(company.id, {
                 storageLimitGb: company.storageLimitGb + gb,

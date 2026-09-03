@@ -77,7 +77,8 @@ def _purchase_amount_and_label(
     elif req.kind == "storage":
         if not req.gb:
             raise HTTPException(400, "gb_required")
-        amount = amount or float({10: 10, 50: 40, 100: 70}.get(int(req.gb), req.gb))
+        # Prefer client amount_usd; otherwise $1 per GB for custom sizes.
+        amount = amount or float(req.gb)
         description = description or f"Storage +{req.gb} GB"
     elif req.kind == "tokens":
         if not req.tokens:

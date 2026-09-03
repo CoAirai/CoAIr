@@ -11,7 +11,7 @@ import CheckoutModal from "@/components/Company/CheckoutModal";
 import { CompanyContentSkeleton } from "@/components/Skeleton/portals";
 import { useAuth } from "@/context/AuthContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
-import type { ModuleId, Plan, PlanId } from "@/lib/admin/types";
+import type { Plan, PlanId } from "@/lib/admin/types";
 import type { Invoice, TopUpRequest } from "@/lib/admin/billingTypes";
 import { chargeUsdForTokens } from "@/lib/billing/tokenEconomics";
 import { apiErrorMessage, listPackages } from "@/lib/coair/commerce";
@@ -26,12 +26,8 @@ import {
 } from "@/lib/coair/ops";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 
-const TOKEN_AMOUNTS = [1000, 5000, 10000] as const;
-const STORAGE_PACKS = [
-    { gb: 10 as const, priceUsd: 10, label: "10 GB" },
-    { gb: 50 as const, priceUsd: 40, label: "50 GB" },
-    { gb: 100 as const, priceUsd: 70, label: "100 GB" },
-];
+/** Default storage list price when the company enters a custom GB amount. */
+const STORAGE_USD_PER_GB = 1;
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -54,22 +50,16 @@ const bytesToGb = (bytes?: number) =>
 type CheckoutState =
     | {
           kind: "tokens";
-          amount: 1000 | 5000 | 10000;
+          amount: number;
           priceUsd: number;
           label: string;
       }
-    | { kind: "storage"; gb: 10 | 50 | 100; priceUsd: number; label: string }
+    | { kind: "storage"; gb: number; priceUsd: number; label: string }
     | {
           kind: "upgrade";
           planId: PlanId;
           planName: string;
           priceLabel: string;
-          priceUsd: number;
-      }
-    | {
-          kind: "addon";
-          moduleId: ModuleId;
-          label: string;
           priceUsd: number;
       }
     | null;
@@ -84,7 +74,13 @@ const LiveCompanyBillingPage = () => {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [topupRequests, setTopupRequests] = useState<TopUpRequest[]>([]);
     const [topupsEnabled, setTopupsEnabled] = useState(false);
-    const [topupReason, setTopupReason] = useState("Need additional tokens");
+    const [tokenAmountInput, setTokenAmountInput] = useState("5000");
+    const [tokenNote, setTokenNote] = useState("");
+    const [storageGbInput, setStorageGbInput] = useState("50");
+    const [customRequirement, setCustomRequirement] = useState("");
+    const [customBudgetInput, setCustomBudgetInput] = useState("");
+    const [customSubmitting, setCustomSubmitting] = useState(false);
+    const [tokenRequesting, setTokenRequesting] = useState(false);
     const [plans, setPlans] = useState<Plan[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [billingReady, setBillingReady] = useState(false);
@@ -161,15 +157,11 @@ const LiveCompanyBillingPage = () => {
     const storageLimitGb = bytesToGb(me?.storage_limit_bytes);
     const storageUsedGb = bytesToGb(me?.storage_used_bytes);
 
-    const tokenPacks = useMemo(
-        () =>
-            TOKEN_AMOUNTS.map((amount) => ({
-                amount,
-                priceUsd: chargeUsdForTokens(amount, sellRate),
-                label: `${amount.toLocaleString()} tokens`,
-            })),
-        [sellRate]
-    );
+    const tokenAmount = Math.max(0, Math.floor(Number(tokenAmountInput) || 0));
+    const tokenPriceUsd = chargeUsdForTokens(tokenAmount, sellRate);
+    const storageGb = Math.max(0, Math.floor(Number(storageGbInput) || 0));
+    const storagePriceUsd = storageGb * STORAGE_USD_PER_GB;
+    const customBudgetUsd = Math.max(0, Number(customBudgetInput) || 0);
 
     const upgradePlans = useMemo(
         () =>
@@ -210,19 +202,62 @@ const LiveCompanyBillingPage = () => {
                     description: `Upgrade to ${checkout.planName}`,
                 });
                 if (result.redirected) return { ok: true };
-            } else {
-                const result = await createPurchase(token, {
-                    kind: "addon",
-                    amount_usd: checkout.priceUsd,
-                    module_id: checkout.moduleId,
-                    description: checkout.label,
-                });
-                if (result.redirected) return { ok: true };
             }
             await Promise.all([loadInvoices(), refresh()]);
             return { ok: true };
         } catch (err) {
             return { ok: false, error: apiErrorMessage(err) };
+        }
+    };
+
+    const requestTokenTopup = async () => {
+        if (tokenAmount < 1) {
+            setError("Enter how many tokens you need.");
+            return;
+        }
+        setTokenRequesting(true);
+        try {
+            await createOrgTopup(token, {
+                tokens: tokenAmount,
+                amountUsd: tokenPriceUsd,
+                reason:
+                    tokenNote.trim() ||
+                    `Request ${numberFormatter.format(tokenAmount)} tokens`,
+            });
+            setError(null);
+            await loadInvoices();
+        } catch (err) {
+            setError(apiErrorMessage(err));
+        } finally {
+            setTokenRequesting(false);
+        }
+    };
+
+    const submitCustomRequest = async () => {
+        const requirement = customRequirement.trim();
+        if (requirement.length < 3) {
+            setError("Describe what you need for the custom purchase request.");
+            return;
+        }
+        setCustomSubmitting(true);
+        try {
+            const estimatedTokens =
+                customBudgetUsd > 0
+                    ? Math.max(1, Math.round(customBudgetUsd * sellRate))
+                    : 1;
+            await createOrgTopup(token, {
+                tokens: estimatedTokens,
+                amountUsd: customBudgetUsd,
+                reason: requirement,
+            });
+            setCustomRequirement("");
+            setCustomBudgetInput("");
+            setError(null);
+            await loadInvoices();
+        } catch (err) {
+            setError(apiErrorMessage(err));
+        } finally {
+            setCustomSubmitting(false);
         }
     };
 
@@ -233,9 +268,7 @@ const LiveCompanyBillingPage = () => {
               ? "Buy extra tokens"
               : checkout?.kind === "storage"
                 ? "Buy extra storage"
-                : checkout?.kind === "addon"
-                  ? `Enable ${checkout.label}`
-                  : "";
+                : "";
 
     const checkoutSummary =
         checkout?.kind === "upgrade"
@@ -244,9 +277,7 @@ const LiveCompanyBillingPage = () => {
               ? `Add ${checkout.label} to your company token pool.`
               : checkout?.kind === "storage"
                 ? `Add ${checkout.label} to your company storage limit.`
-                : checkout?.kind === "addon"
-                  ? `Unlock ${checkout.label} for everyone in this company.`
-                  : "";
+                : "";
 
     const checkoutAmount =
         checkout?.kind === "upgrade"
@@ -259,7 +290,7 @@ const LiveCompanyBillingPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Billing"
-                description="Live invoices and Stripe Checkout for upgrades, storage, and token packs."
+                description="Invoices, custom token and storage purchases, plan upgrades, and custom requests."
             />
             {cancelled ? (
                 <p className="text-label-sm text-amber-600">
@@ -364,130 +395,142 @@ const LiveCompanyBillingPage = () => {
                 ) : null}
             </section>
 
-            <section className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">
-                    Request a token top-up
-                </h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    {topupsEnabled
-                        ? "Super Admin reviews these before credits are applied."
-                        : "Token top-up requests are turned off. Ask Super Admin to enable the topups flag."}
-                </p>
-                <div className="mt-4 space-y-3">
-                    {tokenPacks.map((pack) => (
-                        <div
-                            key={`request-${pack.amount}`}
-                            className="flex items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                        >
-                            <div>
-                                <p className="text-label-sm text-strong-950">
-                                    {pack.label}
-                                </p>
-                                <p className="text-label-xs text-sub-600">
-                                    {currencyFormatter.format(pack.priceUsd)}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                disabled={!topupsEnabled}
-                                onClick={() =>
-                                    void createOrgTopup(token, {
-                                        tokens: pack.amount,
-                                        amountUsd: pack.priceUsd,
-                                        reason: topupReason.trim() || "Need additional tokens",
-                                    })
-                                        .then(() => loadInvoices())
-                                        .catch((err) =>
-                                            setError(apiErrorMessage(err))
-                                        )
-                                }
-                                className="h-9 shrink-0 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
-                            >
-                                Request
-                            </button>
-                        </div>
-                    ))}
-                </div>
-                <input
-                    value={topupReason}
-                    onChange={(event) => setTopupReason(event.target.value)}
-                    className="mt-4 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                    placeholder="Reason for Super Admin"
-                />
-                {topupRequests.length > 0 ? (
-                    <p className="mt-3 text-label-xs text-sub-600">
-                        Latest: {topupRequests[0].status} ·{" "}
-                        {numberFormatter.format(topupRequests[0].tokensRequested)}{" "}
-                        tokens
-                    </p>
-                ) : null}
-            </section>
-
             <div className="grid gap-6 xl:grid-cols-2">
                 <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
-                        Buy extra tokens
+                        Extra tokens
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        Priced at {sellRate} tokens per $1.
+                        Enter the tokens you need. Priced at {sellRate} tokens
+                        per $1. Pay with Stripe, or request Super Admin approval
+                        when top-ups are enabled.
                     </p>
-                    <div className="mt-4 space-y-3">
-                        {tokenPacks.map((pack) => (
-                            <div
-                                key={pack.amount}
-                                className="flex items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                            >
-                                <div>
-                                    <p className="text-label-sm text-strong-950">
-                                        {pack.label}
-                                    </p>
-                                    <p className="text-label-xs text-sub-600">
-                                        {currencyFormatter.format(pack.priceUsd)}
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setCheckout({ kind: "tokens", ...pack })
-                                    }
-                                    className="h-9 shrink-0 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
-                                >
-                                    Buy
-                                </button>
-                            </div>
-                        ))}
+                    <label className="mt-4 block">
+                        <span className="mb-1.5 block text-label-xs text-sub-600">
+                            Tokens needed
+                        </span>
+                        <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={tokenAmountInput}
+                            onChange={(event) =>
+                                setTokenAmountInput(event.target.value)
+                            }
+                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                            placeholder="e.g. 8000"
+                        />
+                    </label>
+                    <label className="mt-3 block">
+                        <span className="mb-1.5 block text-label-xs text-sub-600">
+                            Note (optional)
+                        </span>
+                        <input
+                            value={tokenNote}
+                            onChange={(event) => setTokenNote(event.target.value)}
+                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                            placeholder="Why you need more tokens"
+                        />
+                    </label>
+                    <p className="mt-3 text-label-sm text-strong-950">
+                        Estimated:{" "}
+                        {tokenAmount > 0
+                            ? currencyFormatter.format(tokenPriceUsd)
+                            : "—"}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                            type="button"
+                            disabled={tokenAmount < 1}
+                            onClick={() =>
+                                setCheckout({
+                                    kind: "tokens",
+                                    amount: tokenAmount,
+                                    priceUsd: tokenPriceUsd,
+                                    label: `${numberFormatter.format(tokenAmount)} tokens`,
+                                })
+                            }
+                            className="h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
+                        >
+                            Buy with Stripe
+                        </button>
+                        <button
+                            type="button"
+                            disabled={
+                                !topupsEnabled ||
+                                tokenAmount < 1 ||
+                                tokenRequesting
+                            }
+                            onClick={() => void requestTokenTopup()}
+                            className="h-9 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
+                        >
+                            {tokenRequesting
+                                ? "Requesting…"
+                                : "Request approval"}
+                        </button>
                     </div>
+                    {!topupsEnabled ? (
+                        <p className="mt-2 text-label-xs text-sub-600">
+                            Approval requests are off. You can still buy with
+                            Stripe, or ask Super Admin to enable top-ups.
+                        </p>
+                    ) : null}
+                    {topupRequests.length > 0 ? (
+                        <p className="mt-3 text-label-xs text-sub-600">
+                            Latest request: {topupRequests[0].status} ·{" "}
+                            {numberFormatter.format(
+                                topupRequests[0].tokensRequested
+                            )}{" "}
+                            tokens
+                        </p>
+                    ) : null}
                 </section>
+
                 <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
-                        Buy extra storage
+                        Extra storage
                     </h2>
-                    <div className="mt-4 space-y-3">
-                        {STORAGE_PACKS.map((pack) => (
-                            <div
-                                key={pack.gb}
-                                className="flex items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                            >
-                                <div>
-                                    <p className="text-label-sm text-strong-950">
-                                        {pack.label}
-                                    </p>
-                                    <p className="text-label-xs text-sub-600">
-                                        {currencyFormatter.format(pack.priceUsd)}
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setCheckout({ kind: "storage", ...pack })
-                                    }
-                                    className="h-9 shrink-0 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
-                                >
-                                    Buy
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                    <p className="mt-1 text-label-xs text-sub-600">
+                        Enter how much storage you need. Listed at $
+                        {STORAGE_USD_PER_GB}/GB.
+                    </p>
+                    <label className="mt-4 block">
+                        <span className="mb-1.5 block text-label-xs text-sub-600">
+                            Storage needed (GB)
+                        </span>
+                        <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={storageGbInput}
+                            onChange={(event) =>
+                                setStorageGbInput(event.target.value)
+                            }
+                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                            placeholder="e.g. 75"
+                        />
+                    </label>
+                    <p className="mt-3 text-label-sm text-strong-950">
+                        Estimated:{" "}
+                        {storageGb > 0
+                            ? currencyFormatter.format(storagePriceUsd)
+                            : "—"}
+                    </p>
+                    <button
+                        type="button"
+                        disabled={storageGb < 1}
+                        onClick={() =>
+                            setCheckout({
+                                kind: "storage",
+                                gb: storageGb,
+                                priceUsd: storagePriceUsd,
+                                label: `${numberFormatter.format(storageGb)} GB`,
+                            })
+                        }
+                        className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
+                    >
+                        Buy with Stripe
+                    </button>
                 </section>
             </div>
 
@@ -535,52 +578,58 @@ const LiveCompanyBillingPage = () => {
             </section>
 
             <section className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">Module add-ons</h2>
-                <div className="mt-4 space-y-3">
-                    {(
-                        [
-                            {
-                                id: "chronology" as const,
-                                label: "Chronology",
-                                priceUsd: 250,
-                            },
-                            {
-                                id: "forensic" as const,
-                                label: "Forensic Delay Analysis",
-                                priceUsd: 400,
-                            },
-                        ]
-                    ).map((addon) => (
-                        <div
-                            key={addon.id}
-                            className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                        >
-                            <div>
-                                <p className="text-label-sm text-strong-950">
-                                    {addon.label}
-                                </p>
-                                <p className="text-label-xs text-sub-600">
-                                    {currencyFormatter.format(addon.priceUsd)} /
-                                    month
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    setCheckout({
-                                        kind: "addon",
-                                        moduleId: addon.id,
-                                        label: addon.label,
-                                        priceUsd: addon.priceUsd,
-                                    })
-                                }
-                                className="h-9 shrink-0 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
-                            >
-                                Enable
-                            </button>
-                        </div>
-                    ))}
-                </div>
+                <h2 className="text-label-lg text-strong-950">
+                    Custom purchase request
+                </h2>
+                <p className="mt-1 text-label-xs text-sub-600">
+                    Chat, Chronology, and Forensic modules are included with your
+                    package. Use this for anything else you need — Super Admin
+                    reviews the request.
+                </p>
+                <label className="mt-4 block">
+                    <span className="mb-1.5 block text-label-xs text-sub-600">
+                        What do you need?
+                    </span>
+                    <textarea
+                        value={customRequirement}
+                        onChange={(event) =>
+                            setCustomRequirement(event.target.value)
+                        }
+                        rows={4}
+                        className="w-full rounded-xl border border-stroke-soft-200 px-3 py-2 text-label-sm outline-none focus:border-blue-500"
+                        placeholder="Describe the purchase or capacity you need…"
+                    />
+                </label>
+                <label className="mt-3 block max-w-xs">
+                    <span className="mb-1.5 block text-label-xs text-sub-600">
+                        Estimated budget (USD, optional)
+                    </span>
+                    <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={customBudgetInput}
+                        onChange={(event) =>
+                            setCustomBudgetInput(event.target.value)
+                        }
+                        className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        placeholder="0.00"
+                    />
+                </label>
+                <button
+                    type="button"
+                    disabled={!topupsEnabled || customSubmitting}
+                    onClick={() => void submitCustomRequest()}
+                    className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
+                >
+                    {customSubmitting ? "Submitting…" : "Submit request"}
+                </button>
+                {!topupsEnabled ? (
+                    <p className="mt-2 text-label-xs text-sub-600">
+                        Custom requests require the platform top-ups flag. Ask
+                        Super Admin to enable it, or open a ticket.
+                    </p>
+                ) : null}
             </section>
 
             <CheckoutModal
