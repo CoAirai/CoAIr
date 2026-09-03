@@ -235,6 +235,10 @@ async def invite_org_user(
     email = req.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(400, "invalid_email")
+    from src.org_quota import resolve_org_token_limit
+
+    package_tokens = resolve_org_token_limit(org.org_id, orgs=orgs)
+    package_storage = int(org.policy.get("default_storage_bytes") or 0)
     existing = users.get_user(email)
     if existing:
         if existing.get("is_active", True):
@@ -245,7 +249,12 @@ async def invite_org_user(
             password=password,
             display_name=req.display_name or existing.get("display_name"),
             is_active=True,
+            token_limit=package_tokens,
         )
+        try:
+            users.billing.update_account(email, storage_limit_bytes=package_storage)
+        except Exception:
+            pass
         record = users.get_user(email) or existing
         membership = orgs.membership_for(email)
         if not membership or membership["org_id"] != org.org_id:
@@ -261,10 +270,10 @@ async def invite_org_user(
                 password=password,
                 display_name=req.display_name or email.split("@")[0],
                 role="user",
-                token_limit=org.policy.get("default_token_limit", 1_000_000),
+                token_limit=package_tokens,
                 plan_type=org.policy.get("default_plan_type", "demo"),
                 initial_credits=org.policy.get("default_credits", 0),
-                storage_limit_bytes=org.policy.get("default_storage_bytes", 0),
+                storage_limit_bytes=package_storage,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc

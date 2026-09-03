@@ -208,16 +208,16 @@ def fulfill_plan(
         org_id, plan_id=plan_id, needs_checkout=False,
     )
     record = orgs.get_org(org_id) or {}
-    owner = owner_username(orgs, org_id)
-    if owner:
-        try:
-            users.billing.update_account(owner, storage_limit_bytes=storage_bytes)
-        except Exception:
-            pass
-        try:
-            users.update_user(owner, token_limit=token_limit)
-        except Exception:
-            pass
+    from src.org_quota import sync_org_member_quotas
+
+    sync_org_member_quotas(
+        org_id,
+        token_limit=token_limit,
+        storage_limit_bytes=storage_bytes,
+        orgs=orgs,
+        users=users,
+        commerce=commerce,
+    )
     invoice = ops.create_invoice(
         org_id,
         amount_usd=credits,
@@ -306,15 +306,16 @@ def fulfill_purchase(
             default_token_limit=token_limit,
         )
         commerce.set_subscription(org_id, plan_id=plan_id, needs_checkout=False)
-        if owner:
-            try:
-                users.billing.update_account(owner, storage_limit_bytes=storage_bytes)
-            except Exception:
-                pass
-            try:
-                users.update_user(owner, token_limit=token_limit)
-            except Exception:
-                pass
+        from src.org_quota import sync_org_member_quotas
+
+        sync_org_member_quotas(
+            org_id,
+            token_limit=token_limit,
+            storage_limit_bytes=storage_bytes,
+            orgs=orgs,
+            users=users,
+            commerce=commerce,
+        )
         description = description or f"Upgrade to {plan['name']}"
     elif kind == "storage":
         if not gb:
@@ -323,21 +324,36 @@ def fulfill_purchase(
         extra = gb_to_bytes(int(gb))
         new_limit = int(record.get("default_storage_bytes") or 0) + extra
         orgs.update_org(org_id, default_storage_bytes=new_limit)
-        if owner:
-            try:
-                users.billing.update_account(owner, storage_limit_bytes=new_limit)
-            except Exception:
-                pass
+        from src.org_quota import sync_org_member_quotas
+
+        sync_org_member_quotas(
+            org_id,
+            storage_limit_bytes=new_limit,
+            orgs=orgs,
+            users=users,
+            commerce=commerce,
+        )
         amount = amount or float({10: 10, 50: 40, 100: 70}.get(int(gb), gb))
         description = description or f"Storage +{gb} GB"
     elif kind == "tokens":
         add = int(tokens or 0)
         if add < 1:
             raise ValueError("tokens_required")
-        if owner:
-            user = users.get_user(owner) or {}
-            current = int(user.get("token_limit") or 0)
-            users.update_user(owner, token_limit=current + add)
+        record = orgs.get_org(org_id) or {}
+        from src.org_quota import resolve_org_token_limit, sync_org_member_quotas
+
+        current = resolve_org_token_limit(
+            org_id, orgs=orgs, commerce=commerce
+        )
+        new_limit = current + add
+        orgs.update_org(org_id, default_token_limit=new_limit)
+        sync_org_member_quotas(
+            org_id,
+            token_limit=new_limit,
+            orgs=orgs,
+            users=users,
+            commerce=commerce,
+        )
         amount = amount or 0
         description = description or f"Token pack {add}"
     else:

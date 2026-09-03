@@ -243,10 +243,25 @@ async def reset_password(
 async def me(
     user: UserContext = Depends(get_current_user),
     store: UserStore = Depends(get_user_store),
+    orgs: OrgStore = Depends(get_org_store),
 ):
     record = store.get_user(user.username)
     if not record:
         raise HTTPException(401, "unknown_user")
+    # Soft-repair legacy 1M caps from the company package when the user loads.
+    try:
+        membership = orgs.membership_for(user.username)
+        if membership and int(record.get("token_limit") or 0) == 1_000_000:
+            from src.org_quota import resolve_org_token_limit
+
+            package_tokens = resolve_org_token_limit(
+                str(membership["org_id"]), orgs=orgs
+            )
+            if package_tokens > 0 and package_tokens != 1_000_000:
+                store.update_user(user.username, token_limit=package_tokens)
+                record = store.get_user(user.username) or record
+    except Exception:
+        pass
     usage = store.get_billing_summary(user.username)
     return {"user": _user_payload(record, usage)}
 
