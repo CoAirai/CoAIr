@@ -73,6 +73,18 @@ async function adoptSupabaseSession(
     });
 }
 
+/** Browser/Supabase logins skip /auth/login — ask API to send login emails. */
+async function reportLoginAlert(token: string): Promise<void> {
+    try {
+        await coairFetch<{ ok: boolean }>("/auth/login-notify", {
+            method: "POST",
+            token,
+        });
+    } catch {
+        /* non-blocking — login must still succeed */
+    }
+}
+
 export async function sessionFromAccessToken(
     accessToken: string,
     user: CoairUserPayload,
@@ -120,62 +132,8 @@ export async function tryLiveLogin(
         return { ok: false, kind: "invalid", error: "Username and password required" };
     }
 
+    // Prefer API login so MFA + login-alert emails always run server-side.
     try {
-        const supabase = getSupabaseBrowser();
-        if (supabase) {
-            const email = authEmailFromUsername(trimmed);
-            const first = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
-            if (first.error) {
-                let login: CoairLoginResponse | null = null;
-                try {
-                    login = await loginViaApi(trimmed, password);
-                } catch (error) {
-                    if (isApiUnreachable(error)) throw error;
-                    login = null;
-                }
-                if (login?.access_token) {
-                    await adoptSupabaseSession(login.access_token, login.refresh_token);
-                    return {
-                        ok: true,
-                        session: await sessionFromAccessToken(
-                            login.access_token,
-                            login.user
-                        ),
-                    };
-                }
-                if (login?.mfa_required && login.mfa_token) {
-                    return {
-                        ok: false,
-                        kind: "mfa",
-                        mfaToken: login.mfa_token,
-                        debugCode: login.debug_code,
-                        username: trimmed,
-                    };
-                }
-                return {
-                    ok: false,
-                    kind: "invalid",
-                    error: "Invalid username or password",
-                };
-            }
-            if (first.data.session?.access_token) {
-                try {
-                    return {
-                        ok: true,
-                        session: await sessionFromLiveToken(
-                            first.data.session.access_token
-                        ),
-                    };
-                } catch (error) {
-                    await supabase.auth.signOut({ scope: "local" });
-                    throw error;
-                }
-            }
-        }
-
         const login = await loginViaApi(trimmed, password);
         if (login.mfa_required && login.mfa_token) {
             return {
@@ -198,6 +156,50 @@ export async function tryLiveLogin(
             ok: true,
             session: await sessionFromAccessToken(login.access_token, login.user),
         };
+    } catch (apiError) {
+        if (apiError instanceof CoairApiError && apiError.status === 401) {
+            return {
+                ok: false,
+                kind: "invalid",
+                error: "Invalid username or password",
+            };
+        }
+        if (!isApiUnreachable(apiError)) {
+            // Unexpected API failure — still try Supabase as soft fallback below.
+        }
+    }
+
+    try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+            return {
+                ok: false,
+                kind: "unreachable",
+                error: "Can't reach the COAir API. Start Docker, then try again.",
+            };
+        }
+        const email = authEmailFromUsername(trimmed);
+        const first = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+        if (first.error || !first.data.session?.access_token) {
+            return {
+                ok: false,
+                kind: "invalid",
+                error: "Invalid username or password",
+            };
+        }
+        try {
+            const session = await sessionFromLiveToken(
+                first.data.session.access_token
+            );
+            void reportLoginAlert(first.data.session.access_token);
+            return { ok: true, session };
+        } catch (error) {
+            await supabase.auth.signOut({ scope: "local" });
+            throw error;
+        }
     } catch (error) {
         if (isApiUnreachable(error)) {
             return {

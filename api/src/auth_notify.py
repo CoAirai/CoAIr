@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Dict, Optional, Tuple
 
 from src.email_delivery import recipient_address, send_coair_email
@@ -36,6 +37,63 @@ def _org_context(
     return membership, company_name, owner, owner_user
 
 
+def _send_login_emails(
+    username: str,
+    *,
+    record: Optional[Dict[str, Any]],
+    orgs: Optional[OrgStore],
+    users: Optional[UserStore],
+) -> None:
+    users = users or get_user_store()
+    orgs = orgs or get_org_store()
+    user = record or users.get_user(username) or {}
+    display = str(user.get("display_name") or username)
+    membership, company_name, owner, owner_user = _org_context(
+        username, orgs=orgs, users=users
+    )
+    company = company_name or "your company"
+
+    if user_email_notifications_enabled(user):
+        result = send_coair_email(
+            "login_alert",
+            recipient_address(username),
+            name=display,
+            company_name=company,
+            description="You just signed in to COAir.",
+        )
+        logger.info(
+            "login_email_user user=%s ok=%s mode=%s err=%s",
+            username,
+            result.get("ok"),
+            result.get("mode"),
+            result.get("error"),
+        )
+    else:
+        logger.info("login_email_user_skipped prefs_off user=%s", username)
+
+    if (
+        owner
+        and owner.lower() != username.lower()
+        and user_email_notifications_enabled(owner_user)
+    ):
+        result = send_coair_email(
+            "login_alert",
+            recipient_address(owner),
+            name=str((owner_user or {}).get("display_name") or owner),
+            company_name=company,
+            description=f"{display} ({username}) signed in to COAir.",
+        )
+        logger.info(
+            "login_email_admin owner=%s user=%s ok=%s mode=%s",
+            owner,
+            username,
+            result.get("ok"),
+            result.get("mode"),
+        )
+    elif not membership:
+        logger.info("login_email_no_org user=%s", username)
+
+
 def notify_login(
     username: str,
     *,
@@ -44,40 +102,14 @@ def notify_login(
     users: Optional[UserStore] = None,
 ) -> None:
     """Email the signed-in user and their company admin on every successful login."""
-    try:
-        users = users or get_user_store()
-        orgs = orgs or get_org_store()
-        user = record or users.get_user(username) or {}
-        display = str(user.get("display_name") or username)
-        membership, company_name, owner, owner_user = _org_context(
-            username, orgs=orgs, users=users
-        )
 
-        if user_email_notifications_enabled(user):
-            send_coair_email(
-                "login_alert",
-                recipient_address(username),
-                name=display,
-                company_name=company_name,
-                description="You just signed in to COAir.",
-            )
+    def _run() -> None:
+        try:
+            _send_login_emails(username, record=record, orgs=orgs, users=users)
+        except Exception as exc:
+            logger.warning("login_email_failed user=%s err=%s", username, exc)
 
-        if (
-            owner
-            and owner.lower() != username.lower()
-            and user_email_notifications_enabled(owner_user)
-        ):
-            send_coair_email(
-                "login_alert",
-                recipient_address(owner),
-                name=str((owner_user or {}).get("display_name") or owner),
-                company_name=company_name,
-                description=f"{display} ({username}) signed in to COAir.",
-            )
-        elif not membership:
-            logger.info("login_email_no_org user=%s", username)
-    except Exception as exc:
-        logger.warning("login_email_failed user=%s err=%s", username, exc)
+    threading.Thread(target=_run, daemon=True, name="login-email").start()
 
 
 def notify_password_reset(
@@ -91,31 +123,42 @@ def notify_password_reset(
 
     The reset link itself is already emailed to the requesting user.
     """
-    try:
-        users = users or get_user_store()
-        orgs = orgs or get_org_store()
-        user = record or users.get_user(username) or {}
-        display = str(user.get("display_name") or username)
-        _membership, company_name, owner, owner_user = _org_context(
-            username, orgs=orgs, users=users
-        )
-        if not owner or owner.lower() == username.lower():
-            return
-        if not user_email_notifications_enabled(owner_user):
+
+    def _run() -> None:
+        try:
+            users_store = users or get_user_store()
+            orgs_store = orgs or get_org_store()
+            user = record or users_store.get_user(username) or {}
+            display = str(user.get("display_name") or username)
+            _membership, company_name, owner, owner_user = _org_context(
+                username, orgs=orgs_store, users=users_store
+            )
+            if not owner or owner.lower() == username.lower():
+                return
+            if not user_email_notifications_enabled(owner_user):
+                logger.info(
+                    "password_reset_admin_skipped prefs_off owner=%s user=%s",
+                    owner,
+                    username,
+                )
+                return
+            result = send_coair_email(
+                "password_reset_alert",
+                recipient_address(owner),
+                name=str((owner_user or {}).get("display_name") or owner),
+                company_name=company_name or "your company",
+                description=f"{display} ({username}) requested a password reset.",
+            )
             logger.info(
-                "password_reset_admin_skipped prefs_off owner=%s user=%s",
+                "password_reset_admin_email owner=%s user=%s ok=%s mode=%s",
                 owner,
                 username,
+                result.get("ok"),
+                result.get("mode"),
             )
-            return
-        send_coair_email(
-            "password_reset_alert",
-            recipient_address(owner),
-            name=str((owner_user or {}).get("display_name") or owner),
-            company_name=company_name,
-            description=f"{display} ({username}) requested a password reset.",
-        )
-    except Exception as exc:
-        logger.warning(
-            "password_reset_admin_email_failed user=%s err=%s", username, exc
-        )
+        except Exception as exc:
+            logger.warning(
+                "password_reset_admin_email_failed user=%s err=%s", username, exc
+            )
+
+    threading.Thread(target=_run, daemon=True, name="reset-alert-email").start()

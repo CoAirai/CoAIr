@@ -418,10 +418,13 @@ def build_email(
 
 def _relay_url() -> str:
     explicit = os.getenv("COAIR_EMAIL_RELAY_URL", "").strip().rstrip("/")
+    # Local Docker relay is for dev only — never block production sends on it.
+    if explicit and "host.docker.internal" in explicit:
+        return ""
     if explicit:
         return explicit
     origin = app_origin()
-    if origin:
+    if origin and not origin.startswith("http://localhost"):
         return f"{origin}/api/email/send"
     return ""
 
@@ -570,6 +573,21 @@ def send_coair_email(
         amount_label=amount_label,
         description=description,
     )
+
+    # Prefer Resend when configured so production login/reset mail is not blocked
+    # by an unreachable Next.js relay.
+    api_key = _api_key()
+    if api_key:
+        direct = _send_via_resend(kind, recipient, message)
+        if direct.get("ok"):
+            return direct
+        logger.info(
+            "email_direct_failed_try_relay kind=%s to=%s err=%s",
+            kind,
+            recipient,
+            direct.get("error"),
+        )
+
     relay = _relay_url()
     if relay:
         relay_result = _send_via_relay(
@@ -587,30 +605,21 @@ def send_coair_email(
         )
         if relay_result.get("ok"):
             return relay_result
+        if api_key:
+            return {
+                "ok": False,
+                "mode": "live",
+                "error": str(
+                    relay_result.get("error")
+                    or "email_send_failed"
+                ),
+            }
 
-    api_key = _api_key()
     if not api_key:
         logger.info("email_dry_run kind=%s to=%s", kind, recipient)
         return {"ok": True, "mode": "dry-run"}
 
-    direct = _send_via_resend(kind, recipient, message)
-    if direct.get("ok") or not relay:
-        return direct
-
-    logger.info("email_direct_failed_retry_relay kind=%s to=%s", kind, recipient)
-    return _send_via_relay(
-        kind,
-        recipient,
-        name=name,
-        company_name=company_name,
-        role=role,
-        temporary_password=temporary_password,
-        reset_token=reset_token,
-        is_resend=is_resend,
-        invoice_id=invoice_id,
-        amount_label=amount_label,
-        description=description,
-    )
+    return {"ok": False, "mode": "live", "error": "email_send_failed"}
 
 
 def recipient_address(username: str) -> str:

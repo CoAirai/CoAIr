@@ -251,6 +251,22 @@ async def me(
     return {"user": _user_payload(record, usage)}
 
 
+@router.post("/auth/login-notify")
+async def login_notify(
+    user: UserContext = Depends(get_current_user),
+    store: UserStore = Depends(get_user_store),
+    orgs: OrgStore = Depends(get_org_store),
+):
+    """Fire login alert emails for browser/Supabase sessions that skipped /auth/login."""
+    record = store.get_user(user.username)
+    if not record:
+        raise HTTPException(401, "unknown_user")
+    from src.auth_notify import notify_login
+
+    notify_login(record["username"], record=record, orgs=orgs)
+    return {"ok": True}
+
+
 class NotificationPrefsRequest(BaseModel):
     notify_email: Optional[bool] = None
     notify_push: Optional[bool] = None
