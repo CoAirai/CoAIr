@@ -195,20 +195,14 @@ def _ip_allowlist_middleware_cls():
     return PlatformIpAllowlistMiddleware
 
 
-# Lazily constructed so unit tests can import helpers without FastAPI installed.
-SecurityHeadersMiddleware = None  # type: ignore
-PlatformIpAllowlistMiddleware = None  # type: ignore
-
-
-def __getattr__(name: str):
-    global SecurityHeadersMiddleware, PlatformIpAllowlistMiddleware
-    if name == "SecurityHeadersMiddleware":
-        SecurityHeadersMiddleware = _security_headers_middleware_cls()
-        return SecurityHeadersMiddleware
-    if name == "PlatformIpAllowlistMiddleware":
-        PlatformIpAllowlistMiddleware = _ip_allowlist_middleware_cls()
-        return PlatformIpAllowlistMiddleware
-    raise AttributeError(name)
+# Eager classes: assigning None + module __getattr__ breaks
+# `from ... import SecurityHeadersMiddleware` (name resolves to None).
+try:
+    SecurityHeadersMiddleware = _security_headers_middleware_cls()
+    PlatformIpAllowlistMiddleware = _ip_allowlist_middleware_cls()
+except Exception:  # pragma: no cover - helpers importable without Starlette
+    SecurityHeadersMiddleware = None  # type: ignore
+    PlatformIpAllowlistMiddleware = None  # type: ignore
 
 
 __all__ = [
