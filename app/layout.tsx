@@ -48,16 +48,27 @@ export const metadata: Metadata = {
     title: "COAir",
     description: siteDescription,
     applicationName: "COAir",
+    icons: {
+        icon: [
+            { url: "/icon.png", type: "image/png", sizes: "32x32" },
+            { url: "/favicon.png", type: "image/png", sizes: "32x32" },
+            { url: "/images/coair-logo.png", type: "image/png", sizes: "1024x1024" },
+        ],
+        shortcut: "/favicon.png",
+        apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+    },
     openGraph: {
         title: "COAir",
         description: siteDescription,
         siteName: "COAir",
         type: "website",
+        images: [{ url: "/images/coair-logo.png" }],
     },
     twitter: {
         card: "summary",
         title: "COAir",
         description: siteDescription,
+        images: ["/images/coair-logo.png"],
     },
 };
 
