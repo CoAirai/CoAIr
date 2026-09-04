@@ -150,6 +150,7 @@ async def approve_access_request(
         plan_type="demo",
         initial_credits=credits,
         storage_limit_bytes=storage_bytes,
+        is_active=False,
     )
     try:
         org = orgs.create_org(
@@ -176,23 +177,22 @@ async def approve_access_request(
             invited = True
         except RuntimeError as exc:
             raise HTTPException(502, "supabase_sync_failed") from exc
+    from src.auth_provision import issue_invite_activation_email
+
+    activation = issue_invite_activation_email(
+        email=username,
+        display_name=request["full_name"],
+        company_name=request["company_name"],
+        email_kind="owner_invite",
+    )
     mail = send_coair_email(
         "access_approved",
         username,
         name=request["full_name"],
         company_name=request["company_name"],
     )
-    owner_mail = send_coair_email(
-        "owner_invite",
-        username,
-        name=request["full_name"],
-        company_name=request["company_name"],
-        temporary_password=password,
-    )
-    emailed = (
+    emailed = bool(activation.get("emailed")) or (
         mail.get("ok") and mail.get("mode") == "live"
-    ) or (
-        owner_mail.get("ok") and owner_mail.get("mode") == "live"
     )
     return {
         "request": resolved,
@@ -201,7 +201,9 @@ async def approve_access_request(
         "owner": {
             "username": username,
             "invited": invited or emailed,
-            "temporary_password": "" if emailed else password,
+            "temporary_password": "",
+            "activation_required": True,
+            "debug_code": activation.get("debug_code"),
         },
     }
 

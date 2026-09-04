@@ -209,6 +209,17 @@ export async function tryLiveLogin(
                 error: "Invalid username or password",
             };
         }
+        if (
+            apiError instanceof CoairApiError &&
+            apiError.status === 403 &&
+            /invite_not_activated/.test(apiError.body || apiError.message)
+        ) {
+            return {
+                ok: false,
+                kind: "invalid",
+                error: "invite_not_activated",
+            };
+        }
         if (!isApiUnreachable(apiError)) {
             // Unexpected API failure — still try Supabase as soft fallback below.
         }

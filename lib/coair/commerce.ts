@@ -160,6 +160,39 @@ export async function verifySignupEmailCode(challengeId: string, code: string) {
     });
 }
 
+export async function resendInviteCode(email: string) {
+    return coairFetch<{
+        ok: boolean;
+        challenge_id?: string;
+        debug_code?: string;
+    }>("/auth/invite/resend-code", {
+        method: "POST",
+        body: { email },
+    });
+}
+
+export async function activateInvite(input: {
+    email: string;
+    password: string;
+    code?: string;
+    emailVerificationToken?: string;
+    challengeId?: string;
+}) {
+    return coairFetch<{ ok: boolean; username: string; message: string }>(
+        "/auth/invite/activate",
+        {
+            method: "POST",
+            body: {
+                email: input.email,
+                password: input.password,
+                code: input.code || "",
+                email_verification_token: input.emailVerificationToken || "",
+                challenge_id: input.challengeId || "",
+            },
+        }
+    );
+}
+
 export async function listAccessRequests(token: string) {
     const payload = await coairFetch<{ requests: CoairAccessRequestPayload[] }>(
         "/admin/access-requests",

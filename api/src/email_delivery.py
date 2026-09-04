@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from html import escape
 from typing import Any, Dict, Optional
@@ -190,6 +191,11 @@ def build_email(
     display = (name or "").strip() or recipient.split("@")[0]
     company = (company_name or "").strip() or "your company"
     sign_in = f"{login_app_origin()}/auth/sign-in"
+    accept_invite = f"{login_app_origin()}/auth/accept-invite"
+    if recipient:
+        accept_invite = (
+            f"{accept_invite}?email={urllib.parse.quote(recipient)}"
+        )
     billing_url = f"{user_app_origin()}/company/billing"
     reset_base = f"{login_app_origin()}/auth/reset-password"
     reset_link = (
@@ -210,9 +216,16 @@ def build_email(
         password_block = ""
         if temporary_password:
             password_block = _email_credential_box(recipient, temporary_password)
+        code_block = ""
+        if code:
+            code_block = (
+                f"\nActivation code: {code}\n"
+                f"Activate: {accept_invite}\n"
+            )
         text = (
-            f"Hi {display},\n\nYou've been invited to {company} on COAir{role_line}.\n\n"
-            f"Sign in: {sign_in}\n"
+            f"Hi {display},\n\nYou've been invited to {company} on COAir{role_line}.\n"
+            f"{code_block}"
+            f"\nSign in after activation: {sign_in}\n"
         )
         if temporary_password:
             text += f"\nEmail: {recipient}\nTemporary password: {temporary_password}\n"
@@ -221,16 +234,25 @@ def build_email(
             role_html = (
                 f" as <strong style=\"color:#0E121B\">{escape(role)}</strong>"
             )
+        code_html = ""
+        if code:
+            code_html = (
+                f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+                f"Enter this 6-digit code to activate your account:</p>"
+                f"<p style=\"margin:0 0 16px;font-size:28px;letter-spacing:6px;font-weight:700;"
+                f"color:#0E121B;font-family:ui-monospace,Menlo,Consolas,monospace\">{escape(code)}</p>"
+            )
         body = (
             f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
             f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
             f"You've been invited to join <strong style=\"color:#0E121B\">{escape(company)}</strong> on COAir"
             f"{role_html}.</p>"
-            f"{_email_notice('COAir keeps drawings, correspondence, and answers in one workspace your whole team can trust.')}"
+            f"{_email_notice('Verify this email with the code below, set your password, then sign in.')}"
+            f"{code_html}"
             f"{password_block}"
-            f"{_email_button(sign_in, 'Open COAir')}"
+            f"{_email_button(accept_invite if code else sign_in, 'Activate invite' if code else 'Open COAir')}"
             f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">If the button doesn't work, copy this link:<br />"
-            f"<a href=\"{sign_in}\" style=\"color:#335CFF;text-decoration:none;word-break:break-all\">{sign_in}</a></p>"
+            f"<a href=\"{escape(accept_invite if code else sign_in)}\" style=\"color:#335CFF;text-decoration:none;word-break:break-all\">{escape(accept_invite if code else sign_in)}</a></p>"
         )
         html = _wrap_html(
             "Your invite is waiting" if is_resend else "You're invited",
@@ -244,21 +266,37 @@ def build_email(
         password_block = ""
         if temporary_password:
             password_block = _email_credential_box(recipient, temporary_password)
+        code_block = ""
+        if code:
+            code_block = (
+                f"\nActivation code: {code}\n"
+                f"Activate: {accept_invite}\n"
+            )
         text = (
             f"Hi {display},\n\nYour COAir workspace for {company} is ready.\n"
-            f"Sign in: {sign_in}\n"
+            f"{code_block}"
+            f"Sign in after activation: {sign_in}\n"
         )
         if temporary_password:
             text += f"\nEmail: {recipient}\nTemporary password: {temporary_password}\n"
+        code_html = ""
+        if code:
+            code_html = (
+                f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+                f"Enter this 6-digit code to activate your owner account:</p>"
+                f"<p style=\"margin:0 0 16px;font-size:28px;letter-spacing:6px;font-weight:700;"
+                f"color:#0E121B;font-family:ui-monospace,Menlo,Consolas,monospace\">{escape(code)}</p>"
+            )
         body = (
             f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
             f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
             f"Your COAir workspace for <strong style=\"color:#0E121B\">{escape(company)}</strong> is ready. "
-            f"Sign in to finish setup, invite your team, and start working from one place.</p>"
+            f"Activate your email, set a password, then finish setup.</p>"
+            f"{code_html}"
             f"{password_block}"
-            f"{_email_button(sign_in, 'Sign in and finish setup')}"
+            f"{_email_button(accept_invite if code else sign_in, 'Activate and set password' if code else 'Sign in and finish setup')}"
             f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">If the button doesn't work, copy this link:<br />"
-            f"<a href=\"{sign_in}\" style=\"color:#335CFF;text-decoration:none;word-break:break-all\">{sign_in}</a></p>"
+            f"<a href=\"{escape(accept_invite if code else sign_in)}\" style=\"color:#335CFF;text-decoration:none;word-break:break-all\">{escape(accept_invite if code else sign_in)}</a></p>"
         )
         html = _wrap_html(
             "Your workspace is ready",
@@ -284,17 +322,18 @@ def build_email(
         return {"subject": subject, "text": text, "html": html}
 
     if kind == "access_approved":
-        subject = f"{company} is approved — choose your COAir package"
+        subject = f"{company} is approved — activate your COAir account"
         text = (
             f"Hi {display},\n\nYour access request for {company} was approved.\n"
-            f"Sign in: {sign_in}\n"
+            f"Activate: {accept_invite}\n"
+            f"Then sign in: {sign_in}\n"
         )
         body = (
             f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
             f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
             f"Great news — your access request for <strong style=\"color:#0E121B\">{escape(company)}</strong> was approved.</p>"
-            f"{_email_notice('Sign in to choose your package and activate your company workspace.')}"
-            f"{_email_button(sign_in, 'Sign in and choose a package')}"
+            f"{_email_notice('Check your invite email for the 6-digit activation code, set your password, then sign in to choose a package.')}"
+            f"{_email_button(accept_invite, 'Activate your account')}"
         )
         html = _wrap_html(
             "You're approved",

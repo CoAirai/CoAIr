@@ -26,6 +26,8 @@ const ACCESS_ERRORS: Record<string, string> = {
     invalid_email_code: "That verification code is incorrect",
     invalid_email_challenge: "Request a new email verification code",
     rate_limited: "Too many attempts — wait a minute and try again",
+    invite_not_activated:
+        "Activate your invite first — check your email for the code",
 };
 
 function humanAccessError(code: string) {

@@ -419,19 +419,20 @@ async def invite_org_user(
     email = req.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(400, "invalid_email")
+    from src.auth_provision import issue_invite_activation_email
     from src.org_token_pool import rebalance_equal_remaining
 
     package_storage = int(org.policy.get("default_storage_bytes") or 0)
     existing = users.get_user(email)
+    password = secrets.token_urlsafe(12)
     if existing:
         if existing.get("is_active", True):
             raise HTTPException(409, "email_already_registered")
-        password = secrets.token_urlsafe(12)
         users.update_user(
             email,
             password=password,
             display_name=req.display_name or existing.get("display_name"),
-            is_active=True,
+            is_active=False,
             token_limit=0,
         )
         try:
@@ -446,7 +447,6 @@ async def invite_org_user(
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
     else:
-        password = secrets.token_urlsafe(12)
         try:
             record = users.create_user(
                 username=email,
@@ -457,6 +457,7 @@ async def invite_org_user(
                 plan_type=org.policy.get("default_plan_type", "demo"),
                 initial_credits=org.policy.get("default_credits", 0),
                 storage_limit_bytes=package_storage,
+                is_active=False,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -468,7 +469,6 @@ async def invite_org_user(
     rebalance_equal_remaining(org.org_id, orgs=orgs, users=users)
     record = users.get_user(email) or record
     invited = False
-    emailed = False
     if use_supabase_auth():
         try:
             uid = invite_or_recover(email, email, password=password)
@@ -479,36 +479,31 @@ async def invite_org_user(
             if not existing:
                 users.delete_user(email, soft=False)
             raise HTTPException(502, "supabase_sync_failed") from exc
-    mail = send_coair_email(
-        "team_invite",
-        email,
-        name=record["display_name"],
+    activation = issue_invite_activation_email(
+        email=email,
+        display_name=record["display_name"],
         company_name=org.name,
-        temporary_password=password,
+        email_kind="team_invite",
+        ops=ops,
     )
-    emailed = mail.get("ok") and mail.get("mode") == "live"
-    ops.queue_email(
-        kind="team_invite",
-        recipient=email,
-        subject="You are invited to COAir",
-        body=f"Team invite sent via Resend ({mail.get('mode', 'unknown')})",
-        secret=None if emailed else password,
-    )
+    emailed = bool(activation.get("emailed"))
     ops.record_audit(
         actor=actor.username,
         action="user.invite",
         target_type="user",
         target_id=email,
         target_label=email,
-        detail=f"Invited {email} to {org.name}",
+        detail=f"Invited {email} to {org.name} (email activation required)",
     )
     return {
         "username": record["username"],
         "display_name": record["display_name"],
         "invited": invited or emailed,
         "email_sent": emailed,
-        "email_error": None if emailed else mail.get("error"),
-        "temporary_password": "" if emailed else password,
+        "email_error": activation.get("email_error"),
+        "activation_required": True,
+        "temporary_password": "",
+        "debug_code": activation.get("debug_code"),
     }
 
 

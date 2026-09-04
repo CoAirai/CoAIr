@@ -61,6 +61,7 @@ def is_public_api_path(path: str) -> bool:
         "/api/auth/login",
         "/api/auth/mfa/",
         "/api/auth/email/",
+        "/api/auth/invite/",
         "/api/auth/forgot-password",
         "/api/auth/reset-password",
         "/api/access-requests",

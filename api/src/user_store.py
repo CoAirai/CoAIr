@@ -184,6 +184,7 @@ class UserStore:
         storage_limit_bytes: int = 0,
         model_policy: str = "",
         provider_key_ref: str = "",
+        is_active: bool = True,
     ) -> Dict[str, Any]:
         if role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role!r}")
@@ -196,7 +197,7 @@ class UserStore:
                     INSERT INTO users
                         (username, display_name, password_hash, role,
                          token_limit, features_json, is_active, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         username,
@@ -205,6 +206,7 @@ class UserStore:
                         role,
                         int(token_limit),
                         features_json,
+                        1 if is_active else 0,
                         now,
                         now,
                     ),

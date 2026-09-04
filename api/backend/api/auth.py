@@ -64,6 +64,18 @@ class EmailVerifyCodeRequest(BaseModel):
     code: str = Field(min_length=4, max_length=12)
 
 
+class InviteActivateRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=160)
+    password: str = Field(min_length=8, max_length=200)
+    code: str = Field(default="", min_length=0, max_length=12)
+    email_verification_token: str = Field(default="", min_length=0, max_length=200)
+    challenge_id: str = Field(default="", min_length=0, max_length=200)
+
+
+class InviteResendRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=160)
+
+
 def _user_payload(record: Dict[str, Any], usage: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "username": record["username"],
@@ -157,8 +169,13 @@ async def login(
             )
         if not record:
             raise HTTPException(401, "unknown_user")
+        if not record.get("is_active", True):
+            raise HTTPException(403, "invite_not_activated")
         _bind_supabase_id(store, record["username"], supabase_session)
     else:
+        pending = store.find_user(username)
+        if pending and not pending.get("is_active", True):
+            raise HTTPException(403, "invite_not_activated")
         record = store.verify_password(username, req.password)
         if not record:
             raise HTTPException(401, "invalid_credentials")
@@ -248,6 +265,93 @@ async def verify_email_code(
         return ops.verify_email_code(req.challenge_id, req.code)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/auth/invite/resend-code")
+async def resend_invite_code(
+    req: InviteResendRequest,
+    request: Request,
+    store: UserStore = Depends(get_user_store),
+    orgs: OrgStore = Depends(get_org_store),
+):
+    from src.auth_provision import issue_invite_activation_email
+
+    ip = client_ip(request) or "unknown"
+    email = req.email.strip().lower()
+    rate_limit(f"auth:invite-resend:{ip}", limit=8, window_seconds=60)
+    rate_limit(f"auth:invite-resend-addr:{email}", limit=5, window_seconds=600)
+    record = store.get_user(email)
+    if not record or record.get("is_active", True):
+        # Do not leak whether the invite exists.
+        return {"ok": True}
+    membership = orgs.membership_for(email)
+    company = ""
+    if membership:
+        org = orgs.get_org(membership["org_id"])
+        company = (org or {}).get("name") or ""
+    kind = "owner_invite" if membership and membership.get("role") == "owner" else "team_invite"
+    activation = issue_invite_activation_email(
+        email=email,
+        display_name=record.get("display_name") or email.split("@")[0],
+        company_name=company or "your company",
+        email_kind=kind,
+    )
+    payload = {"ok": True, "challenge_id": activation.get("challenge_id")}
+    if activation.get("debug_code"):
+        payload["debug_code"] = activation["debug_code"]
+    return payload
+
+
+@router.post("/auth/invite/activate")
+async def activate_invite(
+    req: InviteActivateRequest,
+    request: Request,
+    store: UserStore = Depends(get_user_store),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    rate_limit(
+        f"auth:invite-activate:{client_ip(request) or 'unknown'}",
+        limit=20,
+        window_seconds=60,
+    )
+    email = req.email.strip().lower()
+    record = store.get_user(email)
+    if not record:
+        raise HTTPException(404, "invite_not_found")
+    if record.get("is_active", True):
+        raise HTTPException(409, "invite_already_activated")
+    try:
+        token = (req.email_verification_token or "").strip()
+        if not token:
+            if req.challenge_id and req.code:
+                verified = ops.verify_email_code(req.challenge_id, req.code)
+            elif req.code:
+                verified = ops.verify_email_code_for_address(
+                    email, req.code, purpose="invite"
+                )
+            else:
+                raise ValueError("email_verification_required")
+            token = verified["verification_token"]
+        ops.consume_email_verification(
+            email=email,
+            purpose="invite",
+            verification_token=token,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    store.update_user(email, password=req.password, is_active=True)
+    if use_supabase_auth():
+        try:
+            uid = ensure_auth_user(email, req.password)
+            if uid:
+                store.set_supabase_user_id(email, uid)
+        except RuntimeError as exc:
+            raise HTTPException(502, "supabase_sync_failed") from exc
+    return {
+        "ok": True,
+        "username": email,
+        "message": "invite_activated",
+    }
 
 
 @router.post("/auth/forgot-password")

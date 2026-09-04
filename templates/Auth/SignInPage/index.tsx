@@ -53,6 +53,15 @@ const SignInPage = () => {
                 return;
             }
             if (!result.ok) {
+                if (
+                    /invite_not_activated/.test(result.error) ||
+                    result.error.includes("invite_not_activated")
+                ) {
+                    setError(
+                        "Activate your invite first — open the link in your email or go to Accept invite."
+                    );
+                    return;
+                }
                 setError(result.error);
                 return;
             }
@@ -116,6 +125,12 @@ const SignInPage = () => {
                         href="/auth/forgot-password"
                     >
                         Forgot password?
+                    </Link>
+                </p>
+                <p className="mt-3 text-center text-label-sm text-sub-600">
+                    Got an invite email?{" "}
+                    <Link className="text-blue-500" href="/auth/accept-invite">
+                        Activate invite
                     </Link>
                 </p>
             </div>

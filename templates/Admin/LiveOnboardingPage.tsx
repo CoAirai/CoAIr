@@ -65,9 +65,7 @@ const LiveOnboardingPage = () => {
                                 requestId
                             );
                             setMessage(
-                                result.owner.invited || !result.owner.temporary_password
-                                    ? `Approved ${result.owner.username}. They will get a COAir email with sign-in details.`
-                                    : `Approved ${result.owner.username} — temporary password: ${result.owner.temporary_password}`
+                                `Approved ${result.owner.username}. They must activate via the emailed 6-digit code, set a password, then sign in.`
                             );
                             setError(null);
                             await loadRequests();

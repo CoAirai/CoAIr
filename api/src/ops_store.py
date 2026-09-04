@@ -825,7 +825,7 @@ class OpsStore:
         return payload
 
     def create_email_verification(
-        self, email: str, *, purpose: str = "signup"
+        self, email: str, *, purpose: str = "signup", send_email: bool = True
     ) -> Dict[str, str]:
         clean = (email or "").strip().lower()
         if "@" not in clean or "." not in clean.split("@")[-1]:
@@ -844,22 +844,26 @@ class OpsStore:
         from .email_delivery import send_coair_email
         from backend.core.platform_guard import expose_security_debug
 
-        result = send_coair_email(
-            "email_verify",
-            clean,
-            name=clean.split("@")[0],
-            mfa_code=code,
-        )
-        self.queue_email(
-            kind="email_verify",
-            recipient=clean,
-            subject="Verify your email for COAir",
-            body=f"Email verify queued ({result.get('mode', 'unknown')})",
-            secret=code,
-        )
+        if send_email:
+            result = send_coair_email(
+                "email_verify",
+                clean,
+                name=clean.split("@")[0],
+                mfa_code=code,
+            )
+            self.queue_email(
+                kind="email_verify",
+                recipient=clean,
+                subject="Verify your email for COAir",
+                body=f"Email verify queued ({result.get('mode', 'unknown')})",
+                secret=code,
+            )
         payload = {"challenge_id": challenge_id, "email": clean, "purpose": purpose}
-        if expose_security_debug():
+        # Callers that embed the code in another email need the plaintext.
+        if not send_email or expose_security_debug():
             payload["debug_code"] = code
+        if not send_email:
+            payload["code"] = code
         return payload
 
     def verify_email_code(self, challenge_id: str, code: str) -> Dict[str, str]:
@@ -886,6 +890,20 @@ class OpsStore:
             "purpose": str(row["purpose"]),
             "verification_token": proof,
         }
+
+    def verify_email_code_for_address(
+        self, email: str, code: str, *, purpose: str = "invite"
+    ) -> Dict[str, str]:
+        clean = (email or "").strip().lower()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM email_verifications WHERE email=? AND purpose=? "
+                "AND consumed_at IS NULL ORDER BY expires_at DESC LIMIT 1",
+                [clean, purpose],
+            ).fetchone()
+        if not row:
+            raise ValueError("invalid_email_challenge")
+        return self.verify_email_code(str(row["challenge_id"]), code)
 
     def consume_email_verification(
         self, *, email: str, purpose: str, verification_token: str

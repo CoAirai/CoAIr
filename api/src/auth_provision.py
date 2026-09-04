@@ -7,6 +7,7 @@ from typing import Any, Dict, Literal, Optional
 
 from src.commerce_store import resolve_user_provision_limits
 from src.email_delivery import send_coair_email
+from src.ops_store import OpsStore, get_ops_store
 from src.supabase_auth import invite_or_recover, use_supabase_auth
 from src.user_store import SUPERADMIN_ROLE, UserStore
 
@@ -25,22 +26,41 @@ def is_bootstrap_superadmin(email: str, username: str = "") -> bool:
     return email.strip().lower() in allowed or username.strip().lower() in allowed
 
 
-def _send_welcome_email(
+def issue_invite_activation_email(
     *,
-    kind: EmailKind,
     email: str,
     display_name: str,
     company_name: str,
-    password: str,
-) -> bool:
+    email_kind: EmailKind,
+    ops: OpsStore | None = None,
+) -> Dict[str, Any]:
+    """Create an invite email-OTP challenge and send it inside the invite mail."""
+    store = ops or get_ops_store()
+    challenge = store.create_email_verification(
+        email, purpose="invite", send_email=False
+    )
+    code = str(challenge.get("code") or challenge.get("debug_code") or "")
     result = send_coair_email(
-        kind,
+        email_kind,
         email,
         name=display_name,
-        company_name=company_name,
-        temporary_password=password,
+        company_name=company_name or "your company",
+        mfa_code=code,
     )
-    return result.get("ok") and result.get("mode") == "live"
+    store.queue_email(
+        kind=email_kind,
+        recipient=email,
+        subject=f"Activate your COAir invite ({email_kind})",
+        body=f"Invite activation queued ({result.get('mode', 'unknown')})",
+        secret=code if not (result.get("ok") and result.get("mode") == "live") else None,
+    )
+    emailed = bool(result.get("ok") and result.get("mode") == "live")
+    return {
+        "challenge_id": challenge["challenge_id"],
+        "emailed": emailed,
+        "debug_code": challenge.get("debug_code"),
+        "email_error": None if emailed else result.get("error"),
+    }
 
 
 def provision_invited_user(
@@ -58,8 +78,9 @@ def provision_invited_user(
     company_name: str = "",
     email_kind: EmailKind = "owner_invite",
     send_welcome_email: bool = True,
+    require_email_activation: bool = True,
 ) -> Dict[str, Any]:
-    """Create a local row, sync Supabase auth, and send welcome mail via Resend."""
+    """Create a local row, sync Supabase auth, and require email OTP before login."""
     username = email.strip().lower()
     if "@" not in username:
         raise ValueError("invalid_email")
@@ -81,10 +102,23 @@ def provision_invited_user(
                 plan_type=plan_type,
                 storage_limit_bytes=limits["storage_limit_bytes"],
             )
+        if (
+            send_welcome_email
+            and not operator
+            and require_email_activation
+            and not existing.get("is_active", True)
+        ):
+            issue_invite_activation_email(
+                email=username,
+                display_name=existing.get("display_name") or username.split("@")[0],
+                company_name=company_name,
+                email_kind=email_kind,
+            )
         return existing
     chosen_password = password or secrets.token_urlsafe(18)
     credits = limits["initial_credits"]
     storage = limits["storage_limit_bytes"]
+    active = False if (require_email_activation and not operator) else True
     record = store.create_user(
         username=username,
         password=chosen_password,
@@ -96,18 +130,26 @@ def provision_invited_user(
         initial_credits=0 if operator else credits,
         storage_limit_bytes=0 if operator else storage,
         model_policy="" if operator else "demo-tiered-quality-v2",
+        is_active=active,
     )
     if use_supabase_auth():
         uid = invite_or_recover(username, username, password=chosen_password)
         if uid:
             store.set_supabase_user_id(username, uid)
-    if send_welcome_email and not operator:
-        _send_welcome_email(
-            kind=email_kind,
+    if send_welcome_email and not operator and require_email_activation:
+        issue_invite_activation_email(
             email=username,
             display_name=record["display_name"],
             company_name=company_name or "your company",
-            password=chosen_password,
+            email_kind=email_kind,
+        )
+    elif send_welcome_email and not operator:
+        send_coair_email(
+            email_kind,
+            username,
+            name=record["display_name"],
+            company_name=company_name or "your company",
+            temporary_password=chosen_password,
         )
     return store.get_user(username) or record
 
@@ -143,6 +185,7 @@ def maybe_bootstrap_superadmin(
         initial_credits=0,
         storage_limit_bytes=0,
         model_policy="",
+        is_active=True,
     )
     if supabase_user_id:
         store.set_supabase_user_id(record["username"], supabase_user_id)
