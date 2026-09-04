@@ -4,10 +4,12 @@ import { usePathname } from "next/navigation";
 import AdminLayout from "@/components/Admin/AdminLayout";
 import RequireAuth from "@/components/Auth/RequireAuth";
 
+const PUBLIC_ADMIN_PATHS = new Set(["/admin/sign-in", "/admin/enter-code"]);
+
 export default function Layout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
 
-    if (pathname === "/admin/sign-in") {
+    if (PUBLIC_ADMIN_PATHS.has(pathname)) {
         return <>{children}</>;
     }
 

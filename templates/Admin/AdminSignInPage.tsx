@@ -77,7 +77,12 @@ const AdminSignInPage = () => {
                     portal: "admin",
                 });
                 // Hard navigation so the challenge is reliably present on the next page.
-                window.location.assign("/admin/enter-code");
+                // Token in the query is a fallback if storage is cleared mid-redirect.
+                const params = new URLSearchParams({
+                    mfa: result.mfaToken,
+                    u: result.username || email.trim(),
+                });
+                window.location.assign(`/admin/enter-code?${params.toString()}`);
                 return;
             }
             if (!result.ok) {

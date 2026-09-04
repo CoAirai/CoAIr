@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
@@ -13,6 +14,7 @@ import { apiErrorMessage } from "@/lib/coair/commerce";
 import {
     clearMfaChallenge,
     readMfaChallenge,
+    saveMfaChallenge,
     sessionFromAccessToken,
     type MfaChallenge,
 } from "@/lib/coair/liveLogin";
@@ -39,6 +41,7 @@ type Props = {
 const EnterCodePage = ({ portalHint }: Props) => {
     const { applySession } = useAuth();
     const { companies } = useAdminData();
+    const searchParams = useSearchParams();
     const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
     const [code, setCode] = useState("");
     const [rememberDevice, setRememberDevice] = useState(true);
@@ -46,8 +49,25 @@ const EnterCodePage = ({ portalHint }: Props) => {
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
-        setChallenge(readMfaChallenge());
-    }, []);
+        const stored = readMfaChallenge();
+        const mfa = (searchParams.get("mfa") || "").trim();
+        const username = (searchParams.get("u") || "").trim();
+        if (stored?.mfaToken) {
+            setChallenge(stored);
+            return;
+        }
+        if (mfa) {
+            const fromQuery: MfaChallenge = {
+                mfaToken: mfa,
+                username: username || "account",
+                portal: portalHint === "admin" ? "admin" : "workspace",
+            };
+            saveMfaChallenge(fromQuery);
+            setChallenge(fromQuery);
+            return;
+        }
+        setChallenge(null);
+    }, [searchParams, portalHint]);
 
     const isAdminPortal =
         portalHint === "admin" || challenge?.portal === "admin";
