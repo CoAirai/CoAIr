@@ -2,6 +2,11 @@ import { CoairApiError, coairFetch, isApiUnreachable } from "./client";
 import { mapLiveSession } from "./mapSession";
 import type { AuthSession } from "@/lib/auth/resolveLogin";
 import {
+    readSharedItem,
+    removeSharedItem,
+    writeSharedItem,
+} from "@/lib/auth/sharedStorage";
+import {
     authEmailFromUsername,
     getSupabaseBrowser,
     isSupabaseAuthConfigured,
@@ -57,7 +62,47 @@ export type MfaChallenge = {
     mfaToken: string;
     debugCode?: string;
     username: string;
+    /** Where to send the user after MFA (admin portal vs workspace). */
+    portal?: "admin" | "workspace";
 };
+
+export function saveMfaChallenge(challenge: MfaChallenge): void {
+    const raw = JSON.stringify(challenge);
+    try {
+        sessionStorage.setItem(MFA_CHALLENGE_KEY, raw);
+    } catch {
+        /* ignore */
+    }
+    writeSharedItem(MFA_CHALLENGE_KEY, raw);
+}
+
+export function readMfaChallenge(): MfaChallenge | null {
+    try {
+        const sessionRaw = sessionStorage.getItem(MFA_CHALLENGE_KEY);
+        if (sessionRaw) {
+            return JSON.parse(sessionRaw) as MfaChallenge;
+        }
+    } catch {
+        /* ignore */
+    }
+    const shared = readSharedItem(MFA_CHALLENGE_KEY);
+    if (!shared) return null;
+    try {
+        return JSON.parse(shared) as MfaChallenge;
+    } catch {
+        removeSharedItem(MFA_CHALLENGE_KEY);
+        return null;
+    }
+}
+
+export function clearMfaChallenge(): void {
+    try {
+        sessionStorage.removeItem(MFA_CHALLENGE_KEY);
+    } catch {
+        /* ignore */
+    }
+    removeSharedItem(MFA_CHALLENGE_KEY);
+}
 
 async function adoptSupabaseSession(
     accessToken: string,

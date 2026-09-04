@@ -8,8 +8,8 @@ import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { useAdminData } from "@/context/AdminDataContext";
+import { saveMfaChallenge } from "@/lib/coair/liveLogin";
 import { postLoginUrl } from "@/lib/auth/postLoginPath";
-import { MFA_CHALLENGE_KEY } from "@/lib/coair/liveLogin";
 
 const SignInPage = () => {
     const router = useRouter();
@@ -43,14 +43,12 @@ const SignInPage = () => {
         try {
             const result = await signIn(email, password);
             if (!result.ok && result.mfa) {
-                sessionStorage.setItem(
-                    MFA_CHALLENGE_KEY,
-                    JSON.stringify({
-                        mfaToken: result.mfaToken,
-                        debugCode: result.debugCode,
-                        username: result.username,
-                    })
-                );
+                saveMfaChallenge({
+                    mfaToken: result.mfaToken,
+                    debugCode: result.debugCode,
+                    username: result.username,
+                    portal: "workspace",
+                });
                 router.push("/auth/enter-code");
                 return;
             }

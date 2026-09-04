@@ -123,9 +123,12 @@ const LiveSecurityPage = () => {
                             Multi-factor authentication
                         </h2>
                         <p className="mt-1 text-label-xs text-sub-600">
-                            Require an emailed one-time code when any company
-                            user signs in (platform admins exempt). Signup also
-                            requires email verification before an access request.
+                            Email MFA is always required at sign-in for company
+                            users, company admins, and platform super admins
+                            (6-digit code). Signup also requires email
+                            verification before an access request. This toggle
+                            is kept for audit compatibility and does not turn
+                            MFA off.
                         </p>
                     </div>
                     <Switch

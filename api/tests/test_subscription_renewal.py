@@ -51,10 +51,17 @@ def client(stores):
 
 
 def _auth(client, username, password="pw"):
-    token = client.post(
+    login = client.post(
         "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    ).json()
+    if login.get("mfa_required"):
+        code = login.get("debug_code")
+        assert code, "expected debug MFA code in tests"
+        login = client.post(
+            "/api/auth/mfa/verify",
+            json={"mfa_token": login["mfa_token"], "code": code},
+        ).json()
+    return {"Authorization": f"Bearer {login['access_token']}"}
 
 
 @pytest.fixture()

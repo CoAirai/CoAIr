@@ -65,12 +65,27 @@ def app(store):
     return fastapi_app
 
 
+def _login(client, username, password):
+    login = client.post(
+        "/api/auth/login", json={"username": username, "password": password}
+    )
+    assert login.status_code == 200
+    body = login.json()
+    assert body["mfa_required"] is True
+    code = body.get("debug_code")
+    assert code
+    verified = client.post(
+        "/api/auth/mfa/verify",
+        json={"mfa_token": body["mfa_token"], "code": code},
+    )
+    assert verified.status_code == 200
+    return verified.json()
+
+
 def test_login_returns_token(app, store):
     store.create_user("alice", "secret", token_limit=1000)
     client = TestClient(app)
-    resp = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
-    assert resp.status_code == 200
-    body = resp.json()
+    body = _login(client, "alice", "secret")
     assert body["token_type"] == "bearer"
     assert body["access_token"]
     assert body["user"]["username"] == "alice"
@@ -89,9 +104,7 @@ def test_me_requires_token(app, store):
     client = TestClient(app)
     assert client.get("/api/me-test").status_code == 401
 
-    token = client.post(
-        "/api/auth/login", json={"username": "carol", "password": "pw"}
-    ).json()["access_token"]
+    token = _login(client, "carol", "pw")["access_token"]
     resp = client.get("/api/me-test", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     assert resp.json()["username"] == "carol"
@@ -101,12 +114,8 @@ def test_admin_dependency(app, store):
     store.create_user("dave", "pw", role="user")
     store.create_user("evelyn", "pw", role="admin")
     client = TestClient(app)
-    dave_token = client.post(
-        "/api/auth/login", json={"username": "dave", "password": "pw"}
-    ).json()["access_token"]
-    evelyn_token = client.post(
-        "/api/auth/login", json={"username": "evelyn", "password": "pw"}
-    ).json()["access_token"]
+    dave_token = _login(client, "dave", "pw")["access_token"]
+    evelyn_token = _login(client, "evelyn", "pw")["access_token"]
 
     r1 = client.get("/api/admin-test", headers={"Authorization": f"Bearer {dave_token}"})
     assert r1.status_code == 403

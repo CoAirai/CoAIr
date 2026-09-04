@@ -9,6 +9,7 @@ import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { homeUrlForRole, signInUrl } from "@/lib/auth/hosts";
 import { readSharedItem, SIGNED_OUT_KEY } from "@/lib/auth/sharedStorage";
+import { saveMfaChallenge } from "@/lib/coair/liveLogin";
 
 function hasSignedOutMarker(): boolean {
     if (typeof window === "undefined") return false;
@@ -62,10 +63,14 @@ const AdminSignInPage = () => {
         setSubmitting(true);
         try {
             const result = await signIn(email, password);
-            if (!result.ok && "mfa" in result && result.mfa) {
-                setError(
-                    "MFA is not supported on the admin portal yet. Disable MFA for this account or contact support."
-                );
+            if (!result.ok && result.mfa) {
+                saveMfaChallenge({
+                    mfaToken: result.mfaToken,
+                    debugCode: result.debugCode,
+                    username: result.username,
+                    portal: "admin",
+                });
+                router.push("/admin/enter-code");
                 return;
             }
             if (!result.ok) {
@@ -79,6 +84,8 @@ const AdminSignInPage = () => {
                 );
                 return;
             }
+            // Password-only success should not happen when API MFA is on;
+            // still allow if API ever returns a full session.
             allowAutoEnter.current = true;
             router.replace("/admin");
         } finally {
@@ -129,7 +136,7 @@ const AdminSignInPage = () => {
                     </Button>
                 </form>
                 <p className="mt-5 text-center text-label-sm text-sub-600">
-                    Platform control for companies, packages, and ops.
+                    After password, we email a 6-digit security code.
                 </p>
             </div>
         </LayoutLogin>

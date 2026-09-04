@@ -165,39 +165,20 @@ async def login(
     usage = store.get_billing_summary(record["username"])
     security = ops.get_security()
     timeout_minutes = int(security.get("session_timeout_minutes") or 30)
-    membership = orgs.membership_for(record["username"])
-    if (
-        security["mfa_required"]
-        and not is_admin(record["role"])
-        and membership
-    ):
-        challenge = ops.create_mfa_challenge(record["username"])
-        if supabase_session:
-            stash_mfa_session(challenge["mfa_token"], supabase_session)
-        payload = {
-            "mfa_required": True,
-            "mfa_token": challenge["mfa_token"],
-            "user": _user_payload(record, usage),
-        }
-        if "debug_code" in challenge:
-            payload["debug_code"] = challenge["debug_code"]
-        return payload
-    token = (
-        supabase_session["access_token"]
-        if supabase_session
-        else _issue_local_token(record, timeout_minutes=timeout_minutes)
-    )
-    from src.auth_notify import notify_login
-
-    notify_login(record["username"], record=record, orgs=orgs)
-    return {
-        "access_token": token,
-        "refresh_token": (supabase_session or {}).get("refresh_token"),
-        "token_type": "bearer",
-        "mfa_required": False,
-        "session_timeout_minutes": timeout_minutes,
+    # Email MFA is required for every successful password login (users,
+    # company admins, and platform super admins).
+    challenge = ops.create_mfa_challenge(record["username"])
+    if supabase_session:
+        stash_mfa_session(challenge["mfa_token"], supabase_session)
+    payload = {
+        "mfa_required": True,
+        "mfa_token": challenge["mfa_token"],
         "user": _user_payload(record, usage),
+        "session_timeout_minutes": timeout_minutes,
     }
+    if "debug_code" in challenge:
+        payload["debug_code"] = challenge["debug_code"]
+    return payload
 
 
 @router.post("/auth/mfa/verify")

@@ -71,10 +71,17 @@ def client(stores):
 
 
 def _auth(client, username, password="pw"):
-    token = client.post(
+    login = client.post(
         "/api/auth/login", json={"username": username, "password": password}
-    ).json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    ).json()
+    if login.get("mfa_required"):
+        code = login.get("debug_code")
+        assert code, "expected debug MFA code in tests"
+        login = client.post(
+            "/api/auth/mfa/verify",
+            json={"mfa_token": login["mfa_token"], "code": code},
+        ).json()
+    return {"Authorization": f"Bearer {login['access_token']}"}
 
 
 @pytest.fixture()
@@ -213,24 +220,21 @@ def test_password_reset_and_invite(client, acme, stores):
     assert client.post(
         "/api/auth/login", json={"username": "acme-admin", "password": "pw"}
     ).status_code == 401
-    assert "access_token" in client.post(
-        "/api/auth/login", json={"username": "acme-admin", "password": "newpass1"}
-    ).json()
+    assert _auth(client, "acme-admin", "newpass1")["Authorization"].startswith(
+        "Bearer "
+    )
 
     invited = client.post("/api/org/invites", headers=_auth(client, "acme-admin", "newpass1"), json={
         "email": "surveyor@acme.example", "display_name": "Site Surveyor",
     })
     assert invited.status_code == 201
     password = invited.json()["temporary_password"]
-    assert "access_token" in client.post(
-        "/api/auth/login",
-        json={"username": "surveyor@acme.example", "password": password},
-    ).json()
+    assert _auth(client, "surveyor@acme.example", password)["Authorization"].startswith(
+        "Bearer "
+    )
 
 
 def test_mfa_challenge_for_company_owner(client, acme, stores):
-    ops = _auth(client, "ops")
-    client.put("/api/admin/security", headers=ops, json={"mfa_required": True})
     login = client.post("/api/auth/login", json={"username": "acme-admin", "password": "pw"})
     body = login.json()
     assert login.status_code == 200
@@ -252,7 +256,24 @@ def test_mfa_challenge_for_company_owner(client, acme, stores):
     assert "access_token" in verified.json()
 
     ops_login = client.post("/api/auth/login", json={"username": "ops", "password": "pw"})
-    assert "access_token" in ops_login.json()
+    ops_body = ops_login.json()
+    assert ops_login.status_code == 200
+    assert ops_body["mfa_required"] is True
+    assert "access_token" not in ops_body
+    ops_code = ops_body.get("debug_code")
+    if not ops_code:
+        from src.email_delivery import recipient_address
+        from src.ops_store import get_ops_store
+
+        ops_code = get_ops_store().latest_secret(
+            "mfa_code", recipient_address("ops")
+        )
+    assert ops_code
+    ops_verified = client.post("/api/auth/mfa/verify", json={
+        "mfa_token": ops_body["mfa_token"],
+        "code": ops_code,
+    })
+    assert "access_token" in ops_verified.json()
 
 
 def test_flags_maintenance_and_announcements(client, acme):

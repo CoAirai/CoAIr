@@ -7,56 +7,50 @@ import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { useAdminData } from "@/context/AdminDataContext";
+import { adminOrigin, adminSignInUrl, signInUrl } from "@/lib/auth/hosts";
 import { postLoginUrl } from "@/lib/auth/postLoginPath";
 import { apiErrorMessage } from "@/lib/coair/commerce";
 import {
-    MFA_CHALLENGE_KEY,
+    clearMfaChallenge,
+    readMfaChallenge,
     sessionFromAccessToken,
     type MfaChallenge,
 } from "@/lib/coair/liveLogin";
 import { verifyMfa } from "@/lib/coair/ops";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
-const EnterCodePage = () => {
+const CODE_LENGTH = 6;
+
+type Props = {
+    /** Prefer admin portal redirect after MFA when set. */
+    portalHint?: "admin" | "workspace";
+};
+
+const EnterCodePage = ({ portalHint }: Props) => {
     const { applySession } = useAuth();
     const { companies } = useAdminData();
     const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
-    const [digits, setDigits] = useState(["", "", "", ""]);
+    const [code, setCode] = useState("");
     const [error, setError] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
-        try {
-            const raw = sessionStorage.getItem(MFA_CHALLENGE_KEY);
-            if (raw) {
-                setChallenge(JSON.parse(raw) as MfaChallenge);
-            }
-        } catch {
-            sessionStorage.removeItem(MFA_CHALLENGE_KEY);
-        }
+        setChallenge(readMfaChallenge());
     }, []);
-
-    const codeFromDigits = () => {
-        const joined = digits.join("");
-        if (digits[0].length === 4 && digits.slice(1).every((part) => !part)) {
-            return digits[0];
-        }
-        return joined;
-    };
 
     const handleMfa = async (event: FormEvent) => {
         event.preventDefault();
         if (!challenge) return;
-        const code = codeFromDigits();
-        if (code.length !== 4) {
-            setError("Enter the 4-digit code");
+        const cleaned = code.replace(/\D/g, "");
+        if (cleaned.length !== CODE_LENGTH) {
+            setError(`Enter the ${CODE_LENGTH}-digit code from your email`);
             return;
         }
         setSubmitting(true);
         setError("");
         try {
-            const verified = await verifyMfa(challenge.mfaToken, code);
-            sessionStorage.removeItem(MFA_CHALLENGE_KEY);
+            const verified = await verifyMfa(challenge.mfaToken, cleaned);
+            clearMfaChallenge();
             if (verified.refresh_token) {
                 await getSupabaseBrowser()?.auth.setSession({
                     access_token: verified.access_token,
@@ -68,6 +62,15 @@ const EnterCodePage = () => {
                 verified.user
             );
             applySession(session);
+            const wantAdmin =
+                portalHint === "admin" ||
+                challenge.portal === "admin" ||
+                session.role === "super_admin";
+            if (wantAdmin && session.role === "super_admin") {
+                const origin = adminOrigin();
+                window.location.assign(origin ? `${origin}/admin` : "/admin");
+                return;
+            }
             window.location.assign(postLoginUrl(session, companies));
         } catch (err) {
             setError(apiErrorMessage(err));
@@ -76,35 +79,43 @@ const EnterCodePage = () => {
         }
     };
 
+    const backHref =
+        portalHint === "admin" || challenge?.portal === "admin"
+            ? adminSignInUrl()
+            : signInUrl();
+
     if (challenge) {
         return (
             <LayoutLogin
-                title="Enter the code"
+                title="Enter security code"
                 description={
-                    <>Enter the 4-digit code sent for {challenge.username}.</>
+                    <>
+                        We emailed a {CODE_LENGTH}-digit code for{" "}
+                        <span className="text-strong-950">{challenge.username}</span>.
+                        Enter it to finish signing in.
+                    </>
                 }
             >
                 <form onSubmit={(event) => void handleMfa(event)}>
-                    <div className="mb-5 flex gap-3">
-                        {digits.map((value, index) => (
-                            <Field
-                                key={index}
-                                className="flex-1"
-                                classInput="h-20 !px-2 text-center !text-h3"
-                                value={value}
-                                maxLength={index === 0 ? 4 : 1}
-                                onChange={(event) => {
-                                    const next = [...digits];
-                                    next[index] = event.target.value.replace(/\D/g, "");
-                                    setDigits(next);
-                                }}
-                                required={index > 0 ? false : undefined}
-                            />
-                        ))}
-                    </div>
+                    <Field
+                        className="mb-5"
+                        classInput="h-14 !px-4 text-center !text-h5 tracking-[0.35em]"
+                        placeholder="000000"
+                        value={code}
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        autoFocus
+                        maxLength={CODE_LENGTH}
+                        onChange={(event) => {
+                            setCode(
+                                event.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH)
+                            );
+                        }}
+                        required
+                    />
                     {challenge.debugCode ? (
-                        <p className="mb-4 text-center text-label-xs text-sub-600">
-                            Sandbox code: {challenge.debugCode}
+                        <p className="mb-4 text-center text-label-xs text-amber-600">
+                            Dev code: {challenge.debugCode}
                         </p>
                     ) : null}
                     {error ? (
@@ -116,12 +127,12 @@ const EnterCodePage = () => {
                         type="submit"
                         disabled={submitting}
                     >
-                        {submitting ? "Verifying…" : "Continue"}
+                        {submitting ? "Verifying…" : "Verify & continue"}
                     </Button>
                     <div className="mt-5 text-center">
                         <Link
                             className="text-label-sm text-blue-500 transition-colors hover:text-blue-700"
-                            href="/auth/sign-in"
+                            href={backHref}
                         >
                             Back to sign in
                         </Link>
@@ -133,44 +144,23 @@ const EnterCodePage = () => {
 
     return (
         <LayoutLogin
-            title="Enter the code"
+            title="Enter security code"
             description={
-                <>Enter the 4-digit code from your COAir reset email.</>
+                <>
+                    Sign in first — we&apos;ll email you a {CODE_LENGTH}-digit
+                    security code.
+                </>
             }
         >
-            <div className="">
-                <div className="mb-5 flex gap-3">
-                    {digits.map((value, index) => (
-                        <Field
-                            key={index}
-                            className="flex-1"
-                            classInput="h-20 !px-2 text-center !text-h3"
-                            value={value}
-                            onChange={(event) => {
-                                const next = [...digits];
-                                next[index] = event.target.value;
-                                setDigits(next);
-                            }}
-                            required
-                        />
-                    ))}
-                </div>
+            <div className="text-center">
                 <Button
                     className="w-full !h-12 !rounded-xl"
                     isBlue
                     as="link"
-                    href="/auth/reset-password"
+                    href={backHref}
                 >
-                    Continue
+                    Back to sign in
                 </Button>
-                <div className="mt-5 text-center">
-                    <Link
-                        className="text-label-sm text-blue-500 transition-colors hover:text-blue-700"
-                        href="/auth/sign-in"
-                    >
-                        Back to sign in
-                    </Link>
-                </div>
             </div>
         </LayoutLogin>
     );
