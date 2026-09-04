@@ -19,7 +19,10 @@ import {
     apiErrorMessage,
     cancelOrgSubscription,
     listPackages,
+    previewPricing,
+    readOrgTax,
     resumeOrgSubscription,
+    type PricingPreview,
 } from "@/lib/coair/commerce";
 import {
     confirmPurchase,
@@ -84,6 +87,9 @@ const LiveCompanyBillingPage = () => {
     const [billingReady, setBillingReady] = useState(false);
     const [checkout, setCheckout] = useState<CheckoutState>(null);
     const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
+    const [couponCode, setCouponCode] = useState("");
+    const [pricing, setPricing] = useState<PricingPreview | null>(null);
+    const [taxPercent, setTaxPercent] = useState(0);
     const confirming = useRef(false);
     const sessionId = searchParams.get("session_id");
     const cancelled = searchParams.get("cancelled") === "1";
@@ -133,7 +139,42 @@ const LiveCompanyBillingPage = () => {
         void listPackages(token)
             .then(setPlans)
             .catch((err) => setError(apiErrorMessage(err)));
+        void readOrgTax(token)
+            .then((tax) => setTaxPercent(Number(tax.percent) || 0))
+            .catch(() => setTaxPercent(0));
     }, [token]);
+
+    useEffect(() => {
+        if (!checkout || !token) {
+            setPricing(null);
+            return;
+        }
+        const base =
+            checkout.kind === "upgrade"
+                ? checkout.priceUsd
+                : checkout.priceUsd;
+        let cancelledPreview = false;
+        const handle = window.setTimeout(() => {
+            void previewPricing(token, {
+                amount_usd: base,
+                coupon_code: couponCode,
+            })
+                .then((row) => {
+                    if (!cancelledPreview) setPricing(row);
+                })
+                .catch(() => {
+                    if (!cancelledPreview) setPricing(null);
+                });
+        }, 200);
+        return () => {
+            cancelledPreview = true;
+            window.clearTimeout(handle);
+        };
+    }, [checkout, couponCode, token]);
+
+    useEffect(() => {
+        if (!checkout) setCouponCode("");
+    }, [checkout]);
 
     const planId = org?.subscription?.plan_id as PlanId | undefined;
     const plan = planId
@@ -181,6 +222,7 @@ const LiveCompanyBillingPage = () => {
                     amount_usd: checkout.priceUsd,
                     tokens: checkout.amount,
                     description: checkout.label,
+                    coupon_code: couponCode,
                 });
                 if (result.redirected) return { ok: true };
             } else if (checkout.kind === "storage") {
@@ -189,6 +231,7 @@ const LiveCompanyBillingPage = () => {
                     amount_usd: checkout.priceUsd,
                     gb: checkout.gb,
                     description: checkout.label,
+                    coupon_code: couponCode,
                 });
                 if (result.redirected) return { ok: true };
             } else if (checkout.kind === "upgrade") {
@@ -197,6 +240,7 @@ const LiveCompanyBillingPage = () => {
                     amount_usd: checkout.priceUsd,
                     plan_id: checkout.planId,
                     description: `Upgrade to ${checkout.planName}`,
+                    coupon_code: couponCode,
                 });
                 if (result.redirected) return { ok: true };
             }
@@ -225,12 +269,30 @@ const LiveCompanyBillingPage = () => {
                 ? `Add ${checkout.label} to your company storage limit.`
                 : "";
 
-    const checkoutAmount =
-        checkout?.kind === "upgrade"
-            ? checkout.priceLabel
-            : checkout
-              ? currencyFormatter.format(checkout.priceUsd)
-              : "";
+    const checkoutAmount = pricing
+        ? currencyFormatter.format(pricing.total_usd)
+        : checkout?.kind === "upgrade"
+          ? checkout.priceLabel
+          : checkout
+            ? currencyFormatter.format(checkout.priceUsd)
+            : "";
+
+    const checkoutPricingNote = pricing
+        ? [
+              pricing.discount_usd > 0
+                  ? `Coupon −${currencyFormatter.format(pricing.discount_usd)}`
+                  : null,
+              pricing.tax_usd > 0
+                  ? `Includes ${pricing.tax_percent}% tax (${currencyFormatter.format(pricing.tax_usd)})`
+                  : taxPercent > 0
+                    ? `Tax ${taxPercent}% applied at checkout`
+                    : null,
+          ]
+              .filter(Boolean)
+              .join(" · ") || null
+        : taxPercent > 0
+          ? `Tax ${taxPercent}% applied at checkout`
+          : null;
 
     return (
         <div className="page-stack">
@@ -575,6 +637,9 @@ const LiveCompanyBillingPage = () => {
                 title={checkoutTitle}
                 summary={checkoutSummary}
                 amountLabel={checkoutAmount}
+                pricingNote={checkoutPricingNote}
+                couponCode={couponCode}
+                onCouponCodeChange={setCouponCode}
                 onConfirm={handleConfirm}
             />
             <InvoiceDetailModal

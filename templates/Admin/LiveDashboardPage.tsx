@@ -12,8 +12,14 @@ import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import { formatAuditHeadline } from "@/lib/admin/auditLabels";
 import { barsFromNamedValues, type ChartPoint } from "@/lib/admin/dashboardSeries";
+import {
+    bytesToGb,
+    companyStorageLimitBytes,
+    companyStorageUsedBytes,
+    planLabel,
+} from "@/lib/admin/liveHelpers";
+import { getPlanById } from "@/lib/admin/plans";
 import type { AuditEntry } from "@/lib/admin/types";
-import { bytesToGb, planLabel } from "@/lib/admin/liveHelpers";
 import { loadWeeklySpend } from "@/lib/coair/admin";
 import { listAudit } from "@/lib/coair/ops";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
@@ -65,28 +71,29 @@ const LiveDashboardPage = () => {
         }
         return orgs.map((org) => {
             const tokens = tokensByOrg.get(org.org_id);
+            const planId = org.subscription?.plan_id || org.default_plan_type;
+            const plan = getPlanById(planId || "");
             const tokenLimit =
-                tokens?.limit || org.default_token_limit || 0;
+                org.default_token_limit ||
+                tokens?.limit ||
+                plan?.queryCap ||
+                0;
             const tokensUsed = tokens?.used ?? 0;
             const members = users.filter((user) => user.org_id === org.org_id);
-            const storageUsed = bytesToGb(
-                members.reduce(
-                    (sum, user) => sum + (user.storage_used_bytes ?? 0),
-                    0
-                )
-            );
+            const storageUsed = bytesToGb(companyStorageUsedBytes(members));
             const storageLimit = bytesToGb(
-                members.reduce(
-                    (sum, user) => sum + (user.storage_limit_bytes ?? 0),
-                    0
-                ) || org.default_storage_bytes
+                companyStorageLimitBytes({
+                    defaultStorageBytes: org.default_storage_bytes,
+                    planStorageGb: plan?.storageLimitGb,
+                    memberLimits: members.map(
+                        (user) => user.storage_limit_bytes
+                    ),
+                })
             );
             return {
                 id: org.org_id,
                 name: org.name,
-                planName: planLabel(
-                    org.subscription?.plan_id || org.default_plan_type
-                ),
+                planName: planLabel(planId),
                 storageUsed,
                 storageLimit,
                 tokensUsed,

@@ -6,20 +6,12 @@ import { FormEvent, useMemo, useState } from "react";
 
 import StatusBadge from "@/components/Admin/StatusBadge";
 import OrgRoleSelect from "@/components/Admin/OrgRoleSelect";
-import RightsToggleCells from "@/components/Admin/RightsToggleCells";
 import { useAuth } from "@/context/AuthContext";
-import {
-    RIGHT_COLUMNS,
-    rightsFromFeatures,
-    toggleRightInFeatures,
-    type RightKey,
-} from "@/lib/admin/rolesStub";
 import {
     addAdminOrgMember,
     createAdminUser,
     deleteAdminUser,
     forceLogoutAdminUser,
-    patchAdminUser,
     resetAdminUserUsage,
 } from "@/lib/coair/admin";
 import { apiErrorMessage } from "@/lib/coair/commerce";
@@ -48,14 +40,8 @@ const LiveUsersPage = () => {
                     name: user.display_name || user.username,
                     company: user.org_name || "—",
                     companyId: user.org_id ?? "",
-                    role: user.org_role || user.role || "member",
                     orgRole: user.org_role ?? "",
                     platformRole: user.role ?? "user",
-                    features: user.features ?? {},
-                    rights: rightsFromFeatures(
-                        user.features,
-                        user.org_role || user.role || "member"
-                    ),
                     status: user.is_active === false ? "suspended" : "active",
                 }))
                 .filter((user) => {
@@ -109,8 +95,8 @@ const LiveUsersPage = () => {
             <div>
                 <h1 className="text-label-xl text-strong-950">Users</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
-                    Live accounts. Invite by email — they set a password from
-                    the Supabase link. Then change company role and rights.
+                    Live accounts from the API. Invite by email, set company
+                    role here, and edit module rights on the company page.
                 </p>
             </div>
             {error || actionError ? (
@@ -183,23 +169,21 @@ const LiveUsersPage = () => {
                     </select>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1280px] text-left">
+                    <table className="w-full min-w-[960px] text-left">
                         <thead className="bg-weak-50 text-label-xs text-sub-600">
                             <tr>
                                 <th className="px-5 py-3 font-medium">Name</th>
-                                <th className="px-5 py-3 font-medium">Username</th>
-                                <th className="px-5 py-3 font-medium">Company</th>
+                                <th className="px-5 py-3 font-medium">
+                                    Username
+                                </th>
+                                <th className="px-5 py-3 font-medium">
+                                    Company
+                                </th>
                                 <th className="px-5 py-3 font-medium">Role</th>
-                                {RIGHT_COLUMNS.map((column) => (
-                                    <th
-                                        key={column.key}
-                                        className="px-5 py-3 text-center font-medium"
-                                    >
-                                        {column.label}
-                                    </th>
-                                ))}
                                 <th className="px-5 py-3 font-medium">Status</th>
-                                <th className="px-5 py-3 font-medium">Actions</th>
+                                <th className="px-5 py-3 font-medium">
+                                    Actions
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stroke-soft-200">
@@ -207,14 +191,17 @@ const LiveUsersPage = () => {
                                 <tr>
                                     <td
                                         className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={12}
+                                        colSpan={6}
                                     >
                                         Loading users…
                                     </td>
                                 </tr>
                             ) : null}
                             {rows.map((user) => (
-                                <tr key={user.username} className="text-label-sm">
+                                <tr
+                                    key={user.username}
+                                    className="text-label-sm"
+                                >
                                     <td className="px-5 py-4 text-strong-950">
                                         {user.name}
                                     </td>
@@ -224,7 +211,7 @@ const LiveUsersPage = () => {
                                     <td className="px-5 py-4 text-sub-600">
                                         {user.companyId ? (
                                             <Link
-                                                href={`/admin/companies/${user.companyId}`}
+                                                href={`/admin/companies/${user.companyId}?tab=users`}
                                                 className="hover:text-blue-500"
                                             >
                                                 {user.company}
@@ -258,7 +245,9 @@ const LiveUsersPage = () => {
                                                         })
                                                         .catch((err) =>
                                                             setActionError(
-                                                                apiErrorMessage(err)
+                                                                apiErrorMessage(
+                                                                    err
+                                                                )
                                                             )
                                                         )
                                                 }
@@ -267,35 +256,6 @@ const LiveUsersPage = () => {
                                             user.platformRole
                                         )}
                                     </td>
-                                    <RightsToggleCells
-                                        rights={user.rights}
-                                        onToggle={(key: RightKey, enabled) =>
-                                            void patchAdminUser(
-                                                token,
-                                                user.username,
-                                                {
-                                                    features:
-                                                        toggleRightInFeatures(
-                                                            user.features,
-                                                            user.role,
-                                                            key,
-                                                            enabled
-                                                        ),
-                                                }
-                                            )
-                                                .then(() => {
-                                                    setMessage(
-                                                        `Rights updated for ${user.username}`
-                                                    );
-                                                    return refresh();
-                                                })
-                                                .catch((err) =>
-                                                    setActionError(
-                                                        apiErrorMessage(err)
-                                                    )
-                                                )
-                                        }
-                                    />
                                     <td className="px-5 py-4">
                                         <StatusBadge status={user.status} />
                                     </td>
@@ -307,7 +267,8 @@ const LiveUsersPage = () => {
                                                 onClick={() =>
                                                     void setActive(
                                                         user.username,
-                                                        user.status === "suspended"
+                                                        user.status ===
+                                                            "suspended"
                                                     )
                                                 }
                                             >
@@ -319,18 +280,27 @@ const LiveUsersPage = () => {
                                                 type="button"
                                                 className="text-label-xs text-blue-500"
                                                 onClick={() =>
-                                                    void startLiveImpersonation({
-                                                        adminSession: session!,
-                                                        token,
-                                                        username: user.username,
-                                                        applySession,
-                                                    })
+                                                    void startLiveImpersonation(
+                                                        {
+                                                            adminSession:
+                                                                session!,
+                                                            token,
+                                                            username:
+                                                                user.username,
+                                                            applySession,
+                                                        }
+                                                    )
                                                         .then(({ href }) =>
-                                                            portalPush(router, href)
+                                                            portalPush(
+                                                                router,
+                                                                href
+                                                            )
                                                         )
                                                         .catch((err) =>
                                                             setActionError(
-                                                                apiErrorMessage(err)
+                                                                apiErrorMessage(
+                                                                    err
+                                                                )
                                                             )
                                                         )
                                                 }
@@ -352,7 +322,9 @@ const LiveUsersPage = () => {
                                                         )
                                                         .catch((err) =>
                                                             setActionError(
-                                                                apiErrorMessage(err)
+                                                                apiErrorMessage(
+                                                                    err
+                                                                )
                                                             )
                                                         )
                                                 }
@@ -375,7 +347,9 @@ const LiveUsersPage = () => {
                                                         })
                                                         .catch((err) =>
                                                             setActionError(
-                                                                apiErrorMessage(err)
+                                                                apiErrorMessage(
+                                                                    err
+                                                                )
                                                             )
                                                         )
                                                 }
@@ -398,7 +372,9 @@ const LiveUsersPage = () => {
                                                         })
                                                         .catch((err) =>
                                                             setActionError(
-                                                                apiErrorMessage(err)
+                                                                apiErrorMessage(
+                                                                    err
+                                                                )
                                                             )
                                                         )
                                                 }
@@ -409,6 +385,16 @@ const LiveUsersPage = () => {
                                     </td>
                                 </tr>
                             ))}
+                            {!loading && rows.length === 0 ? (
+                                <tr>
+                                    <td
+                                        className="px-5 py-4 text-label-sm text-sub-600"
+                                        colSpan={6}
+                                    >
+                                        No users yet.
+                                    </td>
+                                </tr>
+                            ) : null}
                         </tbody>
                     </table>
                 </div>

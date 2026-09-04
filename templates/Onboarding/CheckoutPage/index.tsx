@@ -16,7 +16,15 @@ import {
     checkoutPlan,
     confirmCheckout,
     listPackages,
+    previewPricing,
+    type PricingPreview,
 } from "@/lib/coair/commerce";
+
+const money = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+});
 
 const CheckoutPage = () => {
     const router = useRouter();
@@ -36,6 +44,9 @@ const CheckoutPage = () => {
     const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
     const [expiry, setExpiry] = useState("12/28");
     const [cvc, setCvc] = useState("123");
+    const [couponCode, setCouponCode] = useState("");
+    const [pricing, setPricing] = useState<PricingPreview | null>(null);
+    const [pricingError, setPricingError] = useState("");
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
     const confirming = useRef(false);
@@ -44,6 +55,34 @@ const CheckoutPage = () => {
         if (!live || !session?.accessToken) return;
         void listPackages(session.accessToken).then(setLivePlans);
     }, [live, session?.accessToken]);
+
+    useEffect(() => {
+        if (!live || !session?.accessToken || !plan || sessionId) {
+            setPricing(null);
+            return;
+        }
+        let cancelledPreview = false;
+        const handle = window.setTimeout(() => {
+            void previewPricing(session.accessToken!, {
+                amount_usd: plan.apiCreditsUsd,
+                coupon_code: couponCode,
+            })
+                .then((row) => {
+                    if (cancelledPreview) return;
+                    setPricing(row);
+                    setPricingError("");
+                })
+                .catch((err) => {
+                    if (cancelledPreview) return;
+                    setPricing(null);
+                    setPricingError(apiErrorMessage(err));
+                });
+        }, 250);
+        return () => {
+            cancelledPreview = true;
+            window.clearTimeout(handle);
+        };
+    }, [couponCode, live, plan, session?.accessToken, sessionId]);
 
     useEffect(() => {
         if (!live || !session?.accessToken || !sessionId || confirming.current) {
@@ -74,7 +113,9 @@ const CheckoutPage = () => {
         setError("");
         if (live && session.accessToken) {
             try {
-                const result = await checkoutPlan(session.accessToken, plan.id);
+                const result = await checkoutPlan(session.accessToken, plan.id, {
+                    coupon_code: couponCode,
+                });
                 if (result.redirected) {
                     return;
                 }
@@ -118,6 +159,9 @@ const CheckoutPage = () => {
     }
 
     if (live) {
+        const payLabel = pricing
+            ? money.format(pricing.total_usd)
+            : plan?.priceLabel ?? "package";
         return (
             <div className="min-h-screen bg-weak-50 px-6 py-10">
                 <div className="mx-auto max-w-xl">
@@ -151,15 +195,74 @@ const CheckoutPage = () => {
                     ) : null}
                     {!sessionId && plan ? (
                         <form onSubmit={onSubmit} className="mt-6 space-y-4">
+                            <Field
+                                label="Coupon code (optional)"
+                                placeholder="SAVE10"
+                                value={couponCode}
+                                onChange={(event) =>
+                                    setCouponCode(event.target.value)
+                                }
+                            />
+                            {pricingError ? (
+                                <p className="text-label-sm text-red-500">
+                                    {pricingError}
+                                </p>
+                            ) : null}
+                            {pricing ? (
+                                <div className="rounded-xl border border-stroke-soft-200 bg-white-0 px-4 py-3 text-label-sm text-sub-600">
+                                    <div className="flex justify-between gap-3">
+                                        <span>Package</span>
+                                        <span>
+                                            {money.format(pricing.base_usd)}
+                                        </span>
+                                    </div>
+                                    {pricing.discount_usd > 0 ? (
+                                        <div className="mt-1 flex justify-between gap-3 text-green-600">
+                                            <span>
+                                                Coupon
+                                                {pricing.coupon_code
+                                                    ? ` (${pricing.coupon_code})`
+                                                    : ""}
+                                            </span>
+                                            <span>
+                                                −
+                                                {money.format(
+                                                    pricing.discount_usd
+                                                )}
+                                            </span>
+                                        </div>
+                                    ) : null}
+                                    {pricing.tax_usd > 0 ? (
+                                        <div className="mt-1 flex justify-between gap-3">
+                                            <span>
+                                                Tax ({pricing.tax_percent}
+                                                %{pricing.region_label
+                                                    ? ` · ${pricing.region_label}`
+                                                    : ""}
+                                                )
+                                            </span>
+                                            <span>
+                                                {money.format(pricing.tax_usd)}
+                                            </span>
+                                        </div>
+                                    ) : null}
+                                    <div className="mt-2 flex justify-between gap-3 border-t border-stroke-soft-200 pt-2 text-label-md text-strong-950">
+                                        <span>Total due</span>
+                                        <span>
+                                            {money.format(pricing.total_usd)}
+                                        </span>
+                                    </div>
+                                </div>
+                            ) : null}
                             <Button
                                 className="w-full !h-12 !rounded-xl"
                                 isBlue
                                 type="submit"
-                                disabled={busy}
+                                disabled={busy || Boolean(pricingError)}
                             >
                                 {busy
                                     ? "Redirecting…"
-                                    : `Pay ${plan.priceLabel} with Stripe`}
+                                    : `Pay ${payLabel} with Stripe`}
                             </Button>
                             <Link
                                 href="/onboarding/plans"

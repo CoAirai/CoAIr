@@ -151,14 +151,29 @@ const KnowledgeBase = () => {
     const sheets = documents.filter((doc) => doc.kind === "spreadsheet");
     const canRemove = session?.role === "company_admin";
     const tokenMeter = useMemo(() => {
-        if (live.enabled && live.accountUsage) {
-            const used = live.accountUsage.used_tokens ?? 0;
-            const limit = live.accountUsage.token_limit ?? 0;
-            return getTokenMeter({
-                tokenLimit: limit,
-                tokensUsed: used,
-                personalTokensUsed: used,
-            });
+        if (live.enabled) {
+            const selected = live.orgUsers.find(
+                (entry) => entry.username === activeWorkspaceUserId
+            );
+            if (selected) {
+                const used = selected.used_tokens ?? 0;
+                const limit = selected.token_limit ?? 0;
+                return getTokenMeter({
+                    tokenLimit: limit,
+                    tokensUsed: used,
+                    personalTokensUsed: used,
+                });
+            }
+            if (live.accountUsage) {
+                const used = live.accountUsage.used_tokens ?? 0;
+                const limit = live.accountUsage.token_limit ?? 0;
+                return getTokenMeter({
+                    tokenLimit: limit,
+                    tokensUsed: used,
+                    personalTokensUsed: used,
+                });
+            }
+            return null;
         }
         const company = companies.find((entry) => entry.id === session?.companyId);
         const user = users.find((entry) => entry.id === activeWorkspaceUserId);
@@ -175,6 +190,7 @@ const KnowledgeBase = () => {
         companies,
         live.accountUsage,
         live.enabled,
+        live.orgUsers,
         session?.companyId,
         users,
     ]);

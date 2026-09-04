@@ -19,7 +19,8 @@ import {
     toggleRightInFeatures,
     type RightKey,
 } from "@/lib/admin/rolesStub";
-import { planLabel } from "@/lib/admin/liveHelpers";
+import { planLabel, bytesToGb, companyStorageLimitBytes } from "@/lib/admin/liveHelpers";
+import { getPlanById } from "@/lib/admin/plans";
 import type { SupportTicket } from "@/lib/admin/wave2Types";
 import {
     addAdminOrgMember,
@@ -67,9 +68,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
 });
-
-const bytesToGb = (bytes?: number) =>
-    Math.round(((bytes ?? 0) / 1_000_000_000) * 10) / 10;
 
 const formatWhen = (value?: string | null) => {
     if (!value) return "—";
@@ -194,19 +192,28 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                     acc.limit += user.token_limit ?? 0;
                     acc.credits += user.credits_remaining ?? 0;
                     acc.storageUsed += user.storage_used_bytes ?? 0;
-                    acc.storageLimit += user.storage_limit_bytes ?? 0;
                     return acc;
                 },
-                { used: 0, limit: 0, credits: 0, storageUsed: 0, storageLimit: 0 }
+                { used: 0, limit: 0, credits: 0, storageUsed: 0 }
             ),
         [orgUsers]
     );
 
+    const plan = getPlanById(
+        org?.subscription?.plan_id || org?.default_plan_type || ""
+    );
     const tokenLimit =
-        tokenTotals.limit || org?.default_token_limit || 0;
+        org?.default_token_limit ||
+        tokenTotals.limit ||
+        plan?.queryCap ||
+        0;
     const storageUsed = bytesToGb(tokenTotals.storageUsed);
     const storageLimit = bytesToGb(
-        tokenTotals.storageLimit || org?.default_storage_bytes
+        companyStorageLimitBytes({
+            defaultStorageBytes: org?.default_storage_bytes,
+            planStorageGb: plan?.storageLimitGb,
+            memberLimits: orgUsers.map((user) => user.storage_limit_bytes),
+        })
     );
     const suspended = Boolean(org?.archived_at);
 

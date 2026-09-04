@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { mapLiveCitations } from "@/lib/coair/mapCitations";
 import { createConversation, sendLiveChat } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
@@ -20,6 +21,7 @@ import {
     messagesForUser,
     recentsForUser,
     resolveActiveWorkspaceUserId,
+    type WorkspaceUser,
 } from "@/lib/chat/threads";
 import type { Citation, Message, RecentQuery } from "@/lib/chat/types";
 
@@ -51,11 +53,38 @@ function makeId(prefix: string) {
 export function ChatProvider({ children }: { children: ReactNode }) {
     const { session } = useAuth();
     const {
-        users,
+        users: mockUsers,
         companies,
         companyWorkspaces,
         consumeUserTokens,
     } = useAdminData();
+    const live = useLiveWorkspace();
+    const workspaceUsers = useMemo((): WorkspaceUser[] => {
+        if (live.enabled && session?.role === "company_admin") {
+            if (live.teammates.length > 0) return live.teammates;
+            if (session.userId && session.companyId) {
+                return [
+                    {
+                        id: session.userId,
+                        name: session.name || session.userId,
+                        companyId: session.companyId,
+                        status: "active",
+                        role: "admin",
+                    },
+                ];
+            }
+            return [];
+        }
+        return mockUsers;
+    }, [
+        live.enabled,
+        live.teammates,
+        mockUsers,
+        session?.companyId,
+        session?.name,
+        session?.role,
+        session?.userId,
+    ]);
     const [requestedWorkspaceUserId, setRequestedWorkspaceUserId] = useState<
         string | null
     >(null);
@@ -93,7 +122,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         setLiveConversationId(null);
-    }, [session?.userId, session?.projectId]);
+    }, [session?.userId, session?.projectId, requestedWorkspaceUserId]);
 
     const activeWorkspaceUserId = useMemo(() => {
         if (!session?.userId || !session.companyId) return null;
@@ -101,10 +130,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             role: session.role,
             userId: session.userId,
             requestedUserId: requestedWorkspaceUserId,
-            users,
+            users: workspaceUsers,
             companyId: session.companyId,
         });
-    }, [requestedWorkspaceUserId, session, users]);
+    }, [requestedWorkspaceUserId, session, workspaceUsers]);
 
     const messages = activeWorkspaceUserId
         ? messagesForUser(threadsByUserId, activeWorkspaceUserId)

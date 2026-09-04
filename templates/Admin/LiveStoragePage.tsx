@@ -4,7 +4,12 @@ import Link from "next/link";
 
 import StatCard from "@/components/Admin/StatCard";
 import { isNearStorageLimit, usagePercent } from "@/lib/admin/adminSelectors";
-import { bytesToGb } from "@/lib/admin/liveHelpers";
+import {
+    bytesToGb,
+    companyStorageLimitBytes,
+    companyStorageUsedBytes,
+} from "@/lib/admin/liveHelpers";
+import { getPlanById } from "@/lib/admin/plans";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
@@ -13,15 +18,15 @@ const LiveStoragePage = () => {
     const { orgs, users, loading, error } = useLiveAdmin();
     const rows = orgs.map((org) => {
         const members = users.filter((user) => user.org_id === org.org_id);
-        const usedBytes = members.reduce(
-            (sum, user) => sum + (user.storage_used_bytes ?? 0),
-            0
+        const plan = getPlanById(
+            org.subscription?.plan_id || org.default_plan_type || ""
         );
-        const limitBytes =
-            members.reduce(
-                (sum, user) => sum + (user.storage_limit_bytes ?? 0),
-                0
-            ) || org.default_storage_bytes || 0;
+        const usedBytes = companyStorageUsedBytes(members);
+        const limitBytes = companyStorageLimitBytes({
+            defaultStorageBytes: org.default_storage_bytes,
+            planStorageGb: plan?.storageLimitGb,
+            memberLimits: members.map((user) => user.storage_limit_bytes),
+        });
         const usedGb = bytesToGb(usedBytes);
         const limitGb = bytesToGb(limitBytes);
         return {

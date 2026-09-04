@@ -3,7 +3,12 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
-import { bytesToGb } from "@/lib/admin/liveHelpers";
+import {
+    bytesToGb,
+    companyStorageLimitBytes,
+    companyStorageUsedBytes,
+} from "@/lib/admin/liveHelpers";
+import { getPlanById } from "@/lib/admin/plans";
 import { usagePercent } from "@/lib/admin/adminSelectors";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
 
@@ -34,21 +39,24 @@ const LiveAlertsPage = () => {
                 0
             );
             const tokenLimit =
+                org.default_token_limit ||
                 members.reduce(
                     (sum, user) => sum + (user.token_limit ?? 0),
                     0
-                ) || org.default_token_limit || 0;
-            const storageUsed = bytesToGb(
-                members.reduce(
-                    (sum, user) => sum + (user.storage_used_bytes ?? 0),
-                    0
-                )
+                ) ||
+                0;
+            const plan = getPlanById(
+                org.subscription?.plan_id || org.default_plan_type || ""
             );
+            const storageUsed = bytesToGb(companyStorageUsedBytes(members));
             const storageLimit = bytesToGb(
-                members.reduce(
-                    (sum, user) => sum + (user.storage_limit_bytes ?? 0),
-                    0
-                ) || org.default_storage_bytes || 0
+                companyStorageLimitBytes({
+                    defaultStorageBytes: org.default_storage_bytes,
+                    planStorageGb: plan?.storageLimitGb,
+                    memberLimits: members.map(
+                        (user) => user.storage_limit_bytes
+                    ),
+                })
             );
             const tokenPct = usagePercent(tokensUsed, tokenLimit);
             const storagePct = usagePercent(storageUsed, storageLimit);

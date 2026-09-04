@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import Field from "@/components/Field";
 import Modal from "@/components/Modal";
 
 type Props = {
@@ -10,6 +11,9 @@ type Props = {
     title: string;
     summary: string;
     amountLabel: string;
+    pricingNote?: string | null;
+    couponCode?: string;
+    onCouponCodeChange?: (value: string) => void;
     onConfirm: () =>
         | { ok: boolean; error?: string }
         | Promise<{ ok: boolean; error?: string }>;
@@ -21,6 +25,9 @@ const CheckoutModal = ({
     title,
     summary,
     amountLabel,
+    pricingNote,
+    couponCode = "",
+    onCouponCodeChange,
     onConfirm,
 }: Props) => {
     const [error, setError] = useState<string | null>(null);
@@ -62,6 +69,9 @@ const CheckoutModal = ({
             <h2 className="text-label-xl text-strong-950">{title}</h2>
             <p className="mt-2 text-label-sm text-sub-600">{summary}</p>
             <p className="mt-3 text-label-lg text-strong-950">{amountLabel}</p>
+            {pricingNote ? (
+                <p className="mt-1 text-label-xs text-sub-600">{pricingNote}</p>
+            ) : null}
 
             {success ? (
                 <p className="mt-6 rounded-xl bg-green-500/10 px-4 py-3 text-label-sm text-green-600">
@@ -69,6 +79,16 @@ const CheckoutModal = ({
                 </p>
             ) : (
                 <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                    {onCouponCodeChange ? (
+                        <Field
+                            label="Coupon code (optional)"
+                            placeholder="SAVE10"
+                            value={couponCode}
+                            onChange={(event) =>
+                                onCouponCodeChange(event.target.value)
+                            }
+                        />
+                    ) : null}
                     <p className="rounded-xl bg-weak-50 px-4 py-3 text-label-sm text-sub-600">
                         You will continue to Stripe Checkout to pay securely.
                         Card details are entered on Stripe — not here.
@@ -78,21 +98,18 @@ const CheckoutModal = ({
                     ) : null}
                     <div className="flex gap-3 pt-2">
                         <button
-                            type="submit"
-                            disabled={submitting}
-                            className="h-10 flex-1 rounded-full bg-strong-950 text-label-sm text-white-0 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {submitting
-                                ? "Redirecting to Stripe…"
-                                : "Pay with Stripe"}
-                        </button>
-                        <button
                             type="button"
                             onClick={onClose}
-                            disabled={submitting}
-                            className="h-10 rounded-full border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                            className="h-10 flex-1 rounded-xl border border-stroke-soft-200 text-label-sm text-sub-600"
                         >
                             Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={submitting}
+                            className="h-10 flex-1 rounded-xl bg-blue-500 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"
+                        >
+                            {submitting ? "Working…" : "Continue to Stripe"}
                         </button>
                     </div>
                 </form>

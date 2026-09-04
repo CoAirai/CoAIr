@@ -14,6 +14,7 @@ from src.commerce_store import CommerceStore, get_commerce_store
 from src.ops_store import OpsStore, get_ops_store
 from src.org_store import OrgStore, get_org_store
 from src.email_delivery import send_coair_email
+from src.pricing import resolve_charge
 from src.stripe_billing import (
     create_checkout_session,
     create_plan_subscription_checkout,
@@ -44,6 +45,7 @@ class PurchaseRequest(BaseModel):
     plan_id: Optional[Literal["demo", "foundation", "pro", "enterprise", "custom"]] = None
     module_id: Optional[Literal["chatbot", "chronology", "forensic"]] = None
     description: str = Field(default="", max_length=200)
+    coupon_code: Optional[str] = Field(default=None, max_length=64)
 
 
 class ConfirmPurchaseRequest(BaseModel):
@@ -106,6 +108,20 @@ def _purchase_amount_and_label(
     return amount, description
 
 
+def _apply_purchase_pricing(
+    ops: OpsStore, base_amount: float, description: str, coupon_code: Optional[str]
+) -> tuple[float, str, dict]:
+    try:
+        priced = resolve_charge(ops, base_amount, coupon_code=coupon_code)
+    except ValueError as exc:
+        code = str(exc)
+        if code in ("coupon_not_found", "coupon_inactive", "coupon_code_required"):
+            raise HTTPException(400, code) from exc
+        raise HTTPException(400, code) from exc
+    labeled = f"{description}{priced['description_suffix']}"
+    return float(priced["total_usd"]), labeled, priced
+
+
 @router.post("/org/purchases", status_code=201)
 async def create_purchase(
     req: PurchaseRequest,
@@ -116,7 +132,10 @@ async def create_purchase(
     orgs: OrgStore = Depends(get_org_store),
     users: UserStore = Depends(get_user_store),
 ):
-    amount, description = _purchase_amount_and_label(req, commerce)
+    base_amount, description = _purchase_amount_and_label(req, commerce)
+    amount, description, priced = _apply_purchase_pricing(
+        ops, base_amount, description, req.coupon_code
+    )
 
     if stripe_enabled():
         if amount <= 0:
@@ -125,6 +144,8 @@ async def create_purchase(
                     org.org_id,
                     req.plan_id,
                     user.username,
+                    amount_usd=0,
+                    invoice_description=description,
                     commerce=commerce,
                     orgs=orgs,
                     users=users,
@@ -134,7 +155,7 @@ async def create_purchase(
                 org.org_id,
                 kind=req.kind,
                 actor=user.username,
-                amount_usd=amount,
+                amount_usd=0,
                 tokens=req.tokens,
                 gb=req.gb,
                 plan_id=req.plan_id,
@@ -146,6 +167,13 @@ async def create_purchase(
                 ops=ops,
             )
         try:
+            pricing_meta = {
+                "base_usd": str(priced["base_usd"]),
+                "discount_usd": str(priced["discount_usd"]),
+                "tax_usd": str(priced["tax_usd"]),
+                "tax_percent": str(priced["tax_percent"]),
+                "coupon_code": priced["coupon_code"] or "",
+            }
             if req.kind == "upgrade":
                 if not req.plan_id:
                     raise HTTPException(400, "plan_id_required")
@@ -157,6 +185,7 @@ async def create_purchase(
                     success_path="/company/billing?session_id={CHECKOUT_SESSION_ID}",
                     cancel_path="/company/billing?cancelled=1",
                     flow="billing",
+                    extra_metadata=pricing_meta,
                 )
             else:
                 session = create_checkout_session(
@@ -175,19 +204,22 @@ async def create_purchase(
                         "description": description[:200],
                         "amount_usd": str(amount),
                         "credit_username": "",
+                        **pricing_meta,
                     },
                 )
         except HTTPException:
             raise
         except Exception as exc:
             raise HTTPException(502, f"stripe_session_failed:{exc}") from exc
-        return session
+        return {**session, "pricing": priced["pricing"]}
 
     if req.kind == "upgrade" and req.plan_id:
         return fulfill_plan(
             org.org_id,
             req.plan_id,
             user.username,
+            amount_usd=amount,
+            invoice_description=description,
             commerce=commerce,
             orgs=orgs,
             users=users,
@@ -209,7 +241,6 @@ async def create_purchase(
         users=users,
         ops=ops,
     )
-
 
 @router.post("/org/purchases/confirm")
 async def confirm_purchase(
@@ -249,6 +280,11 @@ async def confirm_purchase(
             except Exception:
                 period_end = None
         try:
+            charged = None
+            if session.get("amount_total"):
+                charged = float(session["amount_total"]) / 100.0
+            elif meta.get("amount_usd"):
+                charged = float(meta["amount_usd"])
             return fulfill_plan(
                 org.org_id,
                 plan_id,
@@ -257,6 +293,8 @@ async def confirm_purchase(
                 stripe_customer_id=session.get("customer_id") or "",
                 stripe_subscription_id=sub_id,
                 current_period_end=period_end,
+                amount_usd=charged,
+                invoice_description=meta.get("description") or None,
                 commerce=commerce,
                 orgs=orgs,
                 users=users,
@@ -275,6 +313,7 @@ async def confirm_purchase(
     token_request_id = (meta.get("token_request_id") or "").strip() or None
     if session["amount_total"]:
         amount = session["amount_total"] / 100.0
+    description = meta.get("description") or ""
     try:
         invoice = fulfill_purchase(
             org.org_id,
@@ -285,7 +324,7 @@ async def confirm_purchase(
             gb=gb,
             plan_id=plan_id,
             module_id=module_id,
-            description=meta.get("description") or "",
+            description=description,
             stripe_session_id=session["id"],
             credit_username=credit_username,
             commerce=commerce,

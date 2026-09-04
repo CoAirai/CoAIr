@@ -73,7 +73,8 @@ export function rightsForRole(role: string): Record<RightKey, boolean> {
     if (
         normalized === "admin" ||
         normalized === "owner" ||
-        normalized === "super_admin"
+        normalized === "super_admin" ||
+        normalized === "superadmin"
     ) {
         return ownerRights();
     }
@@ -82,6 +83,37 @@ export function rightsForRole(role: string): Record<RightKey, boolean> {
     }
     return memberRights();
 }
+
+/** Platform / company role definitions for the Roles & Rights page. */
+export const ROLE_DEFINITIONS: Array<{
+    id: string;
+    name: string;
+    scope: string;
+    description: string;
+    roleKey: string;
+}> = [
+    {
+        id: "super_admin",
+        name: "Super admin",
+        scope: "Platform",
+        description: "Full platform control across all companies.",
+        roleKey: "super_admin",
+    },
+    {
+        id: "owner",
+        name: "Company admin",
+        scope: "Company",
+        description: "Owns the company, billing, invites, and team rights.",
+        roleKey: "owner",
+    },
+    {
+        id: "member",
+        name: "Member",
+        scope: "Company",
+        description: "Uses assigned modules inside their company workspace.",
+        roleKey: "member",
+    },
+];
 
 export function rightsFromFeatures(
     features: Record<string, unknown> | null | undefined,

@@ -209,6 +209,8 @@ const LiveBillingPage = () => {
                 <h1 className="text-label-xl text-strong-950">Billing</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
                     Live invoices, coupons, and tax settings from the API.
+                    Coupons and tax apply on company Stripe checkout and
+                    purchases.
                 </p>
             </div>
             {error ? (

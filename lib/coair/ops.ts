@@ -80,14 +80,27 @@ export async function createPurchase(
         plan_id?: string;
         module_id?: string;
         description?: string;
+        coupon_code?: string;
     }
 ) {
     const payload = await coairFetch<
-        CoairInvoice & { checkout_url?: string; session_id?: string }
+        CoairInvoice & {
+            checkout_url?: string;
+            session_id?: string;
+            pricing?: {
+                base_usd: number;
+                discount_usd: number;
+                tax_usd: number;
+                total_usd: number;
+            };
+        }
     >("/org/purchases", {
         method: "POST",
         token,
-        body,
+        body: {
+            ...body,
+            coupon_code: body.coupon_code?.trim() || undefined,
+        },
     });
     if (payload.checkout_url && typeof window !== "undefined") {
         window.location.assign(payload.checkout_url);

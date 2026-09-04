@@ -12,6 +12,7 @@ from backend.core.security import UserContext, get_current_user
 from src.commerce_store import CommerceStore, get_commerce_store
 from src.ops_store import OpsStore, get_ops_store
 from src.org_store import OrgStore, get_org_store
+from src.pricing import resolve_charge
 from src.stripe_billing import (
     cancel_package_subscription,
     create_plan_subscription_checkout,
@@ -30,6 +31,7 @@ router = APIRouter()
 
 class CheckoutRequest(BaseModel):
     plan_id: Literal["demo", "foundation", "pro", "enterprise", "custom"]
+    coupon_code: Optional[str] = Field(default=None, max_length=64)
 
 
 class ConfirmCheckoutRequest(BaseModel):
@@ -40,12 +42,51 @@ class CancelSubscriptionRequest(BaseModel):
     immediate: bool = False
 
 
+class PricingPreviewRequest(BaseModel):
+    amount_usd: float = Field(ge=0)
+    coupon_code: Optional[str] = Field(default=None, max_length=64)
+
+
+def _pricing_http_error(exc: ValueError) -> HTTPException:
+    code = str(exc)
+    if code in ("coupon_not_found", "coupon_inactive", "coupon_code_required"):
+        return HTTPException(400, code)
+    return HTTPException(400, code)
+
+
 @router.get("/packages")
 async def list_packages(
     _user: UserContext = Depends(get_current_user),
     store: CommerceStore = Depends(get_commerce_store),
 ):
     return {"plans": store.list_plans()}
+
+
+@router.get("/org/tax")
+async def read_org_tax(
+    _org: OrgContext = Depends(require_org_owner),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    tax = ops.get_tax()
+    return {
+        "percent": float(tax["percent"]),
+        "region_label": tax["region_label"],
+    }
+
+
+@router.post("/org/pricing/preview")
+async def preview_pricing(
+    req: PricingPreviewRequest,
+    _org: OrgContext = Depends(require_org_owner),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    try:
+        priced = resolve_charge(
+            ops, req.amount_usd, coupon_code=req.coupon_code
+        )
+    except ValueError as exc:
+        raise _pricing_http_error(exc) from exc
+    return priced["pricing"]
 
 
 @router.post("/org/checkout")
@@ -62,30 +103,59 @@ async def checkout_plan(
     if not plan:
         raise HTTPException(404, "plan_not_found")
 
+    base = float(plan["api_credits_usd"])
+    try:
+        priced = resolve_charge(ops, base, coupon_code=req.coupon_code)
+    except ValueError as exc:
+        raise _pricing_http_error(exc) from exc
+
+    description = f"{plan['name']} package (monthly){priced['description_suffix']}"
+    amount = float(priced["total_usd"])
+
     if stripe_enabled():
-        amount = float(plan["api_credits_usd"])
         if amount <= 0:
             return fulfill_plan(
-                org.org_id, req.plan_id, actor.username,
-                commerce=commerce, orgs=orgs, users=users, ops=ops,
+                org.org_id,
+                req.plan_id,
+                actor.username,
+                amount_usd=0,
+                invoice_description=description,
+                commerce=commerce,
+                orgs=orgs,
+                users=users,
+                ops=ops,
             )
         try:
             session = create_plan_subscription_checkout(
                 org_id=org.org_id,
                 amount_usd=amount,
-                description=f"{plan['name']} package (monthly)",
+                description=description,
                 plan_id=req.plan_id,
                 success_path="/onboarding/checkout?session_id={CHECKOUT_SESSION_ID}",
                 cancel_path=f"/onboarding/checkout?plan={req.plan_id}&cancelled=1",
                 flow="checkout",
+                extra_metadata={
+                    "base_usd": priced["base_usd"],
+                    "discount_usd": priced["discount_usd"],
+                    "tax_usd": priced["tax_usd"],
+                    "tax_percent": priced["tax_percent"],
+                    "coupon_code": priced["coupon_code"],
+                },
             )
         except Exception as exc:
             raise HTTPException(502, f"stripe_session_failed:{exc}") from exc
-        return session
+        return {**session, "pricing": priced["pricing"]}
 
     return fulfill_plan(
-        org.org_id, req.plan_id, actor.username,
-        commerce=commerce, orgs=orgs, users=users, ops=ops,
+        org.org_id,
+        req.plan_id,
+        actor.username,
+        amount_usd=amount,
+        invoice_description=description,
+        commerce=commerce,
+        orgs=orgs,
+        users=users,
+        ops=ops,
     )
 
 
@@ -129,6 +199,13 @@ async def confirm_checkout(
         except Exception:
             period_end = None
 
+    charged = None
+    if session.get("amount_total"):
+        charged = float(session["amount_total"]) / 100.0
+    elif meta.get("amount_usd"):
+        charged = float(meta["amount_usd"])
+    description = meta.get("description") or None
+
     try:
         return fulfill_plan(
             org.org_id,
@@ -138,6 +215,8 @@ async def confirm_checkout(
             stripe_customer_id=session.get("customer_id") or "",
             stripe_subscription_id=sub_id,
             current_period_end=period_end,
+            amount_usd=charged,
+            invoice_description=description,
             commerce=commerce,
             orgs=orgs,
             users=users,

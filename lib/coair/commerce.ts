@@ -162,17 +162,56 @@ export async function denyAccessRequest(token: string, requestId: string) {
     return mapAccessRequest(payload);
 }
 
-export async function checkoutPlan(token: string, planId: string) {
+export type PricingPreview = {
+    base_usd: number;
+    discount_usd: number;
+    subtotal_usd: number;
+    tax_percent: number;
+    tax_usd: number;
+    total_usd: number;
+    coupon_code: string;
+    region_label: string;
+};
+
+export async function readOrgTax(token: string) {
+    return coairFetch<{ percent: number; region_label: string }>("/org/tax", {
+        token,
+    });
+}
+
+export async function previewPricing(
+    token: string,
+    input: { amount_usd: number; coupon_code?: string }
+) {
+    return coairFetch<PricingPreview>("/org/pricing/preview", {
+        method: "POST",
+        token,
+        body: {
+            amount_usd: input.amount_usd,
+            coupon_code: input.coupon_code?.trim() || undefined,
+        },
+    });
+}
+
+export async function checkoutPlan(
+    token: string,
+    planId: string,
+    options: { coupon_code?: string } = {}
+) {
     const payload = await coairFetch<{
         checkout_url?: string;
         session_id?: string;
         subscription?: { plan_id: string; needs_checkout: boolean };
         plan?: { id: string; name: string };
         invoice?: { id: string };
+        pricing?: PricingPreview;
     }>("/org/checkout", {
         method: "POST",
         token,
-        body: { plan_id: planId },
+        body: {
+            plan_id: planId,
+            coupon_code: options.coupon_code?.trim() || undefined,
+        },
     });
     if (payload.checkout_url && typeof window !== "undefined") {
         window.location.assign(payload.checkout_url);

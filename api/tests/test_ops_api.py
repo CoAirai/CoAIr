@@ -94,10 +94,46 @@ def test_checkout_writes_paid_invoice_and_audit(client, acme, stores):
     invoices = client.get("/api/org/invoices", headers=owner).json()["invoices"]
     assert invoices[0]["status"] == "paid"
     assert invoices[0]["company_id"] == acme["org"]["org_id"]
+    # foundation $50 + default 5% tax
+    assert invoices[0]["amount_usd"] == 52.5
 
     ops_headers = _auth(client, "ops")
     audit = client.get("/api/admin/audit", headers=ops_headers).json()["events"]
     assert any(event["action"] == "company.plan_change" for event in audit)
+
+
+def test_checkout_applies_coupon_and_custom_tax(client, acme):
+    ops = _auth(client, "ops")
+    owner = _auth(client, "acme-admin")
+    client.put(
+        "/api/admin/tax",
+        headers=ops,
+        json={"percent": 10, "region_label": "UAE"},
+    )
+    client.post(
+        "/api/admin/coupons",
+        headers=ops,
+        json={"code": "SAVE20", "discount_type": "percent", "discount_value": 20},
+    )
+    preview = client.post(
+        "/api/org/pricing/preview",
+        headers=owner,
+        json={"amount_usd": 100, "coupon_code": "SAVE20"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["total_usd"] == 88.0
+
+    checkout = client.post(
+        "/api/org/checkout",
+        headers=owner,
+        json={"plan_id": "foundation", "coupon_code": "SAVE20"},
+    )
+    assert checkout.status_code == 200
+    invoice = client.get("/api/org/invoices", headers=owner).json()["invoices"][0]
+    # foundation $50 - 20% = $40 + 10% tax = $44
+    assert invoice["amount_usd"] == 44.0
+    assert "SAVE20" in invoice["description"]
+    assert "10% UAE" in invoice["description"]
 
 
 def test_admin_lists_invoices(client, acme):

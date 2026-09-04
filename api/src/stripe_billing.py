@@ -93,7 +93,7 @@ def create_checkout_session(
                 },
             }
         ],
-        metadata={**metadata, "org_id": org_id},
+        metadata={**metadata, "org_id": org_id, "amount_usd": str(amount_usd)},
         client_reference_id=org_id[:200],
     )
     url = getattr(session, "url", None) or ""
@@ -111,6 +111,7 @@ def create_plan_subscription_checkout(
     success_path: str,
     cancel_path: str,
     flow: str = "billing",
+    extra_metadata: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
     """Monthly auto-renewing Stripe Checkout for a company package."""
     if not stripe_enabled():
@@ -149,6 +150,11 @@ def create_plan_subscription_checkout(
             "org_id": org_id,
             "description": description[:200],
             "amount_usd": str(amount_usd),
+            **{
+                key: str(value)
+                for key, value in (extra_metadata or {}).items()
+                if value is not None and str(value) != ""
+            },
         },
         subscription_data={
             "metadata": {
@@ -257,6 +263,8 @@ def fulfill_plan(
     stripe_customer_id: str = "",
     stripe_subscription_id: str = "",
     current_period_end: Optional[str] = None,
+    amount_usd: Optional[float] = None,
+    invoice_description: Optional[str] = None,
     commerce: Optional[CommerceStore] = None,
     orgs: Optional[OrgStore] = None,
     users: Optional[UserStore] = None,
@@ -328,11 +336,13 @@ def fulfill_plan(
         commerce=commerce,
         reset_usage=True,
     )
+    charged = float(amount_usd) if amount_usd is not None else credits
+    description = invoice_description or f"{plan['name']} package"
     invoice = ops.create_invoice(
         org_id,
-        amount_usd=credits,
+        amount_usd=charged,
         status="paid",
-        description=f"{plan['name']} package",
+        description=description,
     )
     ops.record_audit(
         actor=actor,

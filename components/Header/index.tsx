@@ -41,15 +41,44 @@ const Header = ({ onOpenSidebar }: Props) => {
     const { session, signOut } = useAuth();
     const { users } = useAdminData();
     const { activeWorkspaceUserId, setActiveWorkspaceUserId } = useChat();
-    const { enabled: liveEnabled, projects, selectProject } = useLiveWorkspace();
+    const {
+        enabled: liveEnabled,
+        projects,
+        selectProject,
+        teammates: liveTeammates,
+    } = useLiveWorkspace();
 
-    const teammates = useMemo(
-        () =>
-            session?.companyId
-                ? activeWorkspaceUsers(users, session.companyId)
-                : [],
-        [session?.companyId, users]
-    );
+    const teammates = useMemo(() => {
+        if (liveEnabled && session?.role === "company_admin") {
+            if (!session.companyId) return [];
+            if (liveTeammates.length > 0) {
+                return activeWorkspaceUsers(liveTeammates, session.companyId);
+            }
+            if (session.userId) {
+                return [
+                    {
+                        id: session.userId,
+                        name: session.name || session.userId,
+                        companyId: session.companyId,
+                        status: "active",
+                        role: "admin",
+                    },
+                ];
+            }
+            return [];
+        }
+        return session?.companyId
+            ? activeWorkspaceUsers(users, session.companyId)
+            : [];
+    }, [
+        liveEnabled,
+        liveTeammates,
+        session?.companyId,
+        session?.name,
+        session?.role,
+        session?.userId,
+        users,
+    ]);
     const workspaceUser =
         teammates.find((user) => user.id === activeWorkspaceUserId) ??
         teammates.find((user) => user.id === session?.userId) ??

@@ -453,6 +453,21 @@ class OpsStore:
             ).fetchone()
         return self._coupon_row(row) if row else None
 
+    def get_active_coupon_by_code(self, code: str) -> Dict[str, Any]:
+        clean = (code or "").strip().upper()
+        if not clean:
+            raise ValueError("coupon_code_required")
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM coupons WHERE code=?", [clean]
+            ).fetchone()
+        if not row:
+            raise ValueError("coupon_not_found")
+        coupon = self._coupon_row(row)
+        if not coupon["active"]:
+            raise ValueError("coupon_inactive")
+        return coupon
+
     @staticmethod
     def _coupon_row(row: DbRow) -> Dict[str, Any]:
         return {

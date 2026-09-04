@@ -5,7 +5,13 @@ import { FormEvent, useState } from "react";
 
 import PageHeader from "@/components/Admin/PageHeader";
 import StatusBadge from "@/components/Admin/StatusBadge";
-import { bytesToGb, planLabel } from "@/lib/admin/liveHelpers";
+import {
+    bytesToGb,
+    companyStorageLimitBytes,
+    companyStorageUsedBytes,
+    planLabel,
+} from "@/lib/admin/liveHelpers";
+import { getPlanById } from "@/lib/admin/plans";
 import type { CompanyStatus } from "@/lib/admin/types";
 import { createAdminOrg } from "@/lib/coair/admin";
 import { apiErrorMessage } from "@/lib/coair/commerce";
@@ -41,32 +47,29 @@ const LiveCompaniesPage = () => {
     const [planType, setPlanType] = useState<"demo" | "legacy">("demo");
     const [createError, setCreateError] = useState<string | null>(null);
     const [createSuccess, setCreateSuccess] = useState<string | null>(null);
-    const tokensByOrg = new Map<
-        string,
-        { used: number; limit: number; storageUsed: number; storageLimit: number }
-    >();
-    for (const user of users) {
-        const orgId = user.org_id ?? "";
-        const current = tokensByOrg.get(orgId) ?? {
-            used: 0,
-            limit: 0,
-            storageUsed: 0,
-            storageLimit: 0,
-        };
-        current.used += user.used_tokens ?? 0;
-        current.limit += user.token_limit ?? 0;
-        current.storageUsed += user.storage_used_bytes ?? 0;
-        current.storageLimit += user.storage_limit_bytes ?? 0;
-        tokensByOrg.set(orgId, current);
-    }
+
     const rows: CompanyRow[] = orgs.map((org) => {
-        const tokens = tokensByOrg.get(org.org_id);
+        const members = users.filter((user) => user.org_id === org.org_id);
+        const tokensUsed = members.reduce(
+            (sum, user) => sum + (user.used_tokens ?? 0),
+            0
+        );
+        const tokensAllocated = members.reduce(
+            (sum, user) => sum + (user.token_limit ?? 0),
+            0
+        );
+        const planId = org.subscription?.plan_id || org.default_plan_type;
+        const plan = getPlanById(planId || "");
         const tokenLimit =
-            tokens?.limit ||
             org.default_token_limit ||
+            tokensAllocated ||
+            plan?.queryCap ||
             0;
-        const planId =
-            org.subscription?.plan_id || org.default_plan_type;
+        const storageLimit = companyStorageLimitBytes({
+            defaultStorageBytes: org.default_storage_bytes,
+            planStorageGb: plan?.storageLimitGb,
+            memberLimits: members.map((user) => user.storage_limit_bytes),
+        });
         const subStatus = org.subscription?.status;
         let status: CompanyStatus = org.archived_at
             ? "suspended"
@@ -81,11 +84,9 @@ const LiveCompaniesPage = () => {
             members: org.counts?.members ?? "—",
             projects: org.counts?.projects ?? "—",
             planName: planLabel(planId),
-            storageUsed: bytesToGb(tokens?.storageUsed),
-            storageLimit: bytesToGb(
-                tokens?.storageLimit || org.default_storage_bytes
-            ),
-            tokensUsed: tokens?.used ?? 0,
+            storageUsed: bytesToGb(companyStorageUsedBytes(members)),
+            storageLimit: bytesToGb(storageLimit),
+            tokensUsed,
             tokenLimit,
             status,
             created: org.created_at
