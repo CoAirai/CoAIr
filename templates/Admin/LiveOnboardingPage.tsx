@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AccessRequestsPanel from "@/components/Admin/AccessRequestsPanel";
 import PageHeader from "@/components/Admin/PageHeader";
+import { AdminOnboardingTableSkeleton } from "@/components/Skeleton/sections";
 import { pendingAccessRequests } from "@/lib/admin/accessRequests";
 import type { AccessRequest } from "@/lib/admin/accessRequests";
 import { useAuth } from "@/context/AuthContext";
@@ -52,43 +53,47 @@ const LiveOnboardingPage = () => {
                 title="Onboarding"
                 description="Approve public access requests. The owner then signs in, chooses a package, and pays with Stripe Checkout."
             />
-            <AccessRequestsPanel
-                pending={pending}
-                error={error}
-                message={message}
-                readOnly={!requestsReady}
-                onApprove={(requestId) => {
-                    void (async () => {
-                        try {
-                            const result = await approveAccessRequest(
-                                token,
-                                requestId
-                            );
-                            setMessage(
-                                `Approved ${result.owner.username}. They must activate via the emailed 6-digit code, set a password, then sign in.`
-                            );
-                            setError(null);
-                            await loadRequests();
-                        } catch (err) {
-                            setMessage(null);
-                            setError(apiErrorMessage(err));
-                        }
-                    })();
-                }}
-                onDeny={(requestId) => {
-                    void (async () => {
-                        try {
-                            await denyAccessRequest(token, requestId);
-                            setMessage("Request denied");
-                            setError(null);
-                            await loadRequests();
-                        } catch (err) {
-                            setMessage(null);
-                            setError(apiErrorMessage(err));
-                        }
-                    })();
-                }}
-            />
+            <AdminOnboardingTableSkeleton
+                loading={!requestsReady && pending.length === 0}
+            >
+                <AccessRequestsPanel
+                    pending={pending}
+                    error={error}
+                    message={message}
+                    readOnly={!requestsReady}
+                    onApprove={(requestId) => {
+                        void (async () => {
+                            try {
+                                const result = await approveAccessRequest(
+                                    token,
+                                    requestId
+                                );
+                                setMessage(
+                                    `Approved ${result.owner.username}. They must activate via the emailed 6-digit code, set a password, then sign in.`
+                                );
+                                setError(null);
+                                await loadRequests();
+                            } catch (err) {
+                                setMessage(null);
+                                setError(apiErrorMessage(err));
+                            }
+                        })();
+                    }}
+                    onDeny={(requestId) => {
+                        void (async () => {
+                            try {
+                                await denyAccessRequest(token, requestId);
+                                setMessage("Request denied");
+                                setError(null);
+                                await loadRequests();
+                            } catch (err) {
+                                setMessage(null);
+                                setError(apiErrorMessage(err));
+                            }
+                        })();
+                    }}
+                />
+            </AdminOnboardingTableSkeleton>
         </div>
     );
 };

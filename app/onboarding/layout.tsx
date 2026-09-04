@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { OnboardingCheckoutSkeleton } from "@/components/Skeleton/sections";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { homeUrlForRole, homeUrlForSession } from "@/lib/auth/hosts";
@@ -42,11 +43,7 @@ export default function OnboardingLayout({
     }, [ready, session, needsCheckout, router]);
 
     if (!ready || !session?.companyId || !needsCheckout) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-weak-50 text-label-md text-sub-600">
-                Preparing checkout…
-            </div>
-        );
+        return <OnboardingCheckoutSkeleton />;
     }
 
     return <>{children}</>;

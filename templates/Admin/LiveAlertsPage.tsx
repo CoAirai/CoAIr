@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
+import { AdminAlertsSkeleton } from "@/components/Skeleton/sections";
 import {
     bytesToGb,
     companyStorageLimitBytes,
@@ -97,63 +98,63 @@ const LiveAlertsPage = () => {
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 p-5">
-                    <select
-                        value={kind}
-                        onChange={(event) =>
-                            setKind(event.target.value as Kind | "all")
-                        }
-                        className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                    >
-                        <option value="all">All kinds</option>
-                        <option value="tokens">Tokens</option>
-                        <option value="storage">Storage</option>
-                    </select>
-                </div>
-                <div className="divide-y divide-stroke-soft-200">
-                    {loading && alerts.length === 0 ? (
-                        <p className="px-5 py-8 text-label-sm text-sub-600">
-                            Loading quotas…
-                        </p>
-                    ) : null}
-                    {visible.map((alert) => (
-                        <div
-                            key={alert.id}
-                            className="flex flex-wrap items-start justify-between gap-3 px-5 py-4"
+            <AdminAlertsSkeleton loading={loading && alerts.length === 0}>
+                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                    <div className="border-b border-stroke-soft-200 p-5">
+                        <select
+                            value={kind}
+                            onChange={(event) =>
+                                setKind(event.target.value as Kind | "all")
+                            }
+                            className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
                         >
-                            <div>
-                                <Link
-                                    href={`/admin/companies/${alert.companyId}`}
-                                    className="text-label-sm text-strong-950 hover:text-blue-500"
-                                >
-                                    {alert.companyName}
-                                </Link>
-                                <p className="mt-1 text-label-sm text-sub-600">
-                                    {alert.message}
-                                </p>
-                                <p className="mt-1 text-label-xs text-sub-600">
-                                    {alert.kind} · {alert.threshold}% threshold
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm"
-                                onClick={() =>
-                                    setAcked((current) => new Set(current).add(alert.id))
-                                }
+                            <option value="all">All kinds</option>
+                            <option value="tokens">Tokens</option>
+                            <option value="storage">Storage</option>
+                        </select>
+                    </div>
+                    <div className="divide-y divide-stroke-soft-200">
+                        {visible.map((alert) => (
+                            <div
+                                key={alert.id}
+                                className="flex flex-wrap items-start justify-between gap-3 px-5 py-4"
                             >
-                                Acknowledge
-                            </button>
-                        </div>
-                    ))}
-                    {!loading && visible.length === 0 ? (
-                        <p className="px-5 py-8 text-label-sm text-sub-600">
-                            No companies are at or above 80% of quota.
-                        </p>
-                    ) : null}
-                </div>
-            </section>
+                                <div>
+                                    <Link
+                                        href={`/admin/companies/${alert.companyId}`}
+                                        className="text-label-sm text-strong-950 hover:text-blue-500"
+                                    >
+                                        {alert.companyName}
+                                    </Link>
+                                    <p className="mt-1 text-label-sm text-sub-600">
+                                        {alert.message}
+                                    </p>
+                                    <p className="mt-1 text-label-xs text-sub-600">
+                                        {alert.kind} · {alert.threshold}% threshold
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm"
+                                    onClick={() =>
+                                        setAcked(
+                                            (current) =>
+                                                new Set(current).add(alert.id)
+                                        )
+                                    }
+                                >
+                                    Acknowledge
+                                </button>
+                            </div>
+                        ))}
+                        {!loading && visible.length === 0 ? (
+                            <p className="px-5 py-8 text-label-sm text-sub-600">
+                                No companies are at or above 80% of quota.
+                            </p>
+                        ) : null}
+                    </div>
+                </section>
+            </AdminAlertsSkeleton>
         </div>
     );
 };

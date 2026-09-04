@@ -8,6 +8,7 @@ import ConfirmModal from "@/components/Admin/ConfirmModal";
 import OrgRoleSelect from "@/components/Admin/OrgRoleSelect";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import RightsToggleCells from "@/components/Admin/RightsToggleCells";
+import { AdminCompanyDetailSkeleton } from "@/components/Skeleton/sections";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import type { Invoice } from "@/lib/admin/billingTypes";
@@ -356,7 +357,9 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
 
     if (loading && !org) {
         return (
-            <p className="text-label-sm text-sub-600">Loading company…</p>
+            <AdminCompanyDetailSkeleton loading>
+                <div />
+            </AdminCompanyDetailSkeleton>
         );
     }
 

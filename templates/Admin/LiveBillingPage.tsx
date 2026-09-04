@@ -5,6 +5,7 @@ import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from "
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
+import { AdminBillingTablesSkeleton } from "@/components/Skeleton/sections";
 import { useAuth } from "@/context/AuthContext";
 import { filterInvoices, getBillingStats } from "@/lib/admin/billingSelectors";
 import type { Invoice, InvoiceStatus } from "@/lib/admin/billingTypes";
@@ -302,85 +303,100 @@ const LiveBillingPage = () => {
                 />
             </div>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 p-5">
-                    <h2 className="text-label-lg text-strong-950">
-                        Company packages
-                    </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Live subscription status from company billing (auto-renew,
-                        cancel at period end).
-                    </p>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Company</th>
-                                <th className="px-5 py-3 font-medium">Plan</th>
-                                <th className="px-5 py-3 font-medium">Status</th>
-                                <th className="px-5 py-3 font-medium">
-                                    Auto-renew
-                                </th>
-                                <th className="px-5 py-3 font-medium">
-                                    Period end
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {subscriptions.map((sub) => (
-                                <tr
-                                    key={sub.org_id || sub.plan_id}
-                                    className="text-label-sm"
-                                >
-                                    <td className="px-5 py-4">
-                                        {sub.org_id ? (
-                                            <Link
-                                                href={`/admin/companies/${sub.org_id}?tab=billing`}
-                                                className="text-strong-950 hover:text-blue-500"
-                                            >
-                                                {sub.org_name || sub.org_id}
-                                            </Link>
-                                        ) : (
-                                            "—"
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {planLabel(sub.plan_id)}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <StatusBadge
-                                            status={sub.status || "active"}
-                                        />
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {sub.auto_renew
-                                            ? "On"
-                                            : sub.cancel_at_period_end
-                                              ? "Cancels at period end"
-                                              : "Off"}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {sub.current_period_end
-                                            ? formatDate(sub.current_period_end)
-                                            : "—"}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                {invoicesReady && subscriptions.length === 0 ? (
-                    <p className="px-5 py-12 text-center text-label-sm text-sub-600">
-                        No company packages yet.
-                    </p>
-                ) : null}
-            </section>
-
-            <form
-                onSubmit={(event) => void onSaveTax(event)}
-                className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+            <AdminBillingTablesSkeleton
+                loading={
+                    !invoicesReady &&
+                    invoices.length === 0 &&
+                    subscriptions.length === 0
+                }
             >
+                <>
+                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                        <div className="border-b border-stroke-soft-200 p-5">
+                            <h2 className="text-label-lg text-strong-950">
+                                Company packages
+                            </h2>
+                            <p className="mt-1 text-label-xs text-sub-600">
+                                Live subscription status from company billing
+                                (auto-renew, cancel at period end).
+                            </p>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[900px] text-left">
+                                <thead className="bg-weak-50 text-label-xs text-sub-600">
+                                    <tr>
+                                        <th className="px-5 py-3 font-medium">
+                                            Company
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">Plan</th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Status
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Auto-renew
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Period end
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-stroke-soft-200">
+                                    {subscriptions.map((sub) => (
+                                        <tr
+                                            key={sub.org_id || sub.plan_id}
+                                            className="text-label-sm"
+                                        >
+                                            <td className="px-5 py-4">
+                                                {sub.org_id ? (
+                                                    <Link
+                                                        href={`/admin/companies/${sub.org_id}?tab=billing`}
+                                                        className="text-strong-950 hover:text-blue-500"
+                                                    >
+                                                        {sub.org_name ||
+                                                            sub.org_id}
+                                                    </Link>
+                                                ) : (
+                                                    "—"
+                                                )}
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {planLabel(sub.plan_id)}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <StatusBadge
+                                                    status={sub.status || "active"}
+                                                />
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {sub.auto_renew
+                                                    ? "On"
+                                                    : sub.cancel_at_period_end
+                                                      ? "Cancels at period end"
+                                                      : "Off"}
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {sub.current_period_end
+                                                    ? formatDate(
+                                                          sub.current_period_end
+                                                      )
+                                                    : "—"}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {invoicesReady && subscriptions.length === 0 ? (
+                            <p className="px-5 py-12 text-center text-label-sm text-sub-600">
+                                No company packages yet.
+                            </p>
+                        ) : null}
+                    </section>
+
+                    <form
+                        onSubmit={(event) => void onSaveTax(event)}
+                        className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+                    >
                 <h2 className="text-label-lg text-strong-950">Tax settings</h2>
                 <p className="mt-1 text-label-xs text-sub-600">
                     Applies to new invoices generated after saving.
@@ -428,192 +444,240 @@ const LiveBillingPage = () => {
                         </p>
                     ) : null}
                 </div>
-            </form>
+                    </form>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 p-5">
-                    <h2 className="text-label-lg text-strong-950">Invoices</h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Retry past-due payments and issue refunds.
-                    </p>
-                </div>
-                <div className="grid gap-3 border-b border-stroke-soft-200 p-5 md:grid-cols-[minmax(240px,1fr)_200px]">
-                    <input
-                        type="search"
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder="Search by company name"
-                        className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                    />
-                    <select
-                        value={status}
-                        onChange={(event) =>
-                            setStatus(event.target.value as InvoiceStatus | "all")
-                        }
-                        className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                    >
-                        <option value="all">All statuses</option>
-                        <option value="paid">Paid</option>
-                        <option value="open">Open</option>
-                        <option value="past_due">Past due</option>
-                        <option value="refunded">Refunded</option>
-                    </select>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[960px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Invoice</th>
-                                <th className="px-5 py-3 font-medium">Company</th>
-                                <th className="px-5 py-3 font-medium">Amount</th>
-                                <th className="px-5 py-3 font-medium">Status</th>
-                                <th className="px-5 py-3 font-medium">Issued</th>
-                                <th className="px-5 py-3 font-medium">Due</th>
-                                <th className="px-5 py-3 font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {filteredInvoices.map((invoice) => (
-                                <Fragment key={invoice.id}>
-                                    <tr className="text-label-sm">
-                                        <td className="px-5 py-4 text-strong-950">
-                                            {invoice.id}
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {companyNameById[invoice.companyId] ??
-                                                invoice.companyId}
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {currencyFormatter.format(invoice.amountUsd)}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <StatusBadge
-                                                status={invoice.status.replaceAll(
-                                                    "_",
-                                                    " "
-                                                )}
-                                            />
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {formatDate(invoice.issuedAt)}
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {formatDate(invoice.dueAt)}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex flex-wrap gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setViewInvoice(invoice);
-                                                        if (!token) return;
-                                                        void getAdminInvoice(
-                                                            token,
-                                                            invoice.id
-                                                        )
-                                                            .then(setViewInvoice)
-                                                            .catch(() => undefined);
-                                                    }}
-                                                    className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
-                                                >
-                                                    View
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        downloadInvoicePdf(
-                                                            invoice,
-                                                            companyNameById[
-                                                                invoice.companyId
-                                                            ]
-                                                        )
-                                                    }
-                                                    className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
-                                                >
-                                                    Download
-                                                </button>
-                                                {invoice.status === "past_due" ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            void onRetry(invoice.id)
-                                                        }
-                                                        className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
-                                                    >
-                                                        Retry
-                                                    </button>
-                                                ) : null}
-                                                {invoice.status === "paid" ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setRefundTargetId(invoice.id);
-                                                            setRefundReason("");
-                                                        }}
-                                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
-                                                    >
-                                                        Refund
-                                                    </button>
-                                                ) : null}
-                                            </div>
-                                        </td>
+                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                        <div className="border-b border-stroke-soft-200 p-5">
+                            <h2 className="text-label-lg text-strong-950">
+                                Invoices
+                            </h2>
+                            <p className="mt-1 text-label-xs text-sub-600">
+                                Retry past-due payments and issue refunds.
+                            </p>
+                        </div>
+                        <div className="grid gap-3 border-b border-stroke-soft-200 p-5 md:grid-cols-[minmax(240px,1fr)_200px]">
+                            <input
+                                type="search"
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                placeholder="Search by company name"
+                                className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                            />
+                            <select
+                                value={status}
+                                onChange={(event) =>
+                                    setStatus(
+                                        event.target.value as InvoiceStatus | "all"
+                                    )
+                                }
+                                className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                            >
+                                <option value="all">All statuses</option>
+                                <option value="paid">Paid</option>
+                                <option value="open">Open</option>
+                                <option value="past_due">Past due</option>
+                                <option value="refunded">Refunded</option>
+                            </select>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[960px] text-left">
+                                <thead className="bg-weak-50 text-label-xs text-sub-600">
+                                    <tr>
+                                        <th className="px-5 py-3 font-medium">
+                                            Invoice
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Company
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Amount
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Status
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Issued
+                                        </th>
+                                        <th className="px-5 py-3 font-medium">Due</th>
+                                        <th className="px-5 py-3 font-medium">
+                                            Actions
+                                        </th>
                                     </tr>
-                                    {refundTargetId === invoice.id ? (
-                                        <tr>
-                                            <td
-                                                colSpan={7}
-                                                className="bg-weak-50 px-5 py-4"
-                                            >
-                                                <div className="flex flex-wrap items-end gap-3">
-                                                    <input
-                                                        autoFocus
-                                                        value={refundReason}
-                                                        onChange={(event) =>
-                                                            setRefundReason(
-                                                                event.target.value
-                                                            )
-                                                        }
-                                                        placeholder="Customer requested refund"
-                                                        className="h-10 min-w-[240px] flex-1 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                </thead>
+                                <tbody className="divide-y divide-stroke-soft-200">
+                                    {filteredInvoices.map((invoice) => (
+                                        <Fragment key={invoice.id}>
+                                            <tr className="text-label-sm">
+                                                <td className="px-5 py-4 text-strong-950">
+                                                    {invoice.id}
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {companyNameById[
+                                                        invoice.companyId
+                                                    ] ?? invoice.companyId}
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {currencyFormatter.format(
+                                                        invoice.amountUsd
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <StatusBadge
+                                                        status={invoice.status.replaceAll(
+                                                            "_",
+                                                            " "
+                                                        )}
                                                     />
-                                                    <button
-                                                        type="button"
-                                                        disabled={!refundReason.trim()}
-                                                        onClick={() =>
-                                                            void confirmRefund(invoice.id)
-                                                        }
-                                                        className="h-10 rounded-xl bg-red-500 px-3 text-label-sm text-white-0 hover:bg-red-600 disabled:opacity-50"
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {formatDate(invoice.issuedAt)}
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {formatDate(invoice.dueAt)}
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setViewInvoice(
+                                                                    invoice
+                                                                );
+                                                                if (!token)
+                                                                    return;
+                                                                void getAdminInvoice(
+                                                                    token,
+                                                                    invoice.id
+                                                                )
+                                                                    .then(
+                                                                        setViewInvoice
+                                                                    )
+                                                                    .catch(
+                                                                        () =>
+                                                                            undefined
+                                                                    );
+                                                            }}
+                                                            className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
+                                                        >
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                downloadInvoicePdf(
+                                                                    invoice,
+                                                                    companyNameById[
+                                                                        invoice
+                                                                            .companyId
+                                                                    ]
+                                                                )
+                                                            }
+                                                            className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
+                                                        >
+                                                            Download
+                                                        </button>
+                                                        {invoice.status ===
+                                                        "past_due" ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    void onRetry(
+                                                                        invoice.id
+                                                                    )
+                                                                }
+                                                                className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
+                                                            >
+                                                                Retry
+                                                            </button>
+                                                        ) : null}
+                                                        {invoice.status ===
+                                                        "paid" ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setRefundTargetId(
+                                                                        invoice.id
+                                                                    );
+                                                                    setRefundReason(
+                                                                        ""
+                                                                    );
+                                                                }}
+                                                                className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
+                                                            >
+                                                                Refund
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {refundTargetId === invoice.id ? (
+                                                <tr>
+                                                    <td
+                                                        colSpan={7}
+                                                        className="bg-weak-50 px-5 py-4"
                                                     >
-                                                        Confirm refund
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setRefundTargetId(null);
-                                                            setRefundReason("");
-                                                        }}
-                                                        className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : null}
-                                </Fragment>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                {filteredInvoices.length === 0 ? (
-                    <p className="px-5 py-12 text-center text-label-sm text-sub-600">
-                        No invoices found
-                    </p>
-                ) : null}
-                <div className="border-t border-stroke-soft-200 px-5 py-3 text-label-xs text-sub-600">
-                    Showing {filteredInvoices.length} of {invoices.length} invoices
-                </div>
-            </section>
+                                                        <div className="flex flex-wrap items-end gap-3">
+                                                            <input
+                                                                autoFocus
+                                                                value={refundReason}
+                                                                onChange={(event) =>
+                                                                    setRefundReason(
+                                                                        event.target
+                                                                            .value
+                                                                    )
+                                                                }
+                                                                placeholder="Customer requested refund"
+                                                                className="h-10 min-w-[240px] flex-1 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                disabled={
+                                                                    !refundReason.trim()
+                                                                }
+                                                                onClick={() =>
+                                                                    void confirmRefund(
+                                                                        invoice.id
+                                                                    )
+                                                                }
+                                                                className="h-10 rounded-xl bg-red-500 px-3 text-label-sm text-white-0 hover:bg-red-600 disabled:opacity-50"
+                                                            >
+                                                                Confirm refund
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setRefundTargetId(
+                                                                        null
+                                                                    );
+                                                                    setRefundReason(
+                                                                        ""
+                                                                    );
+                                                                }}
+                                                                className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ) : null}
+                                        </Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {filteredInvoices.length === 0 ? (
+                            <p className="px-5 py-12 text-center text-label-sm text-sub-600">
+                                No invoices found
+                            </p>
+                        ) : null}
+                        <div className="border-t border-stroke-soft-200 px-5 py-3 text-label-xs text-sub-600">
+                            Showing {filteredInvoices.length} of {invoices.length}{" "}
+                            invoices
+                        </div>
+                    </section>
+                </>
+            </AdminBillingTablesSkeleton>
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
                 <div className="border-b border-stroke-soft-200 p-5">

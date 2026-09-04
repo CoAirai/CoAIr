@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 
+import { AdminUsersTableSkeleton } from "@/components/Skeleton/sections";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import OrgRoleSelect from "@/components/Admin/OrgRoleSelect";
 import { useAuth } from "@/context/AuthContext";
@@ -146,259 +147,251 @@ const LiveUsersPage = () => {
                 </button>
             </form>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="grid gap-3 border-b border-stroke-soft-200 p-5 md:grid-cols-2">
-                    <input
-                        type="search"
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder="Search by name or username"
-                        className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                    />
-                    <select
-                        value={companyId}
-                        onChange={(event) => setCompanyId(event.target.value)}
-                        className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                    >
-                        <option value="all">All companies</option>
-                        {orgs.map((org) => (
-                            <option key={org.org_id} value={org.org_id}>
-                                {org.name}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[960px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Name</th>
-                                <th className="px-5 py-3 font-medium">
-                                    Username
-                                </th>
-                                <th className="px-5 py-3 font-medium">
-                                    Company
-                                </th>
-                                <th className="px-5 py-3 font-medium">Role</th>
-                                <th className="px-5 py-3 font-medium">Status</th>
-                                <th className="px-5 py-3 font-medium">
-                                    Actions
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {loading && rows.length === 0 ? (
-                                <tr>
-                                    <td
-                                        className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={6}
-                                    >
-                                        Loading users…
-                                    </td>
-                                </tr>
-                            ) : null}
-                            {rows.map((user) => (
-                                <tr
-                                    key={user.username}
-                                    className="text-label-sm"
-                                >
-                                    <td className="px-5 py-4 text-strong-950">
-                                        {user.name}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {user.username}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {user.companyId ? (
-                                            <Link
-                                                href={`/admin/companies/${user.companyId}?tab=users`}
-                                                className="hover:text-blue-500"
-                                            >
-                                                {user.company}
-                                            </Link>
-                                        ) : (
-                                            user.company
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4 capitalize text-sub-600">
-                                        {user.companyId ? (
-                                            <OrgRoleSelect
-                                                value={user.orgRole || "member"}
-                                                disabled={
-                                                    user.orgRole === "owner" &&
-                                                    (ownerCountByOrg.get(
-                                                        user.companyId
-                                                    ) ?? 0) <= 1
-                                                }
-                                                onChange={(role) =>
-                                                    void addAdminOrgMember(
-                                                        token,
-                                                        user.companyId,
-                                                        user.username,
-                                                        role
-                                                    )
-                                                        .then(() => {
-                                                            setMessage(
-                                                                `Role updated for ${user.username}`
-                                                            );
-                                                            return refresh();
-                                                        })
-                                                        .catch((err) =>
-                                                            setActionError(
-                                                                apiErrorMessage(
-                                                                    err
-                                                                )
-                                                            )
-                                                        )
-                                                }
-                                            />
-                                        ) : (
-                                            user.platformRole
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <StatusBadge status={user.status} />
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <div className="flex flex-wrap gap-3">
-                                            <button
-                                                type="button"
-                                                className="text-label-xs text-blue-500"
-                                                onClick={() =>
-                                                    void setActive(
-                                                        user.username,
-                                                        user.status ===
-                                                            "suspended"
-                                                    )
-                                                }
-                                            >
-                                                {user.status === "suspended"
-                                                    ? "Reactivate"
-                                                    : "Deactivate"}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="text-label-xs text-blue-500"
-                                                onClick={() =>
-                                                    void startLiveImpersonation(
-                                                        {
-                                                            adminSession:
-                                                                session!,
-                                                            token,
-                                                            username:
-                                                                user.username,
-                                                            applySession,
-                                                        }
-                                                    )
-                                                        .then(({ href }) =>
-                                                            portalPush(
-                                                                router,
-                                                                href
-                                                            )
-                                                        )
-                                                        .catch((err) =>
-                                                            setActionError(
-                                                                apiErrorMessage(
-                                                                    err
-                                                                )
-                                                            )
-                                                        )
-                                                }
-                                            >
-                                                Impersonate
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="text-label-xs text-sub-600"
-                                                onClick={() =>
-                                                    void forceLogoutAdminUser(
-                                                        token,
-                                                        user.username
-                                                    )
-                                                        .then(() =>
-                                                            setMessage(
-                                                                `Forced logout for ${user.username}`
-                                                            )
-                                                        )
-                                                        .catch((err) =>
-                                                            setActionError(
-                                                                apiErrorMessage(
-                                                                    err
-                                                                )
-                                                            )
-                                                        )
-                                                }
-                                            >
-                                                Force logout
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="text-label-xs text-sub-600"
-                                                onClick={() =>
-                                                    void resetAdminUserUsage(
-                                                        token,
-                                                        user.username
-                                                    )
-                                                        .then(() => {
-                                                            setMessage(
-                                                                `Reset usage for ${user.username}`
-                                                            );
-                                                            return refresh();
-                                                        })
-                                                        .catch((err) =>
-                                                            setActionError(
-                                                                apiErrorMessage(
-                                                                    err
-                                                                )
-                                                            )
-                                                        )
-                                                }
-                                            >
-                                                Reset usage
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="text-label-xs text-red-500"
-                                                onClick={() =>
-                                                    void deleteAdminUser(
-                                                        token,
-                                                        user.username
-                                                    )
-                                                        .then(() => {
-                                                            setMessage(
-                                                                `Deleted ${user.username}`
-                                                            );
-                                                            return refresh();
-                                                        })
-                                                        .catch((err) =>
-                                                            setActionError(
-                                                                apiErrorMessage(
-                                                                    err
-                                                                )
-                                                            )
-                                                        )
-                                                }
-                                            >
-                                                Delete
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
+            <AdminUsersTableSkeleton loading={loading && rows.length === 0}>
+                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                    <div className="grid gap-3 border-b border-stroke-soft-200 p-5 md:grid-cols-2">
+                        <input
+                            type="search"
+                            value={search}
+                            onChange={(event) => setSearch(event.target.value)}
+                            placeholder="Search by name or username"
+                            className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        />
+                        <select
+                            value={companyId}
+                            onChange={(event) => setCompanyId(event.target.value)}
+                            className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        >
+                            <option value="all">All companies</option>
+                            {orgs.map((org) => (
+                                <option key={org.org_id} value={org.org_id}>
+                                    {org.name}
+                                </option>
                             ))}
-                            {!loading && rows.length === 0 ? (
+                        </select>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[960px] text-left">
+                            <thead className="bg-weak-50 text-label-xs text-sub-600">
                                 <tr>
-                                    <td
-                                        className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={6}
-                                    >
-                                        No users yet.
-                                    </td>
+                                    <th className="px-5 py-3 font-medium">Name</th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Username
+                                    </th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Company
+                                    </th>
+                                    <th className="px-5 py-3 font-medium">Role</th>
+                                    <th className="px-5 py-3 font-medium">Status</th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Actions
+                                    </th>
                                 </tr>
-                            ) : null}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+                            </thead>
+                            <tbody className="divide-y divide-stroke-soft-200">
+                                {rows.map((user) => (
+                                    <tr
+                                        key={user.username}
+                                        className="text-label-sm"
+                                    >
+                                        <td className="px-5 py-4 text-strong-950">
+                                            {user.name}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {user.username}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {user.companyId ? (
+                                                <Link
+                                                    href={`/admin/companies/${user.companyId}?tab=users`}
+                                                    className="hover:text-blue-500"
+                                                >
+                                                    {user.company}
+                                                </Link>
+                                            ) : (
+                                                user.company
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4 capitalize text-sub-600">
+                                            {user.companyId ? (
+                                                <OrgRoleSelect
+                                                    value={user.orgRole || "member"}
+                                                    disabled={
+                                                        user.orgRole === "owner" &&
+                                                        (ownerCountByOrg.get(
+                                                            user.companyId
+                                                        ) ?? 0) <= 1
+                                                    }
+                                                    onChange={(role) =>
+                                                        void addAdminOrgMember(
+                                                            token,
+                                                            user.companyId,
+                                                            user.username,
+                                                            role
+                                                        )
+                                                            .then(() => {
+                                                                setMessage(
+                                                                    `Role updated for ${user.username}`
+                                                                );
+                                                                return refresh();
+                                                            })
+                                                            .catch((err) =>
+                                                                setActionError(
+                                                                    apiErrorMessage(
+                                                                        err
+                                                                    )
+                                                                )
+                                                            )
+                                                    }
+                                                />
+                                            ) : (
+                                                user.platformRole
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            <StatusBadge status={user.status} />
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            <div className="flex flex-wrap gap-3">
+                                                <button
+                                                    type="button"
+                                                    className="text-label-xs text-blue-500"
+                                                    onClick={() =>
+                                                        void setActive(
+                                                            user.username,
+                                                            user.status ===
+                                                                "suspended"
+                                                        )
+                                                    }
+                                                >
+                                                    {user.status === "suspended"
+                                                        ? "Reactivate"
+                                                        : "Deactivate"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="text-label-xs text-blue-500"
+                                                    onClick={() =>
+                                                        void startLiveImpersonation(
+                                                            {
+                                                                adminSession:
+                                                                    session!,
+                                                                token,
+                                                                username:
+                                                                    user.username,
+                                                                applySession,
+                                                            }
+                                                        )
+                                                            .then(({ href }) =>
+                                                                portalPush(
+                                                                    router,
+                                                                    href
+                                                                )
+                                                            )
+                                                            .catch((err) =>
+                                                                setActionError(
+                                                                    apiErrorMessage(
+                                                                        err
+                                                                    )
+                                                                )
+                                                            )
+                                                    }
+                                                >
+                                                    Impersonate
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="text-label-xs text-sub-600"
+                                                    onClick={() =>
+                                                        void forceLogoutAdminUser(
+                                                            token,
+                                                            user.username
+                                                        )
+                                                            .then(() =>
+                                                                setMessage(
+                                                                    `Forced logout for ${user.username}`
+                                                                )
+                                                            )
+                                                            .catch((err) =>
+                                                                setActionError(
+                                                                    apiErrorMessage(
+                                                                        err
+                                                                    )
+                                                                )
+                                                            )
+                                                    }
+                                                >
+                                                    Force logout
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="text-label-xs text-sub-600"
+                                                    onClick={() =>
+                                                        void resetAdminUserUsage(
+                                                            token,
+                                                            user.username
+                                                        )
+                                                            .then(() => {
+                                                                setMessage(
+                                                                    `Reset usage for ${user.username}`
+                                                                );
+                                                                return refresh();
+                                                            })
+                                                            .catch((err) =>
+                                                                setActionError(
+                                                                    apiErrorMessage(
+                                                                        err
+                                                                    )
+                                                                )
+                                                            )
+                                                    }
+                                                >
+                                                    Reset usage
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="text-label-xs text-red-500"
+                                                    onClick={() =>
+                                                        void deleteAdminUser(
+                                                            token,
+                                                            user.username
+                                                        )
+                                                            .then(() => {
+                                                                setMessage(
+                                                                    `Deleted ${user.username}`
+                                                                );
+                                                                return refresh();
+                                                            })
+                                                            .catch((err) =>
+                                                                setActionError(
+                                                                    apiErrorMessage(
+                                                                        err
+                                                                    )
+                                                                )
+                                                            )
+                                                    }
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {!loading && rows.length === 0 ? (
+                                    <tr>
+                                        <td
+                                            className="px-5 py-4 text-label-sm text-sub-600"
+                                            colSpan={6}
+                                        >
+                                            No users yet.
+                                        </td>
+                                    </tr>
+                                ) : null}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </AdminUsersTableSkeleton>
         </div>
     );
 };

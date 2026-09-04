@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 import PageHeader from "@/components/Admin/PageHeader";
+import { AdminCompaniesTableSkeleton } from "@/components/Skeleton/sections";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import {
     bytesToGb,
@@ -173,105 +174,97 @@ const LiveCompaniesPage = () => {
                 </button>
             </form>
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1100px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Name</th>
-                                <th className="px-5 py-3 font-medium">Slug</th>
-                                <th className="px-5 py-3 font-medium">Plan</th>
-                                <th className="px-5 py-3 font-medium">Members</th>
-                                <th className="px-5 py-3 font-medium">Storage</th>
-                                <th className="px-5 py-3 font-medium">Tokens</th>
-                                <th className="px-5 py-3 font-medium">Status</th>
-                                <th className="px-5 py-3 font-medium">Renews</th>
-                                <th className="px-5 py-3 font-medium">Created</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {loading && rows.length === 0 ? (
+            <AdminCompaniesTableSkeleton loading={loading && rows.length === 0}>
+                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1100px] text-left">
+                            <thead className="bg-weak-50 text-label-xs text-sub-600">
                                 <tr>
-                                    <td
-                                        className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={9}
-                                    >
-                                        Loading companies…
-                                    </td>
+                                    <th className="px-5 py-3 font-medium">Name</th>
+                                    <th className="px-5 py-3 font-medium">Slug</th>
+                                    <th className="px-5 py-3 font-medium">Plan</th>
+                                    <th className="px-5 py-3 font-medium">Members</th>
+                                    <th className="px-5 py-3 font-medium">Storage</th>
+                                    <th className="px-5 py-3 font-medium">Tokens</th>
+                                    <th className="px-5 py-3 font-medium">Status</th>
+                                    <th className="px-5 py-3 font-medium">Renews</th>
+                                    <th className="px-5 py-3 font-medium">Created</th>
                                 </tr>
-                            ) : null}
-                            {rows.map((org) => (
-                                <tr key={org.id} className="text-label-sm">
-                                    <td className="px-5 py-4">
-                                        <Link
-                                            href={`/admin/companies/${org.id}`}
-                                            className="text-strong-950 hover:text-blue-500"
+                            </thead>
+                            <tbody className="divide-y divide-stroke-soft-200">
+                                {rows.map((org) => (
+                                    <tr key={org.id} className="text-label-sm">
+                                        <td className="px-5 py-4">
+                                            <Link
+                                                href={`/admin/companies/${org.id}`}
+                                                className="text-strong-950 hover:text-blue-500"
+                                            >
+                                                {org.name}
+                                            </Link>
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {org.slug}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {org.planName}
+                                            {org.autoRenew ? (
+                                                <span className="mt-1 block text-label-xs text-sub-600">
+                                                    Auto-renew
+                                                </span>
+                                            ) : null}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {org.members}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(org.storageUsed)}
+                                            {org.storageLimit > 0
+                                                ? ` / ${numberFormatter.format(org.storageLimit)} GB`
+                                                : " GB"}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {org.tokenLimit > 0
+                                                ? `${numberFormatter.format(org.tokensUsed)} / ${numberFormatter.format(org.tokenLimit)}`
+                                                : numberFormatter.format(org.tokensUsed)}
+                                            {org.tokenLimit > 0 ? (
+                                                <span className="mt-1 block text-label-xs">
+                                                    rem{" "}
+                                                    {numberFormatter.format(
+                                                        Math.max(
+                                                            0,
+                                                            org.tokenLimit -
+                                                                org.tokensUsed
+                                                        )
+                                                    )}
+                                                </span>
+                                            ) : null}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            <StatusBadge status={org.status} />
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {org.renews}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {org.created}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {!loading && rows.length === 0 ? (
+                                    <tr>
+                                        <td
+                                            className="px-5 py-4 text-label-sm text-sub-600"
+                                            colSpan={9}
                                         >
-                                            {org.name}
-                                        </Link>
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {org.slug}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {org.planName}
-                                        {org.autoRenew ? (
-                                            <span className="mt-1 block text-label-xs text-sub-600">
-                                                Auto-renew
-                                            </span>
-                                        ) : null}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {org.members}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(org.storageUsed)}
-                                        {org.storageLimit > 0
-                                            ? ` / ${numberFormatter.format(org.storageLimit)} GB`
-                                            : " GB"}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {org.tokenLimit > 0
-                                            ? `${numberFormatter.format(org.tokensUsed)} / ${numberFormatter.format(org.tokenLimit)}`
-                                            : numberFormatter.format(org.tokensUsed)}
-                                        {org.tokenLimit > 0 ? (
-                                            <span className="mt-1 block text-label-xs">
-                                                rem{" "}
-                                                {numberFormatter.format(
-                                                    Math.max(
-                                                        0,
-                                                        org.tokenLimit -
-                                                            org.tokensUsed
-                                                    )
-                                                )}
-                                            </span>
-                                        ) : null}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <StatusBadge status={org.status} />
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {org.renews}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {org.created}
-                                    </td>
-                                </tr>
-                            ))}
-                            {!loading && rows.length === 0 ? (
-                                <tr>
-                                    <td
-                                        className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={9}
-                                    >
-                                        No companies yet.
-                                    </td>
-                                </tr>
-                            ) : null}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+                                            No companies yet.
+                                        </td>
+                                    </tr>
+                                ) : null}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </AdminCompaniesTableSkeleton>
         </div>
     );
 };

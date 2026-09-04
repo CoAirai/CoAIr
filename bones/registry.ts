@@ -11,6 +11,27 @@ import _workspace_hub from './workspace-hub.bones.json'
 import _chat_portal from './chat-portal.bones.json'
 import _module_portal from './module-portal.bones.json'
 import _company_team_table from './company-team-table.bones.json'
+import _admin_dashboard from './admin-dashboard.bones.json'
+import _admin_companies_table from './admin-companies-table.bones.json'
+import _admin_users_table from './admin-users-table.bones.json'
+import _admin_company_detail from './admin-company-detail.bones.json'
+import _admin_analytics from './admin-analytics.bones.json'
+import _admin_storage from './admin-storage.bones.json'
+import _admin_alerts from './admin-alerts.bones.json'
+import _admin_tickets_table from './admin-tickets-table.bones.json'
+import _admin_packages from './admin-packages.bones.json'
+import _admin_dunning_table from './admin-dunning-table.bones.json'
+import _admin_audit_table from './admin-audit-table.bones.json'
+import _admin_tokens_table from './admin-tokens-table.bones.json'
+import _admin_topups_table from './admin-topups-table.bones.json'
+import _admin_models from './admin-models.bones.json'
+import _admin_onboarding_table from './admin-onboarding-table.bones.json'
+import _admin_billing_tables from './admin-billing-tables.bones.json'
+import _company_tickets_list from './company-tickets-list.bones.json'
+import _company_usage from './company-usage.bones.json'
+import _company_dashboard from './company-dashboard.bones.json'
+import _chronology_report from './chronology-report.bones.json'
+import _onboarding_checkout from './onboarding-checkout.bones.json'
 
 configureBoneyard({"color":"rgba(0,0,0,0.08)","darkColor":"rgba(255,255,255,0.06)","animate":"shimmer","shimmerColor":"rgba(0,0,0,0.04)","darkShimmerColor":"rgba(255,255,255,0.1)","speed":"2s","shimmerAngle":110,"transition":true})
 
@@ -23,4 +44,25 @@ registerBones({
   "chat-portal": _chat_portal,
   "module-portal": _module_portal,
   "company-team-table": _company_team_table,
+  "admin-dashboard": _admin_dashboard,
+  "admin-companies-table": _admin_companies_table,
+  "admin-users-table": _admin_users_table,
+  "admin-company-detail": _admin_company_detail,
+  "admin-analytics": _admin_analytics,
+  "admin-storage": _admin_storage,
+  "admin-alerts": _admin_alerts,
+  "admin-tickets-table": _admin_tickets_table,
+  "admin-packages": _admin_packages,
+  "admin-dunning-table": _admin_dunning_table,
+  "admin-audit-table": _admin_audit_table,
+  "admin-tokens-table": _admin_tokens_table,
+  "admin-topups-table": _admin_topups_table,
+  "admin-models": _admin_models,
+  "admin-onboarding-table": _admin_onboarding_table,
+  "admin-billing-tables": _admin_billing_tables,
+  "company-tickets-list": _company_tickets_list,
+  "company-usage": _company_usage,
+  "company-dashboard": _company_dashboard,
+  "chronology-report": _chronology_report,
+  "onboarding-checkout": _onboarding_checkout,
 })

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import SourcePdfPreview from "@/components/SourcePdfPreview";
+import { ChronologyReportSkeleton } from "@/components/Skeleton/sections";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { companyForSession } from "@/lib/workspace/companyForSession";
@@ -99,9 +100,9 @@ const ChronologyReportPage = ({ reportId }: Props) => {
 
     if (live && !report && !liveError) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-weak-50 text-sub-600">
-                Loading report…
-            </div>
+            <ChronologyReportSkeleton loading>
+                <div />
+            </ChronologyReportSkeleton>
         );
     }
 

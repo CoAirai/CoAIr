@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { AdminPackagesSkeleton } from "@/components/Skeleton/sections";
 import { useAuth } from "@/context/AuthContext";
 import type { ModuleAccess, ModuleId, Plan } from "@/lib/admin/types";
 import { apiErrorMessage, listPackages, patchPackage } from "@/lib/coair/commerce";
@@ -85,123 +86,128 @@ const LivePackagesPage = () => {
                 </p>
             </div>
             {error ? <p className="text-label-sm text-red-500">{error}</p> : null}
-            {plans.length === 0 ? (
-                <p className="rounded-2xl border border-stroke-soft-200 bg-white-0 px-5 py-12 text-center text-label-sm text-sub-600">
-                    {plansReady
-                        ? "No packages configured yet."
-                        : "Loading packages…"}
-                </p>
-            ) : null}
+            <AdminPackagesSkeleton loading={!plansReady && plans.length === 0}>
+                <div className="space-y-4">
+                    {plansReady && plans.length === 0 ? (
+                        <p className="rounded-2xl border border-stroke-soft-200 bg-white-0 px-5 py-12 text-center text-label-sm text-sub-600">
+                            No packages configured yet.
+                        </p>
+                    ) : null}
 
-            <div className="space-y-4">
-                {plans.map((plan) => (
-                    <section
-                        key={plan.id}
-                        className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
-                    >
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <h2 className="text-label-lg text-strong-950">
-                                {plan.name}
-                            </h2>
-                            <span className="text-label-xs text-sub-600">
-                                {plan.id}
-                            </span>
-                        </div>
-                        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                            <Field
-                                label="Price label (display)"
-                                value={plan.priceLabel}
-                                onChange={(value) =>
-                                    patch(plan, { priceLabel: value })
-                                }
-                            />
-                            <NumberField
-                                label="Users included"
-                                value={plan.usersIncluded}
-                                onChange={(value) =>
-                                    patch(plan, { usersIncluded: value })
-                                }
-                            />
-                            <NumberField
-                                label="S3 workspace (GB)"
-                                value={plan.storageLimitGb}
-                                onChange={(value) =>
-                                    patch(plan, { storageLimitGb: value })
-                                }
-                            />
-                            <NumberField
-                                label="Package price (USD / month)"
-                                value={plan.apiCreditsUsd}
-                                onChange={(value) =>
-                                    patch(plan, { apiCreditsUsd: value })
-                                }
-                            />
-                            <NumberField
-                                label="Token / query cap"
-                                value={plan.queryCap}
-                                onChange={(value) =>
-                                    patch(plan, { queryCap: value })
-                                }
-                            />
-                        </div>
-                        {plan.id === "custom" ? (
-                            <p className="mt-3 text-label-xs text-sub-600">
-                                Custom is not shown in company onboarding or
-                                self-serve upgrades. Super Admin assigns it to a
-                                company from that company&apos;s detail page when
-                                they need a non-standard package.
-                            </p>
-                        ) : null}
-                        <div className="mt-5 grid gap-3 md:grid-cols-3">
-                            {MODULES.map((module) => {
-                                const rule = plan.modules[module.id];
-                                return (
-                                    <label
-                                        key={module.id}
-                                        className="block rounded-xl border border-stroke-soft-200 p-3"
-                                    >
-                                        <span className="mb-1.5 block text-label-xs text-sub-600">
-                                            {module.label}
-                                        </span>
-                                        <select
-                                            value={rule.access}
-                                            onChange={(event) =>
-                                                patchModule(
-                                                    plan,
-                                                    module.id,
-                                                    event.target.value as ModuleAccess,
-                                                    rule.trialReports
-                                                )
-                                            }
-                                            className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                    {plans.map((plan) => (
+                        <section
+                            key={plan.id}
+                            className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+                        >
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <h2 className="text-label-lg text-strong-950">
+                                    {plan.name}
+                                </h2>
+                                <span className="text-label-xs text-sub-600">
+                                    {plan.id}
+                                </span>
+                            </div>
+                            <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                                <Field
+                                    label="Price label (display)"
+                                    value={plan.priceLabel}
+                                    onChange={(value) =>
+                                        patch(plan, { priceLabel: value })
+                                    }
+                                />
+                                <NumberField
+                                    label="Users included"
+                                    value={plan.usersIncluded}
+                                    onChange={(value) =>
+                                        patch(plan, { usersIncluded: value })
+                                    }
+                                />
+                                <NumberField
+                                    label="S3 workspace (GB)"
+                                    value={plan.storageLimitGb}
+                                    onChange={(value) =>
+                                        patch(plan, { storageLimitGb: value })
+                                    }
+                                />
+                                <NumberField
+                                    label="Package price (USD / month)"
+                                    value={plan.apiCreditsUsd}
+                                    onChange={(value) =>
+                                        patch(plan, { apiCreditsUsd: value })
+                                    }
+                                />
+                                <NumberField
+                                    label="Token / query cap"
+                                    value={plan.queryCap}
+                                    onChange={(value) =>
+                                        patch(plan, { queryCap: value })
+                                    }
+                                />
+                            </div>
+                            {plan.id === "custom" ? (
+                                <p className="mt-3 text-label-xs text-sub-600">
+                                    Custom is not shown in company onboarding or
+                                    self-serve upgrades. Super Admin assigns it to a
+                                    company from that company&apos;s detail page when
+                                    they need a non-standard package.
+                                </p>
+                            ) : null}
+                            <div className="mt-5 grid gap-3 md:grid-cols-3">
+                                {MODULES.map((module) => {
+                                    const rule = plan.modules[module.id];
+                                    return (
+                                        <label
+                                            key={module.id}
+                                            className="block rounded-xl border border-stroke-soft-200 p-3"
                                         >
-                                            <option value="included">Included</option>
-                                            <option value="trial">Trial</option>
-                                            <option value="addon">Add-on</option>
-                                        </select>
-                                        {rule.access === "trial" ? (
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                className="mt-2 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                                                value={rule.trialReports ?? 1}
+                                            <span className="mb-1.5 block text-label-xs text-sub-600">
+                                                {module.label}
+                                            </span>
+                                            <select
+                                                value={rule.access}
                                                 onChange={(event) =>
                                                     patchModule(
                                                         plan,
                                                         module.id,
-                                                        "trial",
-                                                        Number(event.target.value) || 1
+                                                        event.target
+                                                            .value as ModuleAccess,
+                                                        rule.trialReports
                                                     )
                                                 }
-                                            />
-                                        ) : null}
-                                    </label>
-                                );
-                            })}
-                        </div>
-                    </section>
-                ))}
-            </div>
+                                                className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                            >
+                                                <option value="included">
+                                                    Included
+                                                </option>
+                                                <option value="trial">Trial</option>
+                                                <option value="addon">Add-on</option>
+                                            </select>
+                                            {rule.access === "trial" ? (
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    className="mt-2 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                                    value={rule.trialReports ?? 1}
+                                                    onChange={(event) =>
+                                                        patchModule(
+                                                            plan,
+                                                            module.id,
+                                                            "trial",
+                                                            Number(
+                                                                event.target.value
+                                                            ) || 1
+                                                        )
+                                                    }
+                                                />
+                                            ) : null}
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    ))}
+                </div>
+            </AdminPackagesSkeleton>
         </div>
     );
 };

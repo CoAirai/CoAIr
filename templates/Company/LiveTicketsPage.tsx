@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import PageHeader from "@/components/Admin/PageHeader";
+import { CompanyTicketsSkeleton } from "@/components/Skeleton/sections";
 import { useAuth } from "@/context/AuthContext";
 import { apiErrorMessage, createTicket, listTickets } from "@/lib/coair/commerce";
 import type { CompanyTicket, CompanyTicketPriority } from "@/lib/company/types";
@@ -187,56 +188,62 @@ const LiveTicketsPage = () => {
                 </form>
             ) : null}
 
-            <section className="surface-panel">
-                <div className="border-b border-stroke-soft-200 p-5">
-                    <h2 className="text-label-lg text-strong-950">Your tickets</h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        {loading
-                            ? "Loading…"
-                            : `${tickets.length} ticket${tickets.length === 1 ? "" : "s"}`}
-                    </p>
-                </div>
-                {tickets.length === 0 ? (
-                    <p className="px-5 py-12 text-center text-label-sm text-sub-600">
-                        No tickets yet. Open one if you need help.
-                    </p>
-                ) : (
-                    <div className="divide-y divide-stroke-soft-200">
-                        {tickets.map((ticket) => (
-                            <div key={ticket.id} className="p-5">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                        <p className="text-label-sm text-strong-950">
-                                            {ticket.subject}
-                                        </p>
-                                        <p className="mt-1 text-label-xs text-sub-600">
-                                            Opened{" "}
-                                            {dateFormatter.format(
-                                                new Date(`${ticket.createdAt}T00:00:00`)
-                                            )}
-                                        </p>
-                                    </div>
-                                    <div className="flex shrink-0 items-center gap-2">
-                                        <span
-                                            className={`inline-flex h-6 items-center rounded-full px-2.5 text-label-xs ${PRIORITY_CLASSES[ticket.priority]}`}
-                                        >
-                                            {capitalize(ticket.priority)}
-                                        </span>
-                                        <span
-                                            className={`inline-flex h-6 items-center rounded-full px-2.5 text-label-xs ${STATUS_CLASSES[ticket.status] ?? "bg-weak-50 text-sub-600"}`}
-                                        >
-                                            {capitalize(ticket.status)}
-                                        </span>
-                                    </div>
-                                </div>
-                                <p className="mt-3 text-label-sm text-sub-600">
-                                    {ticket.message}
-                                </p>
-                            </div>
-                        ))}
+            <CompanyTicketsSkeleton loading={loading && tickets.length === 0}>
+                <section className="surface-panel">
+                    <div className="border-b border-stroke-soft-200 p-5">
+                        <h2 className="text-label-lg text-strong-950">
+                            Your tickets
+                        </h2>
+                        <p className="mt-1 text-label-xs text-sub-600">
+                            {loading
+                                ? "Loading…"
+                                : `${tickets.length} ticket${tickets.length === 1 ? "" : "s"}`}
+                        </p>
                     </div>
-                )}
-            </section>
+                    {tickets.length === 0 ? (
+                        <p className="px-5 py-12 text-center text-label-sm text-sub-600">
+                            No tickets yet. Open one if you need help.
+                        </p>
+                    ) : (
+                        <div className="divide-y divide-stroke-soft-200">
+                            {tickets.map((ticket) => (
+                                <div key={ticket.id} className="p-5">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-label-sm text-strong-950">
+                                                {ticket.subject}
+                                            </p>
+                                            <p className="mt-1 text-label-xs text-sub-600">
+                                                Opened{" "}
+                                                {dateFormatter.format(
+                                                    new Date(
+                                                        `${ticket.createdAt}T00:00:00`
+                                                    )
+                                                )}
+                                            </p>
+                                        </div>
+                                        <div className="flex shrink-0 items-center gap-2">
+                                            <span
+                                                className={`inline-flex h-6 items-center rounded-full px-2.5 text-label-xs ${PRIORITY_CLASSES[ticket.priority]}`}
+                                            >
+                                                {capitalize(ticket.priority)}
+                                            </span>
+                                            <span
+                                                className={`inline-flex h-6 items-center rounded-full px-2.5 text-label-xs ${STATUS_CLASSES[ticket.status] ?? "bg-weak-50 text-sub-600"}`}
+                                            >
+                                                {capitalize(ticket.status)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <p className="mt-3 text-label-sm text-sub-600">
+                                        {ticket.message}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+            </CompanyTicketsSkeleton>
         </div>
     );
 };

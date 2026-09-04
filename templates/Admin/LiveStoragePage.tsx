@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { AdminStorageSkeleton } from "@/components/Skeleton/sections";
 import StatCard from "@/components/Admin/StatCard";
 import { isNearStorageLimit, usagePercent } from "@/lib/admin/adminSelectors";
 import {
@@ -60,119 +61,117 @@ const LiveStoragePage = () => {
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
-            <div className="grid gap-4 sm:grid-cols-3">
-                <StatCard
-                    label="Total used"
-                    value={`${numberFormatter.format(totals.used)} GB`}
-                    hint={loading ? "Loading…" : "Across all companies"}
-                />
-                <StatCard
-                    label="Total allocated"
-                    value={`${numberFormatter.format(totals.limit)} GB`}
-                    hint="Combined storage limits"
-                />
-                <StatCard
-                    label="Near limit"
-                    value={numberFormatter.format(totals.near)}
-                    hint="Companies at ≥80% usage"
-                />
-            </div>
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
-                <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
-                    <div className="border-b border-stroke-soft-200 px-5 py-4">
-                        <h2 className="text-label-lg text-strong-950">
-                            By company
-                        </h2>
+            <AdminStorageSkeleton loading={loading && rows.length === 0}>
+                <>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                        <StatCard
+                            label="Total used"
+                            value={`${numberFormatter.format(totals.used)} GB`}
+                            hint={loading ? "Loading…" : "Across all companies"}
+                        />
+                        <StatCard
+                            label="Total allocated"
+                            value={`${numberFormatter.format(totals.limit)} GB`}
+                            hint="Combined storage limits"
+                        />
+                        <StatCard
+                            label="Near limit"
+                            value={numberFormatter.format(totals.near)}
+                            hint="Companies at ≥80% usage"
+                        />
                     </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[640px] text-left">
-                            <thead className="bg-weak-50 text-label-xs text-sub-600">
-                                <tr>
-                                    <th className="px-5 py-3 font-medium">
-                                        Company
-                                    </th>
-                                    <th className="px-5 py-3 font-medium">Used</th>
-                                    <th className="px-5 py-3 font-medium">
-                                        Limit
-                                    </th>
-                                    <th className="px-5 py-3 font-medium">
-                                        Usage
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-stroke-soft-200">
-                                {loading && rows.length === 0 ? (
-                                    <tr>
-                                        <td
-                                            className="px-5 py-4 text-label-sm text-sub-600"
-                                            colSpan={4}
-                                        >
-                                            Loading storage…
-                                        </td>
-                                    </tr>
-                                ) : null}
-                                {rows.map((row) => (
-                                    <tr key={row.id} className="text-label-sm">
-                                        <td className="px-5 py-4">
-                                            <Link
-                                                href={`/admin/companies/${row.id}?tab=overview`}
-                                                className="text-strong-950 hover:text-blue-500"
-                                            >
-                                                {row.name}
-                                            </Link>
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {numberFormatter.format(row.usedGb)} GB
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {row.limitGb > 0
-                                                ? `${numberFormatter.format(row.limitGb)} GB`
-                                                : "—"}
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {row.limitGb > 0
-                                                ? `${row.percent}%`
-                                                : "—"}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {!loading && rows.length === 0 ? (
-                                    <tr>
-                                        <td
-                                            className="px-5 py-4 text-label-sm text-sub-600"
-                                            colSpan={4}
-                                        >
-                                            No companies yet.
-                                        </td>
-                                    </tr>
-                                ) : null}
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
-                    <h2 className="text-label-lg text-strong-950">
-                        Top consumers
-                    </h2>
-                    <div className="mt-4 space-y-3">
-                        {top.map((row) => (
-                            <div key={row.id}>
-                                <p className="text-label-sm text-strong-950">
-                                    {row.name}
-                                </p>
-                                <p className="text-label-xs text-sub-600">
-                                    {numberFormatter.format(row.usedGb)} GB used
-                                </p>
+                    <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
+                        <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
+                            <div className="border-b border-stroke-soft-200 px-5 py-4">
+                                <h2 className="text-label-lg text-strong-950">
+                                    By company
+                                </h2>
                             </div>
-                        ))}
-                        {!loading && top.length === 0 ? (
-                            <p className="text-label-sm text-sub-600">
-                                No storage usage yet.
-                            </p>
-                        ) : null}
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[640px] text-left">
+                                    <thead className="bg-weak-50 text-label-xs text-sub-600">
+                                        <tr>
+                                            <th className="px-5 py-3 font-medium">
+                                                Company
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Used
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Limit
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Usage
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-stroke-soft-200">
+                                        {rows.map((row) => (
+                                            <tr key={row.id} className="text-label-sm">
+                                                <td className="px-5 py-4">
+                                                    <Link
+                                                        href={`/admin/companies/${row.id}?tab=overview`}
+                                                        className="text-strong-950 hover:text-blue-500"
+                                                    >
+                                                        {row.name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {numberFormatter.format(row.usedGb)}{" "}
+                                                    GB
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {row.limitGb > 0
+                                                        ? `${numberFormatter.format(row.limitGb)} GB`
+                                                        : "—"}
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {row.limitGb > 0
+                                                        ? `${row.percent}%`
+                                                        : "—"}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {!loading && rows.length === 0 ? (
+                                            <tr>
+                                                <td
+                                                    className="px-5 py-4 text-label-sm text-sub-600"
+                                                    colSpan={4}
+                                                >
+                                                    No companies yet.
+                                                </td>
+                                            </tr>
+                                        ) : null}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                        <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                            <h2 className="text-label-lg text-strong-950">
+                                Top consumers
+                            </h2>
+                            <div className="mt-4 space-y-3">
+                                {top.map((row) => (
+                                    <div key={row.id}>
+                                        <p className="text-label-sm text-strong-950">
+                                            {row.name}
+                                        </p>
+                                        <p className="text-label-xs text-sub-600">
+                                            {numberFormatter.format(row.usedGb)} GB
+                                            used
+                                        </p>
+                                    </div>
+                                ))}
+                                {!loading && top.length === 0 ? (
+                                    <p className="text-label-sm text-sub-600">
+                                        No storage usage yet.
+                                    </p>
+                                ) : null}
+                            </div>
+                        </section>
                     </div>
-                </section>
-            </div>
+                </>
+            </AdminStorageSkeleton>
         </div>
     );
 };

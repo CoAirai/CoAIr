@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
+import { AdminTokensTableSkeleton } from "@/components/Skeleton/sections";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import { planLabel } from "@/lib/admin/liveHelpers";
@@ -215,87 +216,81 @@ const LiveTokensPage = () => {
                 </div>
             </form>
 
-            <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 px-5 py-4">
-                    <h2 className="text-label-lg text-strong-950">
-                        Company token pools
-                    </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Package pool split equally across active members
-                    </p>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[860px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Company</th>
-                                <th className="px-5 py-3 font-medium">Plan</th>
-                                <th className="px-5 py-3 font-medium">Members</th>
-                                <th className="px-5 py-3 font-medium">Pool</th>
-                                <th className="px-5 py-3 font-medium">Used</th>
-                                <th className="px-5 py-3 font-medium">
-                                    Remaining
-                                </th>
-                                <th className="px-5 py-3 font-medium">
-                                    Equal share
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {loading && pools.length === 0 ? (
+            <AdminTokensTableSkeleton loading={loading && pools.length === 0}>
+                <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
+                    <div className="border-b border-stroke-soft-200 px-5 py-4">
+                        <h2 className="text-label-lg text-strong-950">
+                            Company token pools
+                        </h2>
+                        <p className="mt-1 text-label-xs text-sub-600">
+                            Package pool split equally across active members
+                        </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[860px] text-left">
+                            <thead className="bg-weak-50 text-label-xs text-sub-600">
                                 <tr>
-                                    <td
-                                        className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={7}
-                                    >
-                                        Loading token pools…
-                                    </td>
+                                    <th className="px-5 py-3 font-medium">Company</th>
+                                    <th className="px-5 py-3 font-medium">Plan</th>
+                                    <th className="px-5 py-3 font-medium">Members</th>
+                                    <th className="px-5 py-3 font-medium">Pool</th>
+                                    <th className="px-5 py-3 font-medium">Used</th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Remaining
+                                    </th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Equal share
+                                    </th>
                                 </tr>
-                            ) : null}
-                            {pools.map((pool) => (
-                                <tr key={pool.org_id} className="text-label-sm">
-                                    <td className="px-5 py-4">
-                                        <Link
-                                            href={`/admin/companies/${pool.org_id}?tab=tokens`}
-                                            className="text-strong-950 hover:text-blue-500"
+                            </thead>
+                            <tbody className="divide-y divide-stroke-soft-200">
+                                {pools.map((pool) => (
+                                    <tr key={pool.org_id} className="text-label-sm">
+                                        <td className="px-5 py-4">
+                                            <Link
+                                                href={`/admin/companies/${pool.org_id}?tab=tokens`}
+                                                className="text-strong-950 hover:text-blue-500"
+                                            >
+                                                {pool.org_name || pool.org_id}
+                                            </Link>
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {planLabel(pool.subscription?.plan_id)}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {pool.member_count}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(pool.pool)}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(pool.total_used)}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(pool.remaining)}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(
+                                                pool.equal_share
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {!loading && pools.length === 0 ? (
+                                    <tr>
+                                        <td
+                                            className="px-5 py-4 text-label-sm text-sub-600"
+                                            colSpan={7}
                                         >
-                                            {pool.org_name || pool.org_id}
-                                        </Link>
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {planLabel(pool.subscription?.plan_id)}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {pool.member_count}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(pool.pool)}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(pool.total_used)}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(pool.remaining)}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(pool.equal_share)}
-                                    </td>
-                                </tr>
-                            ))}
-                            {!loading && pools.length === 0 ? (
-                                <tr>
-                                    <td
-                                        className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={7}
-                                    >
-                                        No company token pools yet.
-                                    </td>
-                                </tr>
-                            ) : null}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+                                            No company token pools yet.
+                                        </td>
+                                    </tr>
+                                ) : null}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </AdminTokensTableSkeleton>
 
             <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
                 <div className="border-b border-stroke-soft-200 px-5 py-4">

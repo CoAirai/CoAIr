@@ -10,10 +10,11 @@ import {
     ModulePortalSkeleton,
     WorkspaceHubSkeleton,
 } from "@/components/Skeleton/portals";
+import { SECTION_SKELETON_CAPTURE } from "@/components/Skeleton/sections";
 
 /**
  * Capture surface for `npx boneyard-js build`.
- * Mounts every named portal skeleton so the CLI can snapshot fixtures.
+ * Mounts every named portal and shared section skeleton for CLI snapshots.
  */
 export default function BonesCaptureClient() {
     return (
@@ -52,6 +53,14 @@ export default function BonesCaptureClient() {
                 </h2>
                 <CompanyTeamTableSkeleton loading={false} />
             </section>
+            {SECTION_SKELETON_CAPTURE.map((entry) => (
+                <section key={entry.name}>
+                    <h2 className="mb-4 text-label-md text-sub-600">
+                        {entry.name}
+                    </h2>
+                    {entry.node}
+                </section>
+            ))}
         </div>
     );
 }

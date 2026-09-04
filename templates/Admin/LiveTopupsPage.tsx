@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import PageHeader from "@/components/Admin/PageHeader";
+import { AdminTopupsTableSkeleton } from "@/components/Skeleton/sections";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import type { TopUpRequest } from "@/lib/admin/billingTypes";
@@ -314,54 +315,51 @@ const LiveTopupsPage = () => {
                     Apply
                 </button>
             </form>
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="border-b border-stroke-soft-200 px-5 py-4">
-                    <h2 className="text-label-lg text-strong-950">
-                        Account balances
-                    </h2>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[720px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">User</th>
-                                <th className="px-5 py-3 font-medium">Company</th>
-                                <th className="px-5 py-3 font-medium">
-                                    Remaining
-                                </th>
-                                <th className="px-5 py-3 font-medium">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {users.map((user) => (
-                                <tr key={user.username} className="text-label-sm">
-                                    <td className="px-5 py-4 text-strong-950">
-                                        {user.display_name || user.username}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {user.org_name || "—"}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(
-                                            user.credits_remaining ?? 0
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {numberFormatter.format(
-                                            user.credits_total ?? 0
-                                        )}
-                                    </td>
+            <AdminTopupsTableSkeleton loading={loading && users.length === 0}>
+                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                    <div className="border-b border-stroke-soft-200 px-5 py-4">
+                        <h2 className="text-label-lg text-strong-950">
+                            Account balances
+                        </h2>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-left">
+                            <thead className="bg-weak-50 text-label-xs text-sub-600">
+                                <tr>
+                                    <th className="px-5 py-3 font-medium">User</th>
+                                    <th className="px-5 py-3 font-medium">Company</th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Remaining
+                                    </th>
+                                    <th className="px-5 py-3 font-medium">Total</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                {loading && users.length === 0 ? (
-                    <p className="px-5 py-8 text-label-sm text-sub-600">
-                        Loading accounts…
-                    </p>
-                ) : null}
-            </section>
+                            </thead>
+                            <tbody className="divide-y divide-stroke-soft-200">
+                                {users.map((user) => (
+                                    <tr key={user.username} className="text-label-sm">
+                                        <td className="px-5 py-4 text-strong-950">
+                                            {user.display_name || user.username}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {user.org_name || "—"}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(
+                                                user.credits_remaining ?? 0
+                                            )}
+                                        </td>
+                                        <td className="px-5 py-4 text-sub-600">
+                                            {numberFormatter.format(
+                                                user.credits_total ?? 0
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </AdminTopupsTableSkeleton>
         </div>
     );
 };

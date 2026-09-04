@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { AdminAreaChart, AdminBarChart } from "@/components/Admin/AdminCharts";
+import { AdminAnalyticsSkeleton } from "@/components/Skeleton/sections";
 import StatCard from "@/components/Admin/StatCard";
 import { barsFromNamedValues, type ChartPoint } from "@/lib/admin/dashboardSeries";
 import { useAuth } from "@/context/AuthContext";
@@ -95,124 +96,124 @@ const LiveAnalyticsPage = () => {
                     {error ?? seriesError}
                 </p>
             ) : null}
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                    label="Total calls"
-                    value={numberFormatter.format(usage?.total_calls ?? 0)}
-                    hint={loading ? "Loading…" : "All LLM calls"}
-                />
-                <StatCard
-                    label="Tokens consumed"
-                    value={numberFormatter.format(usage?.total_tokens ?? 0)}
-                    hint="Prompt + completion"
-                />
-                <StatCard
-                    label="Spend remaining"
-                    value={`$${(usage?.remaining_usd ?? 0).toFixed(2)}`}
-                    hint={`of $${(usage?.limit_usd ?? 0).toFixed(0)} budget`}
-                />
-                <StatCard
-                    label="Active companies"
-                    value={numberFormatter.format(activeCompanies)}
-                    hint={`${orgs.length} total orgs`}
-                />
-            </div>
-            <div className="grid gap-6 xl:grid-cols-2">
-                {tokenBars.length > 0 ? (
-                    <AdminBarChart
-                        title="Usage by group"
-                        hint="Top call volume by user / model"
-                        data={tokenBars}
-                    />
-                ) : (
-                    <section className="surface-panel p-5">
-                        <h2 className="text-label-lg text-strong-950">
-                            Usage by group
-                        </h2>
-                        <p className="mt-8 text-label-sm text-sub-600">
-                            {loading
-                                ? "Loading usage…"
-                                : "No live usage groups yet."}
-                        </p>
-                    </section>
-                )}
-                {spendBars.length > 0 ? (
-                    <AdminBarChart
-                        title="Top spend"
-                        hint="Estimated provider cost by group"
-                        data={spendBars}
-                        valuePrefix="$"
-                    />
-                ) : (
-                    <section className="surface-panel p-5">
-                        <h2 className="text-label-lg text-strong-950">
-                            Top spend
-                        </h2>
-                        <p className="mt-8 text-label-sm text-sub-600">
-                            {loading ? "Loading usage…" : "No spend groups yet."}
-                        </p>
-                    </section>
-                )}
-                {weekly.some((point) => point.value > 0) ? (
-                    <AdminAreaChart
-                        title="Weekly spend"
-                        hint="Provider cost by week from the ledger"
-                        data={weekly}
-                        valuePrefix="$"
-                        fillId="liveAnalyticsSpendFill"
-                    />
-                ) : (
-                    <section className="surface-panel p-5">
-                        <h2 className="text-label-lg text-strong-950">
-                            Weekly spend
-                        </h2>
-                        <p className="mt-8 text-label-sm text-sub-600">
-                            {loading
-                                ? "Loading usage…"
-                                : "No dated spend in the last eight weeks."}
-                        </p>
-                    </section>
-                )}
-                {weekCalls.some((point) => point.value > 0) ? (
-                    <AdminAreaChart
-                        title="Weekly calls"
-                        hint="LLM call count by week"
-                        data={weekCalls}
-                        fillId="liveAnalyticsCallsFill"
-                    />
-                ) : (
-                    <section className="surface-panel p-5">
-                        <h2 className="text-label-lg text-strong-950">
-                            Weekly calls
-                        </h2>
-                        <p className="mt-8 text-label-sm text-sub-600">
-                            {loading
-                                ? "Loading usage…"
-                                : "No dated calls in the last eight weeks."}
-                        </p>
-                    </section>
-                )}
-            </div>
-            {topSpend.length > 0 ? (
-                <section className="surface-panel p-5">
-                    <h2 className="text-label-lg text-strong-950">
-                        Spend leaders
-                    </h2>
-                    <div className="mt-4 divide-y divide-stroke-soft-200">
-                        {topSpend.map((row) => (
-                            <div
-                                key={row.name}
-                                className="flex items-center justify-between gap-3 py-3 text-label-sm"
-                            >
-                                <span className="text-strong-950">{row.name}</span>
-                                <span className="text-sub-600">
-                                    {currency.format(row.value)}
-                                </span>
-                            </div>
-                        ))}
+            <AdminAnalyticsSkeleton loading={loading}>
+                <>
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <StatCard
+                            label="Total calls"
+                            value={numberFormatter.format(usage?.total_calls ?? 0)}
+                            hint="All LLM calls"
+                        />
+                        <StatCard
+                            label="Tokens consumed"
+                            value={numberFormatter.format(usage?.total_tokens ?? 0)}
+                            hint="Prompt + completion"
+                        />
+                        <StatCard
+                            label="Spend remaining"
+                            value={`$${(usage?.remaining_usd ?? 0).toFixed(2)}`}
+                            hint={`of $${(usage?.limit_usd ?? 0).toFixed(0)} budget`}
+                        />
+                        <StatCard
+                            label="Active companies"
+                            value={numberFormatter.format(activeCompanies)}
+                            hint={`${orgs.length} total orgs`}
+                        />
                     </div>
-                </section>
-            ) : null}
+                    <div className="grid gap-6 xl:grid-cols-2">
+                        {tokenBars.length > 0 ? (
+                            <AdminBarChart
+                                title="Usage by group"
+                                hint="Top call volume by user / model"
+                                data={tokenBars}
+                            />
+                        ) : (
+                            <section className="surface-panel p-5">
+                                <h2 className="text-label-lg text-strong-950">
+                                    Usage by group
+                                </h2>
+                                <p className="mt-8 text-label-sm text-sub-600">
+                                    No live usage groups yet.
+                                </p>
+                            </section>
+                        )}
+                        {spendBars.length > 0 ? (
+                            <AdminBarChart
+                                title="Top spend"
+                                hint="Estimated provider cost by group"
+                                data={spendBars}
+                                valuePrefix="$"
+                            />
+                        ) : (
+                            <section className="surface-panel p-5">
+                                <h2 className="text-label-lg text-strong-950">
+                                    Top spend
+                                </h2>
+                                <p className="mt-8 text-label-sm text-sub-600">
+                                    No spend groups yet.
+                                </p>
+                            </section>
+                        )}
+                        {weekly.some((point) => point.value > 0) ? (
+                            <AdminAreaChart
+                                title="Weekly spend"
+                                hint="Provider cost by week from the ledger"
+                                data={weekly}
+                                valuePrefix="$"
+                                fillId="liveAnalyticsSpendFill"
+                            />
+                        ) : (
+                            <section className="surface-panel p-5">
+                                <h2 className="text-label-lg text-strong-950">
+                                    Weekly spend
+                                </h2>
+                                <p className="mt-8 text-label-sm text-sub-600">
+                                    No dated spend in the last eight weeks.
+                                </p>
+                            </section>
+                        )}
+                        {weekCalls.some((point) => point.value > 0) ? (
+                            <AdminAreaChart
+                                title="Weekly calls"
+                                hint="LLM call count by week"
+                                data={weekCalls}
+                                fillId="liveAnalyticsCallsFill"
+                            />
+                        ) : (
+                            <section className="surface-panel p-5">
+                                <h2 className="text-label-lg text-strong-950">
+                                    Weekly calls
+                                </h2>
+                                <p className="mt-8 text-label-sm text-sub-600">
+                                    No dated calls in the last eight weeks.
+                                </p>
+                            </section>
+                        )}
+                    </div>
+                    {topSpend.length > 0 ? (
+                        <section className="surface-panel p-5">
+                            <h2 className="text-label-lg text-strong-950">
+                                Spend leaders
+                            </h2>
+                            <div className="mt-4 divide-y divide-stroke-soft-200">
+                                {topSpend.map((row) => (
+                                    <div
+                                        key={row.name}
+                                        className="flex items-center justify-between gap-3 py-3 text-label-sm"
+                                    >
+                                        <span className="text-strong-950">
+                                            {row.name}
+                                        </span>
+                                        <span className="text-sub-600">
+                                            {currency.format(row.value)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    ) : null}
+                </>
+            </AdminAnalyticsSkeleton>
         </div>
     );
 };
