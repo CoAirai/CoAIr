@@ -421,20 +421,75 @@ export async function listAdminUsage(
 }
 
 export async function loadWeeklySpend(token: string, count = 8): Promise<ChartPoint[]> {
-    const windows = weekWindows(count);
-    return Promise.all(
-        windows.map(async (week) => {
-            const payload = await listAdminUsage(token, {
-                dateFrom: week.from,
-                dateTo: week.to,
-            });
-            const value = (payload.groups ?? []).reduce(
-                (sum, group) => sum + (group.estimated_provider_cost_usd ?? 0),
-                0
-            );
-            return { label: week.label, value: Number(value.toFixed(2)) };
-        })
-    );
+    try {
+        const payload = await coairFetch<{
+            series?: Array<{
+                label: string;
+                cost_usd?: number;
+                calls?: number;
+                tokens?: number;
+            }>;
+        }>(`/admin/usage/series?weeks=${encodeURIComponent(String(count))}`, {
+            token,
+        });
+        return (payload.series ?? []).map((row) => ({
+            label: row.label,
+            value: Number((row.cost_usd ?? 0).toFixed(2)),
+        }));
+    } catch {
+        // Fallback for older APIs without /admin/usage/series.
+        const windows = weekWindows(count);
+        return Promise.all(
+            windows.map(async (week) => {
+                const payload = await listAdminUsage(token, {
+                    dateFrom: week.from,
+                    dateTo: week.to,
+                });
+                const value = (payload.groups ?? []).reduce(
+                    (sum, group) =>
+                        sum + (group.estimated_provider_cost_usd ?? 0),
+                    0
+                );
+                return { label: week.label, value: Number(value.toFixed(2)) };
+            })
+        );
+    }
+}
+
+export async function loadUsageSeries(token: string, weeks = 8) {
+    return coairFetch<{
+        weeks: number;
+        series: Array<{
+            label: string;
+            from: string;
+            to: string;
+            cost_usd: number;
+            calls: number;
+            tokens: number;
+        }>;
+    }>(`/admin/usage/series?weeks=${encodeURIComponent(String(weeks))}`, {
+        token,
+    });
+}
+
+export async function diagnoseDataTable(token: string, fileId: string) {
+    return coairFetch<{
+        ok?: boolean;
+        error?: string;
+        file_id?: string;
+        file_name?: string;
+        sheets?: Array<{
+            sheet: string;
+            rows?: number;
+            best_schema?: string | null;
+            best_ratio?: number;
+            error?: string;
+        }>;
+    }>("/admin/data-tables/diagnose", {
+        method: "POST",
+        token,
+        body: { file_id: fileId },
+    });
 }
 
 export async function readPlatformUsage(token: string) {

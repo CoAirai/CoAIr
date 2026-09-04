@@ -6,8 +6,12 @@ import { useRouter } from "next/navigation";
 import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
-import { useAdminData } from "@/context/AdminDataContext";
-import { createAccessRequest as createLiveAccessRequest } from "@/lib/coair/commerce";
+import {
+    createAccessRequest as createLiveAccessRequest,
+    sendSignupEmailCode,
+    verifySignupEmailCode,
+} from "@/lib/coair/commerce";
+import { CoairApiError } from "@/lib/coair/client";
 
 const ACCESS_ERRORS: Record<string, string> = {
     pending_request_exists: "A pending request already exists for this email",
@@ -15,54 +19,96 @@ const ACCESS_ERRORS: Record<string, string> = {
     full_name_required: "Full name required",
     company_name_required: "Company name required",
     email_already_registered: "This email already has a COAir account",
+    email_not_verified: "Verify your email with the code we sent first",
+    email_verification_required: "Verify your email with the code we sent first",
+    email_verification_expired: "Email code expired — request a new one",
+    email_challenge_expired: "Email code expired — request a new one",
+    invalid_email_code: "That verification code is incorrect",
+    invalid_email_challenge: "Request a new email verification code",
+    rate_limited: "Too many attempts — wait a minute and try again",
 };
 
 function humanAccessError(code: string) {
-    return ACCESS_ERRORS[code] ?? code.replace(/_/g, " ");
+    const clean = code.replace(/^"|"$/g, "").trim();
+    try {
+        const parsed = JSON.parse(clean) as { detail?: string };
+        if (parsed.detail) {
+            return ACCESS_ERRORS[parsed.detail] ?? String(parsed.detail).replace(/_/g, " ");
+        }
+    } catch {
+        /* plain code */
+    }
+    return ACCESS_ERRORS[clean] ?? clean.replace(/_/g, " ");
+}
+
+function errorText(err: unknown) {
+    if (err instanceof CoairApiError) {
+        return humanAccessError(err.body || err.message);
+    }
+    return err instanceof Error ? err.message : "Request failed";
 }
 
 const SignUpPage = () => {
     const router = useRouter();
-    const { requestCompanyAccess } = useAdminData();
+    const [step, setStep] = useState<"details" | "code">("details");
     const [fullName, setFullName] = useState("");
     const [email, setEmail] = useState("");
     const [company, setCompany] = useState("");
+    const [challengeId, setChallengeId] = useState("");
+    const [code, setCode] = useState("");
+    const [debugCode, setDebugCode] = useState<string | null>(null);
     const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
     const [submitted, setSubmitted] = useState(false);
 
-    const handleSubmit = async (event: FormEvent) => {
+    const sendCode = async () => {
+        setBusy(true);
+        setError("");
+        try {
+            const sent = await sendSignupEmailCode(email.trim());
+            setChallengeId(sent.challenge_id);
+            setDebugCode(sent.debug_code ?? null);
+            setStep("code");
+        } catch (err) {
+            setError(errorText(err));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const handleDetails = async (event: FormEvent) => {
         event.preventDefault();
-        const live = await createLiveAccessRequest({
-            fullName,
-            email,
-            companyName: company,
-        });
-        if (live.ok) {
-            setError("");
+        await sendCode();
+    };
+
+    const handleVerify = async (event: FormEvent) => {
+        event.preventDefault();
+        setBusy(true);
+        setError("");
+        try {
+            const verified = await verifySignupEmailCode(
+                challengeId,
+                code.trim()
+            );
+            const live = await createLiveAccessRequest({
+                fullName,
+                email,
+                companyName: company,
+                emailVerificationToken: verified.verification_token,
+            });
+            if (!live.ok) {
+                setError(humanAccessError(live.error));
+                return;
+            }
             setSubmitted(true);
             window.setTimeout(() => {
                 router.push("/auth/sign-in");
             }, 1600);
-            return;
+        } catch (err) {
+            setError(errorText(err));
+        } finally {
+            setBusy(false);
         }
-        if (live.kind === "invalid") {
-            setError(humanAccessError(live.error));
-            return;
-        }
-        const result = requestCompanyAccess({
-            fullName,
-            email,
-            companyName: company,
-        });
-        if (!result.ok) {
-            setError(result.error ?? "Unable to submit request");
-            return;
-        }
-        setError("");
-        setSubmitted(true);
-        window.setTimeout(() => {
-            router.push("/auth/sign-in");
-        }, 1600);
     };
 
     return (
@@ -84,12 +130,15 @@ const SignUpPage = () => {
                             Request sent to Super Admin
                         </p>
                         <p className="mt-2 leading-relaxed">
-                            It appears under Tenants → Companies. Taking you to
-                            sign in…
+                            Your email is verified. Super Admin will review the
+                            request, then you can sign in. Taking you there…
                         </p>
                     </div>
-                ) : (
-                    <form className="flex flex-col gap-4.5" onSubmit={handleSubmit}>
+                ) : step === "details" ? (
+                    <form
+                        className="flex flex-col gap-4.5"
+                        onSubmit={(event) => void handleDetails(event)}
+                    >
                         <Field
                             placeholder="Full name"
                             value={fullName}
@@ -116,14 +165,69 @@ const SignUpPage = () => {
                             className="w-full !h-12 !rounded-xl"
                             isBlue
                             type="submit"
+                            disabled={busy}
                         >
-                            Request access
+                            {busy ? "Sending code…" : "Send email code"}
                         </Button>
+                    </form>
+                ) : (
+                    <form
+                        className="flex flex-col gap-4.5"
+                        onSubmit={(event) => void handleVerify(event)}
+                    >
+                        <p className="text-label-sm text-sub-600">
+                            We sent a 6-digit code to{" "}
+                            <span className="text-strong-950">{email}</span>.
+                            Enter it to prove this inbox is yours.
+                        </p>
+                        <Field
+                            placeholder="Email verification code"
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            required
+                            autoComplete="one-time-code"
+                        />
+                        {debugCode ? (
+                            <p className="text-label-xs text-amber-600">
+                                Dev code: {debugCode}
+                            </p>
+                        ) : null}
+                        {error ? (
+                            <p className="text-label-sm text-red-500">{error}</p>
+                        ) : null}
+                        <Button
+                            className="w-full !h-12 !rounded-xl"
+                            isBlue
+                            type="submit"
+                            disabled={busy}
+                        >
+                            {busy ? "Submitting…" : "Verify & request access"}
+                        </Button>
+                        <button
+                            type="button"
+                            className="text-label-sm text-blue-500"
+                            disabled={busy}
+                            onClick={() => void sendCode()}
+                        >
+                            Resend code
+                        </button>
+                        <button
+                            type="button"
+                            className="text-label-sm text-sub-600"
+                            disabled={busy}
+                            onClick={() => {
+                                setStep("details");
+                                setCode("");
+                                setError("");
+                            }}
+                        >
+                            Change email
+                        </button>
                     </form>
                 )}
                 <p className="mt-5 text-center text-label-sm text-sub-600">
-                    Super Admin reviews requests on Companies, then invites the
-                    owner with a package.
+                    Only real email addresses can request access. After Super
+                    Admin approves, sign-in may also ask for a 2FA code.
                 </p>
                 <div className="mt-5 text-center">
                     <Link

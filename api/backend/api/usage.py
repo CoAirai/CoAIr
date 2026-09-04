@@ -52,3 +52,15 @@ def billing_usage(
         username=username, project_id=project_id,
         date_from=date_from, date_to=date_to,
     )
+
+
+@router.get("/admin/usage/series")
+def billing_usage_series(weeks: int = Query(8, ge=1, le=52)) -> dict:
+    """Weekly spend / calls / tokens for Super Admin analytics."""
+    return get_billing_store().usage_series(weeks=weeks)
+
+
+@router.get("/admin/usage/series")
+def billing_usage_series(weeks: int = Query(8, ge=1, le=52)) -> dict:
+    """Weekly spend / calls / tokens for Super Admin analytics."""
+    return get_billing_store().usage_series(weeks=weeks)

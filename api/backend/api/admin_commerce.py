@@ -54,11 +54,13 @@ async def patch_admin_ticket(
     _admin: UserContext = Depends(require_admin),
     store: CommerceStore = Depends(get_commerce_store),
 ):
+    fields = getattr(req, "model_fields_set", None) or getattr(req, "__fields_set__", set())
     unassign = False
     assignee = req.assignee_id
-    if req.assignee_id is not None and not req.assignee_id.strip():
-        unassign = True
-        assignee = None
+    if "assignee_id" in fields:
+        if req.assignee_id is None or not str(req.assignee_id).strip():
+            unassign = True
+            assignee = None
     try:
         updated = store.update_ticket(
             ticket_id,

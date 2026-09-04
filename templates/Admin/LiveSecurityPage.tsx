@@ -123,9 +123,9 @@ const LiveSecurityPage = () => {
                             Multi-factor authentication
                         </h2>
                         <p className="mt-1 text-label-xs text-sub-600">
-                            Require an emailed one-time code when company admins
-                            sign in. Codes are emailed; debug codes are never
-                            returned in production.
+                            Require an emailed one-time code when any company
+                            user signs in (platform admins exempt). Signup also
+                            requires email verification before an access request.
                         </p>
                     </div>
                     <Switch

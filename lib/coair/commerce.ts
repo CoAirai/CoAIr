@@ -110,6 +110,7 @@ export async function createAccessRequest(input: {
     fullName: string;
     email: string;
     companyName: string;
+    emailVerificationToken: string;
 }) {
     try {
         const payload = await coairFetch<CoairAccessRequestPayload>(
@@ -120,6 +121,7 @@ export async function createAccessRequest(input: {
                     full_name: input.fullName,
                     email: input.email,
                     company_name: input.companyName,
+                    email_verification_token: input.emailVerificationToken,
                 },
             }
         );
@@ -133,6 +135,29 @@ export async function createAccessRequest(input: {
             error: apiErrorMessage(error),
         };
     }
+}
+
+export async function sendSignupEmailCode(email: string) {
+    return coairFetch<{
+        challenge_id: string;
+        email: string;
+        purpose: string;
+        debug_code?: string;
+    }>("/auth/email/send-code", {
+        method: "POST",
+        body: { email, purpose: "signup" },
+    });
+}
+
+export async function verifySignupEmailCode(challengeId: string, code: string) {
+    return coairFetch<{
+        email: string;
+        purpose: string;
+        verification_token: string;
+    }>("/auth/email/verify-code", {
+        method: "POST",
+        body: { challenge_id: challengeId, code },
+    });
 }
 
 export async function listAccessRequests(token: string) {

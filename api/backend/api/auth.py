@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -52,6 +52,16 @@ class ResetPasswordRequest(BaseModel):
 class MfaVerifyRequest(BaseModel):
     mfa_token: str
     code: str
+
+
+class EmailSendCodeRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=160)
+    purpose: Literal["signup", "invite"] = "signup"
+
+
+class EmailVerifyCodeRequest(BaseModel):
+    challenge_id: str = Field(min_length=8, max_length=200)
+    code: str = Field(min_length=4, max_length=12)
 
 
 def _user_payload(record: Dict[str, Any], usage: Dict[str, Any]) -> Dict[str, Any]:
@@ -160,7 +170,6 @@ async def login(
         security["mfa_required"]
         and not is_admin(record["role"])
         and membership
-        and membership.get("role") == "owner"
     ):
         challenge = ops.create_mfa_challenge(record["username"])
         if supabase_session:
@@ -225,6 +234,39 @@ async def verify_mfa(
         "session_timeout_minutes": timeout_minutes,
         "user": _user_payload(record, usage),
     }
+
+
+@router.post("/auth/email/send-code")
+async def send_email_code(
+    req: EmailSendCodeRequest,
+    request: Request,
+    ops: OpsStore = Depends(get_ops_store),
+):
+    ip = client_ip(request) or "unknown"
+    email = req.email.strip().lower()
+    rate_limit(f"auth:email-send:{ip}", limit=8, window_seconds=60)
+    rate_limit(f"auth:email-send-addr:{email}", limit=5, window_seconds=600)
+    try:
+        return ops.create_email_verification(email, purpose=req.purpose)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/auth/email/verify-code")
+async def verify_email_code(
+    req: EmailVerifyCodeRequest,
+    request: Request,
+    ops: OpsStore = Depends(get_ops_store),
+):
+    rate_limit(
+        f"auth:email-verify:{client_ip(request) or 'unknown'}",
+        limit=20,
+        window_seconds=60,
+    )
+    try:
+        return ops.verify_email_code(req.challenge_id, req.code)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/auth/forgot-password")

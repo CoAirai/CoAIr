@@ -10,6 +10,7 @@ import {
     addJargonTerm,
     applyFlywheel,
     deleteJargonTerm,
+    diagnoseDataTable,
     listJargon,
     readDataTablesStatus,
     readFlywheelStatus,
@@ -56,6 +57,8 @@ const LiveOpsPage = () => {
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [title, setTitle] = useState("");
     const [body, setBody] = useState("");
+    const [diagnoseFileId, setDiagnoseFileId] = useState("");
+    const [diagnoseResult, setDiagnoseResult] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
@@ -390,6 +393,60 @@ const LiveOpsPage = () => {
                 >
                     Reindex unregistered files
                 </button>
+                <form
+                    className="mt-5 flex flex-col gap-3 sm:flex-row"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        const fileId = diagnoseFileId.trim();
+                        if (!fileId) return;
+                        void diagnoseDataTable(token, fileId)
+                            .then((result) => {
+                                if (result.error || result.ok === false) {
+                                    setDiagnoseResult(
+                                        result.error || "Diagnose failed"
+                                    );
+                                    return;
+                                }
+                                const sheets = result.sheets ?? [];
+                                const summary = sheets
+                                    .map((sheet) =>
+                                        sheet.error
+                                            ? `${sheet.sheet}: ${sheet.error}`
+                                            : `${sheet.sheet}: ${sheet.best_schema ?? "no match"} (${Math.round((sheet.best_ratio ?? 0) * 100)}%)`
+                                    )
+                                    .join(" · ");
+                                setDiagnoseResult(
+                                    summary ||
+                                        `Diagnosed ${result.file_name || fileId}`
+                                );
+                                setMessage("Data-table diagnose complete");
+                            })
+                            .catch((err) => {
+                                setDiagnoseResult(null);
+                                setError(apiErrorMessage(err));
+                            });
+                    }}
+                >
+                    <input
+                        value={diagnoseFileId}
+                        onChange={(event) =>
+                            setDiagnoseFileId(event.target.value)
+                        }
+                        placeholder="File id for schema diagnose"
+                        className="h-10 min-w-0 flex-1 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                    />
+                    <button
+                        type="submit"
+                        className="h-10 shrink-0 rounded-full border border-stroke-soft-200 px-4 text-label-sm text-strong-950"
+                    >
+                        Diagnose file
+                    </button>
+                </form>
+                {diagnoseResult ? (
+                    <p className="mt-3 text-label-sm text-sub-600">
+                        {diagnoseResult}
+                    </p>
+                ) : null}
             </section>
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">

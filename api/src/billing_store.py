@@ -527,6 +527,62 @@ class BillingStore:
                 row[key.removesuffix("_micros")] = _credits(int(row.pop(key) or 0))
         return {"groups": rows}
 
+    def usage_series(self, *, weeks: int = 8) -> Dict[str, Any]:
+        """Weekly provider-cost / call / token buckets for analytics charts."""
+        from datetime import datetime, timedelta, timezone
+
+        count = max(1, min(int(weeks or 8), 52))
+        now = datetime.now(timezone.utc)
+        end = datetime(
+            now.year, now.month, now.day, 23, 59, 59, tzinfo=timezone.utc
+        )
+        windows = []
+        for i in range(count - 1, -1, -1):
+            week_end = end - timedelta(days=i * 7)
+            week_start = week_end - timedelta(days=6)
+            week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+            windows.append(
+                {
+                    "label": week_start.strftime("%b %d").lstrip()
+                    .replace(" 0", " "),
+                    "from": week_start.isoformat(),
+                    "to": week_end.isoformat(),
+                    "cost_usd": 0.0,
+                    "calls": 0,
+                    "tokens": 0,
+                }
+            )
+        earliest = windows[0]["from"] if windows else ""
+        sql = (
+            "SELECT created_at, provider_cost_nanos, prompt_tokens, "
+            "completion_tokens FROM billing_ledger "
+            "WHERE event_type IN ('charge','historical') AND created_at>=?"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, [earliest]).fetchall()
+        for row in rows:
+            created = str(row["created_at"] or "")
+            for window in windows:
+                if window["from"] <= created <= window["to"]:
+                    window["cost_usd"] += int(row["provider_cost_nanos"] or 0) / NANOUSD_PER_USD
+                    window["calls"] += 1
+                    window["tokens"] += int(row["prompt_tokens"] or 0) + int(
+                        row["completion_tokens"] or 0
+                    )
+                    break
+        series = [
+            {
+                "label": w["label"],
+                "from": w["from"],
+                "to": w["to"],
+                "cost_usd": round(float(w["cost_usd"]), 4),
+                "calls": int(w["calls"]),
+                "tokens": int(w["tokens"]),
+            }
+            for w in windows
+        ]
+        return {"weeks": count, "series": series}
+
     def ledger(self, username: str, *, limit: int = 100, offset: int = 0,
                event_types: Sequence[str] = ()) -> Dict[str, Any]:
         """One account's billing history, newest first.

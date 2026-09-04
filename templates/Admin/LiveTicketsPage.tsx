@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -8,6 +8,7 @@ import {
     listAdminTickets,
     patchAdminTicket,
 } from "@/lib/coair/commerce";
+import { listAdminUsers, type CoairAdminUser } from "@/lib/coair/admin";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
 import type { SupportTicket, TicketPriority, TicketStatus } from "@/lib/admin/wave2Types";
 
@@ -45,20 +46,34 @@ const LiveTicketsPage = () => {
     const token = session?.accessToken ?? "";
     const { orgs } = useLiveAdmin();
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
+    const [operators, setOperators] = useState<CoairAdminUser[]>([]);
     const [ticketsReady, setTicketsReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [search, setSearch] = useState("");
     const [status, setStatus] = useState<TicketStatus | "all">("all");
     const [priority, setPriority] = useState<TicketPriority | "all">("all");
+    const [expandedId, setExpandedId] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
         if (!token) {
             setTickets([]);
+            setOperators([]);
             setTicketsReady(true);
             return;
         }
         try {
-            setTickets(await listAdminTickets(token));
+            const [ticketRows, userPayload] = await Promise.all([
+                listAdminTickets(token),
+                listAdminUsers(token),
+            ]);
+            setTickets(ticketRows);
+            setOperators(
+                (userPayload.users ?? []).filter((user) =>
+                    ["admin", "superadmin"].includes(
+                        String(user.role || "").toLowerCase()
+                    )
+                )
+            );
             setError(null);
         } catch (err) {
             setError(apiErrorMessage(err));
@@ -75,12 +90,28 @@ const LiveTicketsPage = () => {
         orgs.find((org) => org.org_id === companyId)?.name ?? "Unknown company";
 
     const agentOptions = useMemo(() => {
-        const named = new Set<string>();
-        for (const ticket of tickets) {
-            if (ticket.assigneeId) named.add(ticket.assigneeId);
+        const byId = new Map<string, string>();
+        for (const user of operators) {
+            const id = user.username;
+            byId.set(
+                id,
+                user.display_name?.trim()
+                    ? `${user.display_name} (${id})`
+                    : id
+            );
         }
-        return ["Unassigned", ...Array.from(named).sort()];
-    }, [tickets]);
+        for (const ticket of tickets) {
+            if (ticket.assigneeId && !byId.has(ticket.assigneeId)) {
+                byId.set(ticket.assigneeId, ticket.assigneeId);
+            }
+        }
+        return [
+            { id: "", label: "Unassigned" },
+            ...Array.from(byId.entries())
+                .sort((a, b) => a[1].localeCompare(b[1]))
+                .map(([id, label]) => ({ id, label })),
+        ];
+    }, [operators, tickets]);
 
     const filtered = useMemo(() => {
         const query = search.trim().toLowerCase();
@@ -88,6 +119,7 @@ const LiveTicketsPage = () => {
             if (
                 query &&
                 !ticket.subject.toLowerCase().includes(query) &&
+                !(ticket.message || "").toLowerCase().includes(query) &&
                 !companyName(ticket.companyId).toLowerCase().includes(query)
             ) {
                 return false;
@@ -145,7 +177,7 @@ const LiveTicketsPage = () => {
                             type="search"
                             value={search}
                             onChange={(event) => setSearch(event.target.value)}
-                            placeholder="Search by subject or company"
+                            placeholder="Search by subject, message, or company"
                             className="h-10 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm outline-none placeholder:text-sub-600 focus:border-blue-500"
                         />
                     </label>
@@ -196,89 +228,145 @@ const LiveTicketsPage = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stroke-soft-200">
-                            {filtered.map((ticket) => (
-                                <tr key={ticket.id} className="text-label-sm">
-                                    <td className="px-5 py-4 text-strong-950">
-                                        {ticket.subject}
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {companyName(ticket.companyId)}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <TicketBadge
-                                            label={
-                                                ticket.priority.charAt(0).toUpperCase() +
-                                                ticket.priority.slice(1)
-                                            }
-                                            classes={PRIORITY_CLASSES[ticket.priority]}
-                                        />
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <TicketBadge
-                                            label={
-                                                ticket.status.charAt(0).toUpperCase() +
-                                                ticket.status.slice(1)
-                                            }
-                                            classes={STATUS_CLASSES[ticket.status]}
-                                        />
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        <select
-                                            value={ticket.assigneeId ?? "Unassigned"}
-                                            onChange={(event) =>
-                                                void assign(
-                                                    ticket.id,
-                                                    event.target.value === "Unassigned"
-                                                        ? null
-                                                        : event.target.value
-                                                )
-                                            }
-                                            className="h-9 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs outline-none focus:border-blue-500"
-                                        >
-                                            {agentOptions.map((agent) => (
-                                                <option key={agent} value={agent}>
-                                                    {agent}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {dateFormatter.format(
-                                            new Date(
-                                                ticket.createdAt.includes("T")
-                                                    ? ticket.createdAt
-                                                    : `${ticket.createdAt}T00:00:00`
-                                            )
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-4">
-                                        {ticket.status === "resolved" ? (
-                                            <button
-                                                type="button"
-                                                className="text-label-sm text-blue-500 hover:text-blue-600"
-                                                onClick={() =>
-                                                    void setTicketStatus(ticket.id, "open")
-                                                }
-                                            >
-                                                Reopen
-                                            </button>
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                className="text-label-sm text-green-600 hover:text-green-700"
-                                                onClick={() =>
-                                                    void setTicketStatus(
-                                                        ticket.id,
-                                                        "resolved"
+                            {filtered.map((ticket) => {
+                                const open = expandedId === ticket.id;
+                                return (
+                                    <Fragment key={ticket.id}>
+                                        <tr className="text-label-sm">
+                                            <td className="px-5 py-4 text-strong-950">
+                                                <button
+                                                    type="button"
+                                                    className="text-left hover:text-blue-600"
+                                                    onClick={() =>
+                                                        setExpandedId(
+                                                            open ? null : ticket.id
+                                                        )
+                                                    }
+                                                >
+                                                    {ticket.subject}
+                                                    <span className="mt-1 block text-label-xs text-sub-600">
+                                                        {open
+                                                            ? "Hide message"
+                                                            : "View message"}
+                                                    </span>
+                                                </button>
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {companyName(ticket.companyId)}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <TicketBadge
+                                                    label={
+                                                        ticket.priority
+                                                            .charAt(0)
+                                                            .toUpperCase() +
+                                                        ticket.priority.slice(1)
+                                                    }
+                                                    classes={
+                                                        PRIORITY_CLASSES[
+                                                            ticket.priority
+                                                        ]
+                                                    }
+                                                />
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <TicketBadge
+                                                    label={
+                                                        ticket.status
+                                                            .charAt(0)
+                                                            .toUpperCase() +
+                                                        ticket.status.slice(1)
+                                                    }
+                                                    classes={
+                                                        STATUS_CLASSES[ticket.status]
+                                                    }
+                                                />
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <select
+                                                    value={ticket.assigneeId ?? ""}
+                                                    onChange={(event) =>
+                                                        void assign(
+                                                            ticket.id,
+                                                            event.target.value ||
+                                                                null
+                                                        )
+                                                    }
+                                                    className="h-9 max-w-[220px] rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs outline-none focus:border-blue-500"
+                                                >
+                                                    {agentOptions.map((agent) => (
+                                                        <option
+                                                            key={
+                                                                agent.id ||
+                                                                "unassigned"
+                                                            }
+                                                            value={agent.id}
+                                                        >
+                                                            {agent.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {dateFormatter.format(
+                                                    new Date(
+                                                        ticket.createdAt.includes(
+                                                            "T"
+                                                        )
+                                                            ? ticket.createdAt
+                                                            : `${ticket.createdAt}T00:00:00`
                                                     )
-                                                }
-                                            >
-                                                Resolve
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
+                                                )}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                {ticket.status === "resolved" ? (
+                                                    <button
+                                                        type="button"
+                                                        className="text-label-sm text-blue-500 hover:text-blue-600"
+                                                        onClick={() =>
+                                                            void setTicketStatus(
+                                                                ticket.id,
+                                                                "open"
+                                                            )
+                                                        }
+                                                    >
+                                                        Reopen
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className="text-label-sm text-green-600 hover:text-green-700"
+                                                        onClick={() =>
+                                                            void setTicketStatus(
+                                                                ticket.id,
+                                                                "resolved"
+                                                            )
+                                                        }
+                                                    >
+                                                        Resolve
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                        {open ? (
+                                            <tr className="bg-weak-50">
+                                                <td
+                                                    colSpan={7}
+                                                    className="px-5 py-4 text-label-sm text-sub-600"
+                                                >
+                                                    <p className="text-label-xs font-medium uppercase tracking-wide text-sub-600">
+                                                        Message
+                                                    </p>
+                                                    <p className="mt-2 whitespace-pre-wrap text-strong-950">
+                                                        {ticket.message?.trim() ||
+                                                            "No message provided."}
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                        ) : null}
+                                    </Fragment>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

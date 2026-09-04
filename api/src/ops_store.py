@@ -23,6 +23,8 @@ ANNOUNCEMENT_STATUSES = ("draft", "published", "archived")
 TOPUP_STATUSES = ("pending", "approved", "denied")
 RESET_TTL_MINUTES = 60
 MFA_TTL_MINUTES = 10
+EMAIL_VERIFY_TTL_MINUTES = 15
+EMAIL_VERIFY_PURPOSES = ("signup", "invite")
 SEED_FLAGS = (
     ("flag-001", "embed", "COAIR-Embed", 1),
     ("flag-002", "analyze", "COAIR-Analyze", 1),
@@ -118,6 +120,19 @@ CREATE TABLE IF NOT EXISTS mfa_challenges (
     expires_at TEXT NOT NULL,
     used_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS email_verifications (
+    challenge_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    proof_hash TEXT,
+    expires_at TEXT NOT NULL,
+    verified_at TEXT,
+    consumed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_email
+    ON email_verifications(email, purpose, expires_at);
 
 CREATE TABLE IF NOT EXISTS email_outbox (
     outbox_id TEXT PRIMARY KEY,
@@ -808,6 +823,94 @@ class OpsStore:
         if expose_security_debug():
             payload["debug_code"] = code
         return payload
+
+    def create_email_verification(
+        self, email: str, *, purpose: str = "signup"
+    ) -> Dict[str, str]:
+        clean = (email or "").strip().lower()
+        if "@" not in clean or "." not in clean.split("@")[-1]:
+            raise ValueError("invalid_email")
+        if purpose not in EMAIL_VERIFY_PURPOSES:
+            raise ValueError("invalid_purpose")
+        challenge_id = secrets.token_urlsafe(18)
+        code = f"{secrets.randbelow(1000000):06d}"
+        expires = (_now() + timedelta(minutes=EMAIL_VERIFY_TTL_MINUTES)).isoformat()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO email_verifications (challenge_id, email, purpose, "
+                "code_hash, expires_at) VALUES (?,?,?,?,?)",
+                [challenge_id, clean, purpose, _hash(code), expires],
+            )
+        from .email_delivery import send_coair_email
+        from backend.core.platform_guard import expose_security_debug
+
+        result = send_coair_email(
+            "email_verify",
+            clean,
+            name=clean.split("@")[0],
+            mfa_code=code,
+        )
+        self.queue_email(
+            kind="email_verify",
+            recipient=clean,
+            subject="Verify your email for COAir",
+            body=f"Email verify queued ({result.get('mode', 'unknown')})",
+            secret=code,
+        )
+        payload = {"challenge_id": challenge_id, "email": clean, "purpose": purpose}
+        if expose_security_debug():
+            payload["debug_code"] = code
+        return payload
+
+    def verify_email_code(self, challenge_id: str, code: str) -> Dict[str, str]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM email_verifications WHERE challenge_id=?",
+                [challenge_id],
+            ).fetchone()
+        if not row or row["consumed_at"]:
+            raise ValueError("invalid_email_challenge")
+        if row["expires_at"] < _now_iso():
+            raise ValueError("email_challenge_expired")
+        if row["code_hash"] != _hash((code or "").strip()):
+            raise ValueError("invalid_email_code")
+        proof = secrets.token_urlsafe(24)
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE email_verifications SET verified_at=?, proof_hash=? "
+                "WHERE challenge_id=?",
+                [_now_iso(), _hash(proof), challenge_id],
+            )
+        return {
+            "email": str(row["email"]),
+            "purpose": str(row["purpose"]),
+            "verification_token": proof,
+        }
+
+    def consume_email_verification(
+        self, *, email: str, purpose: str, verification_token: str
+    ) -> None:
+        clean = (email or "").strip().lower()
+        proof = (verification_token or "").strip()
+        if not clean or not proof:
+            raise ValueError("email_verification_required")
+        hashed = _hash(proof)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM email_verifications WHERE email=? AND purpose=? "
+                "AND proof_hash=? AND verified_at IS NOT NULL AND consumed_at IS NULL "
+                "ORDER BY verified_at DESC LIMIT 1",
+                [clean, purpose, hashed],
+            ).fetchone()
+        if not row:
+            raise ValueError("email_not_verified")
+        if row["expires_at"] < _now_iso():
+            raise ValueError("email_verification_expired")
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE email_verifications SET consumed_at=? WHERE challenge_id=?",
+                [_now_iso(), row["challenge_id"]],
+            )
 
     def consume_mfa_challenge(self, challenge_id: str, code: str) -> str:
         with self._connect() as conn:

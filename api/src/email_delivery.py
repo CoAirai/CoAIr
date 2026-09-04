@@ -23,6 +23,7 @@ EMAIL_KINDS = {
     "password_reset_alert",
     "login_alert",
     "mfa_code",
+    "email_verify",
     "invoice_issued",
     "invoice_paid",
     "invoice_refunded",
@@ -382,6 +383,28 @@ def build_email(
             "Sign-in code",
             body,
             preheader="Your COAir verification code",
+        )
+        return {"subject": subject, "text": text, "html": html}
+
+    if kind == "email_verify":
+        subject = "Verify your email for COAir"
+        text = (
+            f"Hi {display},\n\nYour COAir email verification code is: {code}\n\n"
+            f"Enter this code to continue creating your account. It expires in a few minutes.\n"
+        )
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+            f"Confirm this email owns your COAir request with this code:</p>"
+            f"<p style=\"margin:0 0 16px;font-size:28px;letter-spacing:6px;font-weight:700;"
+            f"color:#0E121B;font-family:ui-monospace,Menlo,Consolas,monospace\">{escape(code)}</p>"
+            f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">"
+            f"If you did not start a COAir signup, ignore this email.</p>"
+        )
+        html = _wrap_html(
+            "Verify your email",
+            body,
+            preheader="Your COAir email verification code",
         )
         return {"subject": subject, "text": text, "html": html}
 
