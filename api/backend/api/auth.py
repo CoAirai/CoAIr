@@ -32,6 +32,7 @@ from src.supabase_auth import (
 from src.user_store import (
     ACCOUNT_ACTIVE,
     ACCOUNT_INVITED,
+    SUPERADMIN_ROLE,
     UserStore,
     account_auth_error,
     get_user_store,
@@ -45,6 +46,7 @@ router = APIRouter()
 class LoginRequest(BaseModel):
     username: str
     password: str
+    device_token: str = Field(default="", max_length=200)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -59,6 +61,7 @@ class ResetPasswordRequest(BaseModel):
 class MfaVerifyRequest(BaseModel):
     mfa_token: str
     code: str
+    remember_device: bool = False
 
 
 class EmailSendCodeRequest(BaseModel):
@@ -206,8 +209,37 @@ async def login(
     usage = store.get_billing_summary(record["username"])
     security = ops.get_security()
     timeout_minutes = int(security.get("session_timeout_minutes") or 30)
+    # Platform super admins always complete email MFA. Company admins/members
+    # may skip MFA for 30 days on a remembered device.
+    device_token = (req.device_token or "").strip()
+    if (
+        record["role"] != SUPERADMIN_ROLE
+        and device_token
+        and ops.consume_trusted_device(record["username"], device_token)
+    ):
+        from src.auth_notify import notify_login
+
+        notify_login(record["username"], record=record, orgs=orgs)
+        token = (
+            (supabase_session or {}).get("access_token")
+            if supabase_session
+            else _issue_local_token(record, timeout_minutes=timeout_minutes)
+        )
+        if not token and supabase_session:
+            # Prefer local JWT if Supabase session shape is incomplete.
+            token = _issue_local_token(record, timeout_minutes=timeout_minutes)
+        return {
+            "access_token": token,
+            "refresh_token": (supabase_session or {}).get("refresh_token"),
+            "token_type": "bearer",
+            "mfa_required": False,
+            "session_timeout_minutes": timeout_minutes,
+            "user": _user_payload(record, usage),
+            "trusted_device": True,
+        }
+
     # Email MFA is required for every successful password login (users,
-    # company admins, and platform super admins).
+    # company admins, and platform super admins) unless a trusted device matched.
     challenge = ops.create_mfa_challenge(record["username"])
     if supabase_session:
         stash_mfa_session(challenge["mfa_token"], supabase_session)
@@ -257,13 +289,18 @@ async def verify_mfa(
     from src.auth_notify import notify_login
 
     notify_login(username, record=record, orgs=orgs)
-    return {
+    payload = {
         "access_token": token,
         "refresh_token": (pending or {}).get("refresh_token"),
         "token_type": "bearer",
         "session_timeout_minutes": timeout_minutes,
         "user": _user_payload(record, usage),
     }
+    if req.remember_device and record["role"] != SUPERADMIN_ROLE:
+        trusted = ops.create_trusted_device(username, label="browser")
+        payload["device_token"] = trusted["device_token"]
+        payload["device_expires_at"] = trusted["expires_at"]
+    return payload
 
 
 @router.post("/auth/email/send-code")

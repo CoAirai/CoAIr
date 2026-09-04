@@ -12,6 +12,7 @@ export type CoairLoginResponse = {
     mfa_required?: boolean;
     mfa_token?: string;
     debug_code?: string;
+    trusted_device?: boolean;
     user: CoairUserPayload;
 };
 

@@ -18,6 +18,7 @@ import {
 } from "@/lib/coair/liveLogin";
 import { verifyMfa } from "@/lib/coair/ops";
 import { showAuthDebugCodes } from "@/lib/coair/debugFlags";
+import { writeTrustedDeviceToken } from "@/lib/coair/trustedDevice";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
 const CODE_LENGTH = 6;
@@ -40,12 +41,16 @@ const EnterCodePage = ({ portalHint }: Props) => {
     const { companies } = useAdminData();
     const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
     const [code, setCode] = useState("");
+    const [rememberDevice, setRememberDevice] = useState(true);
     const [error, setError] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         setChallenge(readMfaChallenge());
     }, []);
+
+    const isAdminPortal =
+        portalHint === "admin" || challenge?.portal === "admin";
 
     const handleMfa = async (event: FormEvent) => {
         event.preventDefault();
@@ -58,8 +63,16 @@ const EnterCodePage = ({ portalHint }: Props) => {
         setSubmitting(true);
         setError("");
         try {
-            const verified = await verifyMfa(challenge.mfaToken, cleaned);
+            const verified = await verifyMfa(challenge.mfaToken, cleaned, {
+                rememberDevice: !isAdminPortal && rememberDevice,
+            });
             clearMfaChallenge();
+            if (verified.device_token && verified.user?.username) {
+                writeTrustedDeviceToken(
+                    verified.user.username,
+                    verified.device_token
+                );
+            }
             if (verified.refresh_token) {
                 await getSupabaseBrowser()?.auth.setSession({
                     access_token: verified.access_token,
@@ -72,9 +85,7 @@ const EnterCodePage = ({ portalHint }: Props) => {
             );
             applySession(session);
             const wantAdmin =
-                portalHint === "admin" ||
-                challenge.portal === "admin" ||
-                session.role === "super_admin";
+                isAdminPortal || session.role === "super_admin";
             if (wantAdmin && session.role === "super_admin") {
                 const origin = adminOrigin();
                 window.location.assign(origin ? `${origin}/admin` : "/admin");
@@ -88,10 +99,7 @@ const EnterCodePage = ({ portalHint }: Props) => {
         }
     };
 
-    const backHref =
-        portalHint === "admin" || challenge?.portal === "admin"
-            ? adminSignInUrl()
-            : signInUrl();
+    const backHref = isAdminPortal ? adminSignInUrl() : signInUrl();
 
     if (challenge) {
         return (
@@ -129,6 +137,22 @@ const EnterCodePage = ({ portalHint }: Props) => {
                             Dev code: {challenge.debugCode}
                         </p>
                     ) : null}
+                    {!isAdminPortal ? (
+                        <label className="mb-4 flex items-center gap-2 text-label-sm text-sub-600">
+                            <input
+                                type="checkbox"
+                                checked={rememberDevice}
+                                onChange={(event) =>
+                                    setRememberDevice(event.target.checked)
+                                }
+                            />
+                            Remember this device for 30 days
+                        </label>
+                    ) : (
+                        <p className="mb-4 text-center text-label-xs text-sub-600">
+                            Super Admin always requires a new email code.
+                        </p>
+                    )}
                     {error ? (
                         <p className="mb-3 text-label-sm text-red-500">{error}</p>
                     ) : null}

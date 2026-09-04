@@ -12,13 +12,15 @@
 | Invite preview for UI | `GET /auth/invite/preview?token=` | Returns email (+ hint) after token validation |
 | MFA / email OTP attempt limit (5) | `attempt_count` on MFA + email_verifications | 5th failure burns challenge |
 | MFA TTL 10 min + rate limits | `POST /auth/mfa/verify` | 10/min IP / token / account |
+| MFA always on | `POST /auth/login` | Every active account (member, company admin, Super Admin) |
+| Remember device (30d) | `trusted_devices`; MFA verify `remember_device` | Company admin/member only — Super Admin never skips MFA |
 | Dev codes hidden in UI | `lib/coair/debugFlags.ts` | Shown only if `NEXT_PUBLIC_COAIR_SHOW_DEBUG_CODES=1`; API still omits `debug_code` when `COAIR_ENV=production` |
 | Tenant binding | `backend/core/orgs.py` | Membership from DB; `X-Org-ID` operators only |
 | IDOR pack | `tests/test_tenant_idor.py`, `tests/test_security_wave1.py` | Cross-tenant users/projects/billing/usage/invites; role denials; non-active JWT blocked |
 
 ## Still required (you run)
 
-1. **Supabase SQL** (if not already): `004_account_status.sql` then `005_invite_tokens.sql`
+1. **Supabase SQL** (if not already): `004_account_status.sql`, `005_invite_tokens.sql`, then `006_trusted_devices.sql`
 2. Confirm VPS `COAIR_ENV=production` (no API `debug_code`)
 3. Do **not** set `NEXT_PUBLIC_COAIR_SHOW_DEBUG_CODES` on Vercel production
 

@@ -410,14 +410,24 @@ export async function resetPassword(token: string, password: string) {
     });
 }
 
-export async function verifyMfa(mfaToken: string, code: string) {
+export async function verifyMfa(
+    mfaToken: string,
+    code: string,
+    options?: { rememberDevice?: boolean }
+) {
     return coairFetch<{
         access_token: string;
         refresh_token?: string;
+        device_token?: string;
+        device_expires_at?: string;
         user: { username: string; display_name: string; role: string };
     }>("/auth/mfa/verify", {
         method: "POST",
-        body: { mfa_token: mfaToken, code },
+        body: {
+            mfa_token: mfaToken,
+            code,
+            remember_device: Boolean(options?.rememberDevice),
+        },
     });
 }
 

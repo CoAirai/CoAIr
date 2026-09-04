@@ -215,3 +215,71 @@ def test_mfa_burns_after_five_failures(client, stores):
     )
     assert final.status_code == 401
     assert final.json()["detail"] in ("otp_attempts_exceeded", "invalid_mfa_token")
+
+
+def test_trusted_device_skips_mfa_for_company_user(client, stores):
+    users, _orgs, ops = stores
+    users.create_user("member@acme.test", "password123", role="user")
+    first = client.post(
+        "/api/auth/login",
+        json={"username": "member@acme.test", "password": "password123"},
+    ).json()
+    assert first["mfa_required"] is True
+    verified = client.post(
+        "/api/auth/mfa/verify",
+        json={
+            "mfa_token": first["mfa_token"],
+            "code": first["debug_code"],
+            "remember_device": True,
+        },
+    )
+    assert verified.status_code == 200
+    device_token = verified.json()["device_token"]
+    assert device_token
+
+    second = client.post(
+        "/api/auth/login",
+        json={
+            "username": "member@acme.test",
+            "password": "password123",
+            "device_token": device_token,
+        },
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body.get("mfa_required") is False
+    assert body.get("access_token")
+    assert body.get("trusted_device") is True
+
+
+def test_superadmin_cannot_skip_mfa_with_device_token(client, stores):
+    users, _orgs, ops = stores
+    from src.user_store import SUPERADMIN_ROLE
+
+    users.create_user("sa@coair.test", "password123", role=SUPERADMIN_ROLE)
+    first = client.post(
+        "/api/auth/login",
+        json={"username": "sa@coair.test", "password": "password123"},
+    ).json()
+    verified = client.post(
+        "/api/auth/mfa/verify",
+        json={
+            "mfa_token": first["mfa_token"],
+            "code": first["debug_code"],
+            "remember_device": True,
+        },
+    ).json()
+    assert "device_token" not in verified or not verified.get("device_token")
+
+    # Even if a token somehow exists, SA login still requires MFA.
+    fake = ops.create_trusted_device("sa@coair.test")
+    again = client.post(
+        "/api/auth/login",
+        json={
+            "username": "sa@coair.test",
+            "password": "password123",
+            "device_token": fake["device_token"],
+        },
+    ).json()
+    assert again.get("mfa_required") is True
+    assert again.get("mfa_token")

@@ -1,6 +1,7 @@
 import { CoairApiError, coairFetch, isApiUnreachable } from "./client";
 import { showAuthDebugCodes } from "./debugFlags";
 import { mapLiveSession } from "./mapSession";
+import { readTrustedDeviceToken } from "./trustedDevice";
 import type { AuthSession } from "@/lib/auth/resolveLogin";
 import {
     readSharedItem,
@@ -163,9 +164,10 @@ async function loginViaApi(
     username: string,
     password: string
 ): Promise<CoairLoginResponse> {
+    const device_token = readTrustedDeviceToken(username) || "";
     return coairFetch<CoairLoginResponse>("/auth/login", {
         method: "POST",
-        body: { username, password },
+        body: { username, password, device_token },
     });
 }
 

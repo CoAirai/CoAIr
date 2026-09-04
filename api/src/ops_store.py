@@ -27,6 +27,7 @@ EMAIL_VERIFY_TTL_MINUTES = 15
 EMAIL_VERIFY_PURPOSES = ("signup", "invite")
 OTP_MAX_ATTEMPTS = 5
 INVITE_TOKEN_TTL_HOURS = 48
+TRUSTED_DEVICE_TTL_DAYS = 30
 SEED_FLAGS = (
     ("flag-001", "embed", "COAIR-Embed", 1),
     ("flag-002", "analyze", "COAIR-Analyze", 1),
@@ -151,6 +152,19 @@ CREATE TABLE IF NOT EXISTS invite_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_invite_tokens_email
     ON invite_tokens(email, expires_at);
+
+CREATE TABLE IF NOT EXISTS trusted_devices (
+    device_id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    token_hash TEXT UNIQUE NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user
+    ON trusted_devices(username, expires_at);
 
 CREATE TABLE IF NOT EXISTS email_outbox (
     outbox_id TEXT PRIMARY KEY,
@@ -298,6 +312,26 @@ class OpsStore:
                     """
                     CREATE INDEX IF NOT EXISTS idx_invite_tokens_email
                         ON invite_tokens(email, expires_at)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS trusted_devices (
+                        device_id TEXT PRIMARY KEY,
+                        username TEXT NOT NULL,
+                        token_hash TEXT UNIQUE NOT NULL,
+                        label TEXT NOT NULL DEFAULT '',
+                        expires_at TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        last_used_at TEXT,
+                        revoked_at TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_trusted_devices_user
+                        ON trusted_devices(username, expires_at)
                     """
                 )
                 self._migrate_columns(conn)
@@ -948,6 +982,70 @@ class OpsStore:
             if cursor.rowcount == 0:
                 raise ValueError("invite_token_used")
         return peeked
+
+    def create_trusted_device(
+        self, username: str, *, label: str = ""
+    ) -> Dict[str, str]:
+        device_id = secrets.token_urlsafe(12)
+        raw = secrets.token_urlsafe(32)
+        expires = (_now() + timedelta(days=TRUSTED_DEVICE_TTL_DAYS)).isoformat()
+        now = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO trusted_devices (device_id, username, token_hash, label, "
+                "expires_at, created_at, last_used_at) VALUES (?,?,?,?,?,?,?)",
+                [
+                    device_id,
+                    username,
+                    _hash(raw),
+                    (label or "")[:80],
+                    expires,
+                    now,
+                    now,
+                ],
+            )
+        return {
+            "device_id": device_id,
+            "device_token": raw,
+            "expires_at": expires,
+        }
+
+    def consume_trusted_device(
+        self, username: str, device_token: str
+    ) -> Optional[Dict[str, str]]:
+        clean_user = (username or "").strip()
+        raw = (device_token or "").strip()
+        if not clean_user or not raw:
+            return None
+        hashed = _hash(raw)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM trusted_devices WHERE token_hash=? AND username=?",
+                [hashed, clean_user],
+            ).fetchone()
+        if not row or row["revoked_at"]:
+            return None
+        if row["expires_at"] < _now_iso():
+            return None
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE trusted_devices SET last_used_at=? WHERE device_id=?",
+                [_now_iso(), row["device_id"]],
+            )
+        return {
+            "device_id": str(row["device_id"]),
+            "username": clean_user,
+            "expires_at": str(row["expires_at"]),
+        }
+
+    def revoke_trusted_devices(self, username: str) -> int:
+        with self._write_lock, self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE trusted_devices SET revoked_at=? "
+                "WHERE username=? AND revoked_at IS NULL",
+                [_now_iso(), username],
+            )
+            return int(cursor.rowcount or 0)
 
     def create_mfa_challenge(self, username: str) -> Dict[str, str]:
         challenge_id = secrets.token_urlsafe(18)
