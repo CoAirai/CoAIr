@@ -63,7 +63,8 @@ const AdminSignInPage = () => {
         setSubmitting(true);
         try {
             const result = await signIn(email, password);
-            if (!result.ok && result.mfa) {
+            // Super Admin uses the same email MFA as workspace login.
+            if (!result.ok && "mfa" in result && result.mfa) {
                 saveMfaChallenge({
                     mfaToken: result.mfaToken,
                     debugCode: result.debugCode,
@@ -74,7 +75,12 @@ const AdminSignInPage = () => {
                 return;
             }
             if (!result.ok) {
-                setError(result.error);
+                const detail = result.error || "";
+                if (/invite_not_activated|account_/.test(detail)) {
+                    setError(detail.replace(/_/g, " "));
+                    return;
+                }
+                setError(detail);
                 return;
             }
             if (result.session.role !== "super_admin") {
