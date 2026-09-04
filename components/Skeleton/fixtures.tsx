@@ -331,3 +331,79 @@ export function ModulePortalFixture() {
         </div>
     );
 }
+
+export function CompanyTeamTableFixture() {
+    const rows = [
+        ["Ahmad", "ahmad@example.com", "Owner", "12,400", "50,000", "37,600"],
+        ["Jordan Lee", "jordan@example.com", "Member", "4,200", "10,000", "5,800"],
+        ["Sam Patel", "sam@example.com", "Member", "1,100", "10,000", "8,900"],
+        ["Alex Rivera", "alex@example.com", "Member", "8,050", "10,000", "1,950"],
+        ["Casey Kim", "casey@example.com", "Member", "0", "5,000", "5,000"],
+    ];
+    return (
+        <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[1280px] text-left">
+                    <thead className="bg-weak-50 text-label-xs text-sub-600">
+                        <tr>
+                            {[
+                                "Name",
+                                "Username",
+                                "Role",
+                                "Used",
+                                "Limit",
+                                "Remaining",
+                                "Projects",
+                                "Chronology",
+                                "Forensic",
+                                "Upload",
+                                "Download",
+                                "Reports",
+                                "Status",
+                                "Projects",
+                                "Actions",
+                            ].map((label) => (
+                                <th key={label} className="px-5 py-3 font-medium">
+                                    {label}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stroke-soft-200">
+                        {rows.map((row) => (
+                            <tr key={row[1]} className="text-label-sm">
+                                <td className="px-5 py-4 text-strong-950">
+                                    {row[0]}
+                                </td>
+                                <td className="px-5 py-4 text-sub-600">{row[1]}</td>
+                                <td className="px-5 py-4 text-strong-950">
+                                    {row[2]}
+                                </td>
+                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                    {row[3]}
+                                </td>
+                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                    {row[4]}
+                                </td>
+                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                    {row[5]}
+                                </td>
+                                {Array.from({ length: 6 }).map((_, index) => (
+                                    <td
+                                        key={index}
+                                        className="px-5 py-4 text-center text-sub-600"
+                                    >
+                                        On
+                                    </td>
+                                ))}
+                                <td className="px-5 py-4 text-strong-950">Active</td>
+                                <td className="px-5 py-4 text-sub-600">2</td>
+                                <td className="px-5 py-4 text-sub-600">—</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    );
+}

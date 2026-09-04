@@ -24,6 +24,7 @@ import {
 } from "@/lib/coair/org";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 import { useAuth } from "@/context/AuthContext";
+import { CompanyTeamTableSkeleton } from "@/components/Skeleton/portals";
 
 const fmt = new Intl.NumberFormat("en-US");
 
@@ -396,147 +397,152 @@ const LiveTeamPage = () => {
                 </section>
             ) : null}
 
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1280px] text-left">
-                        <thead className="bg-weak-50 text-label-xs text-sub-600">
-                            <tr>
-                                <th className="px-5 py-3 font-medium">Name</th>
-                                <th className="px-5 py-3 font-medium">Username</th>
-                                <th className="px-5 py-3 font-medium">Role</th>
-                                <th className="px-5 py-3 font-medium">Used</th>
-                                <th className="px-5 py-3 font-medium">Limit</th>
-                                <th className="px-5 py-3 font-medium">
-                                    Remaining
-                                </th>
-                                {RIGHT_COLUMNS.map((column) => (
-                                    <th
-                                        key={column.key}
-                                        className="px-5 py-3 text-center font-medium"
-                                    >
-                                        {column.label}
-                                    </th>
-                                ))}
-                                <th className="px-5 py-3 font-medium">Status</th>
-                                <th className="px-5 py-3 font-medium">Projects</th>
-                                <th className="px-5 py-3 font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stroke-soft-200">
-                            {loading && users.length === 0 ? (
+            <CompanyTeamTableSkeleton loading={loading && users.length === 0}>
+                <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1280px] text-left">
+                            <thead className="bg-weak-50 text-label-xs text-sub-600">
                                 <tr>
-                                    <td
-                                        className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={15}
-                                    >
-                                        Loading team…
-                                    </td>
+                                    <th className="px-5 py-3 font-medium">Name</th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Username
+                                    </th>
+                                    <th className="px-5 py-3 font-medium">Role</th>
+                                    <th className="px-5 py-3 font-medium">Used</th>
+                                    <th className="px-5 py-3 font-medium">Limit</th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Remaining
+                                    </th>
+                                    {RIGHT_COLUMNS.map((column) => (
+                                        <th
+                                            key={column.key}
+                                            className="px-5 py-3 text-center font-medium"
+                                        >
+                                            {column.label}
+                                        </th>
+                                    ))}
+                                    <th className="px-5 py-3 font-medium">
+                                        Status
+                                    </th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Projects
+                                    </th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Actions
+                                    </th>
                                 </tr>
-                            ) : null}
-                            {users.map((user) => {
-                                const used = user.used_tokens ?? 0;
-                                const limit = user.token_limit ?? 0;
-                                const remaining = Math.max(0, limit - used);
-                                return (
-                                    <tr
-                                        key={user.username}
-                                        className="text-label-sm"
-                                    >
-                                        <td className="px-5 py-4 text-strong-950">
-                                            {user.display_name || user.username}
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {user.username}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <OrgRoleSelect
-                                                value={user.org_role || "member"}
-                                                disabled={
-                                                    user.username ===
-                                                        currentUsername ||
-                                                    (user.org_role === "owner" &&
-                                                        ownerCount <= 1)
-                                                }
-                                                onChange={(role) =>
-                                                    void changeRole(
+                            </thead>
+                            <tbody className="divide-y divide-stroke-soft-200">
+                                {users.map((user) => {
+                                    const used = user.used_tokens ?? 0;
+                                    const limit = user.token_limit ?? 0;
+                                    const remaining = Math.max(0, limit - used);
+                                    return (
+                                        <tr
+                                            key={user.username}
+                                            className="text-label-sm"
+                                        >
+                                            <td className="px-5 py-4 text-strong-950">
+                                                {user.display_name ||
+                                                    user.username}
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {user.username}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                <OrgRoleSelect
+                                                    value={
+                                                        user.org_role || "member"
+                                                    }
+                                                    disabled={
+                                                        user.username ===
+                                                            currentUsername ||
+                                                        (user.org_role ===
+                                                            "owner" &&
+                                                            ownerCount <= 1)
+                                                    }
+                                                    onChange={(role) =>
+                                                        void changeRole(
+                                                            user.username,
+                                                            role
+                                                        )
+                                                    }
+                                                />
+                                            </td>
+                                            <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                {fmt.format(used)}
+                                            </td>
+                                            <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                {fmt.format(limit)}
+                                            </td>
+                                            <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                {fmt.format(remaining)}
+                                            </td>
+                                            <RightsToggleCells
+                                                rights={rightsFromFeatures(
+                                                    user.features,
+                                                    user.org_role || "member"
+                                                )}
+                                                onToggle={(key, enabled) =>
+                                                    void toggleRight(
                                                         user.username,
-                                                        role
+                                                        user.features,
+                                                        user.org_role ||
+                                                            "member",
+                                                        key,
+                                                        enabled
                                                     )
                                                 }
                                             />
-                                        </td>
-                                        <td className="px-5 py-4 tabular-nums text-sub-600">
-                                            {fmt.format(used)}
-                                        </td>
-                                        <td className="px-5 py-4 tabular-nums text-sub-600">
-                                            {fmt.format(limit)}
-                                        </td>
-                                        <td className="px-5 py-4 tabular-nums text-sub-600">
-                                            {fmt.format(remaining)}
-                                        </td>
-                                        <RightsToggleCells
-                                            rights={rightsFromFeatures(
-                                                user.features,
-                                                user.org_role || "member"
-                                            )}
-                                            onToggle={(key, enabled) =>
-                                                void toggleRight(
-                                                    user.username,
-                                                    user.features,
-                                                    user.org_role || "member",
-                                                    key,
-                                                    enabled
-                                                )
-                                            }
-                                        />
-                                        <td className="px-5 py-4">
-                                            <StatusBadge
-                                                status={
-                                                    user.is_active === false
-                                                        ? "suspended"
-                                                        : "active"
-                                                }
-                                            />
-                                        </td>
-                                        <td className="px-5 py-4 text-sub-600">
-                                            {user.project_count ?? 0}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            {user.org_role !== "owner" &&
-                                            user.is_active !== false ? (
-                                                <button
-                                                    type="button"
-                                                    className="text-label-xs text-red-500"
-                                                    onClick={() =>
-                                                        void deactivate(
-                                                            user.username
-                                                        ).then((result) => {
-                                                            if (!result.ok) {
-                                                                setMessage(
-                                                                    result.error ??
-                                                                        "Deactivate failed"
-                                                                );
-                                                                return;
-                                                            }
-                                                            setMessage(
-                                                                `Removed ${user.username} from the team`
-                                                            );
-                                                        })
+                                            <td className="px-5 py-4">
+                                                <StatusBadge
+                                                    status={
+                                                        user.is_active === false
+                                                            ? "suspended"
+                                                            : "active"
                                                     }
-                                                >
-                                                    Deactivate
-                                                </button>
-                                            ) : (
-                                                "—"
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+                                                />
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {user.project_count ?? 0}
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                {user.org_role !== "owner" &&
+                                                user.is_active !== false ? (
+                                                    <button
+                                                        type="button"
+                                                        className="text-label-xs text-red-500"
+                                                        onClick={() =>
+                                                            void deactivate(
+                                                                user.username
+                                                            ).then((result) => {
+                                                                if (!result.ok) {
+                                                                    setMessage(
+                                                                        result.error ??
+                                                                            "Deactivate failed"
+                                                                    );
+                                                                    return;
+                                                                }
+                                                                setMessage(
+                                                                    `Removed ${user.username} from the team`
+                                                                );
+                                                            })
+                                                        }
+                                                    >
+                                                        Deactivate
+                                                    </button>
+                                                ) : (
+                                                    "—"
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </CompanyTeamTableSkeleton>
         </div>
     );
 };

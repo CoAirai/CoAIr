@@ -6,6 +6,7 @@ import {
     ChatPortalSkeleton,
     CompanyContentSkeleton,
     CompanyPortalSkeleton,
+    CompanyTeamTableSkeleton,
     ModulePortalSkeleton,
     WorkspaceHubSkeleton,
 } from "@/components/Skeleton/portals";
@@ -44,6 +45,12 @@ export default function BonesCaptureClient() {
             <section>
                 <h2 className="mb-4 text-label-md text-sub-600">module-portal</h2>
                 <ModulePortalSkeleton loading={false} />
+            </section>
+            <section>
+                <h2 className="mb-4 text-label-md text-sub-600">
+                    company-team-table
+                </h2>
+                <CompanyTeamTableSkeleton loading={false} />
             </section>
         </div>
     );

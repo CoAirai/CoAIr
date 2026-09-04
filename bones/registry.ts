@@ -10,6 +10,7 @@ import _company_portal from './company-portal.bones.json'
 import _workspace_hub from './workspace-hub.bones.json'
 import _chat_portal from './chat-portal.bones.json'
 import _module_portal from './module-portal.bones.json'
+import _company_team_table from './company-team-table.bones.json'
 
 configureBoneyard({"color":"rgba(0,0,0,0.08)","darkColor":"rgba(255,255,255,0.06)","animate":"shimmer","shimmerColor":"rgba(0,0,0,0.04)","darkShimmerColor":"rgba(255,255,255,0.1)","speed":"2s","shimmerAngle":110,"transition":true})
 
@@ -21,4 +22,5 @@ registerBones({
   "workspace-hub": _workspace_hub,
   "chat-portal": _chat_portal,
   "module-portal": _module_portal,
+  "company-team-table": _company_team_table,
 })

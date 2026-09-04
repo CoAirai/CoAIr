@@ -7,6 +7,7 @@ import {
     ChatPortalFixture,
     CompanyContentFixture,
     CompanyPortalFixture,
+    CompanyTeamTableFixture,
     ModulePortalFixture,
     WorkspaceHubFixture,
 } from "./fixtures";
@@ -116,5 +117,24 @@ export function ModulePortalSkeleton({ loading }: PortalSkeletonProps = {}) {
             fixture={<ModulePortalFixture />}
             className="min-h-screen"
         />
+    );
+}
+
+export function CompanyTeamTableSkeleton({
+    loading = true,
+    children,
+}: PortalSkeletonProps & { children?: React.ReactNode }) {
+    return (
+        <Skeleton
+            name="company-team-table"
+            loading={loading}
+            animate="shimmer"
+            transition
+            select="viewport"
+            fixture={<CompanyTeamTableFixture />}
+            fallback={<CompanyTeamTableFixture />}
+        >
+            {children ?? <CompanyTeamTableFixture />}
+        </Skeleton>
     );
 }
