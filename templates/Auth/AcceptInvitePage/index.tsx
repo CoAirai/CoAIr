@@ -1,21 +1,28 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
-import { activateInvite, resendInviteCode } from "@/lib/coair/commerce";
+import {
+    activateInvite,
+    previewInvite,
+    resendInviteCode,
+} from "@/lib/coair/commerce";
 import { CoairApiError } from "@/lib/coair/client";
+import { showAuthDebugCodes } from "@/lib/coair/debugFlags";
 
 const ERRORS: Record<string, string> = {
-    invite_not_found: "No pending invite for this email",
+    invite_not_found: "No pending invite for this link",
     invite_already_activated: "This invite is already activated — sign in",
     invite_token_required: "Open the invite link from your email",
     invalid_invite_token: "Invite link is invalid — request a new one",
     invite_token_used: "Invite link was already used — request a new one",
     invite_token_expired: "Invite link expired — request a new one",
+    invite_email_mismatch: "This invite does not match that email",
+    invite_org_mismatch: "This invite does not match that organization",
     email_not_verified: "Verify the email code first",
     email_verification_required: "Enter the 6-digit email code",
     email_verification_expired: "Code expired — request a new one",
@@ -46,15 +53,12 @@ function humanError(err: unknown) {
 const AcceptInvitePage = () => {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const emailFromQuery = useMemo(
-        () => (searchParams.get("email") || "").trim().toLowerCase(),
-        [searchParams]
-    );
     const tokenFromQuery = useMemo(
         () => (searchParams.get("token") || "").trim(),
         [searchParams]
     );
-    const [email, setEmail] = useState(emailFromQuery);
+    const [email, setEmail] = useState("");
+    const [emailHint, setEmailHint] = useState("");
     const [inviteToken, setInviteToken] = useState(tokenFromQuery);
     const [code, setCode] = useState("");
     const [password, setPassword] = useState("");
@@ -63,6 +67,26 @@ const AcceptInvitePage = () => {
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
     const [done, setDone] = useState(false);
+    const [resolved, setResolved] = useState(false);
+
+    useEffect(() => {
+        if (!tokenFromQuery) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const preview = await previewInvite(tokenFromQuery);
+                if (cancelled) return;
+                setEmail(preview.email);
+                setEmailHint(preview.email_hint || preview.email);
+                setResolved(true);
+            } catch (err) {
+                if (!cancelled) setError(humanError(err));
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [tokenFromQuery]);
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
@@ -82,7 +106,6 @@ const AcceptInvitePage = () => {
         setBusy(true);
         try {
             await activateInvite({
-                email: email.trim(),
                 token: inviteToken.trim(),
                 code: code.trim(),
                 password,
@@ -102,8 +125,14 @@ const AcceptInvitePage = () => {
         setBusy(true);
         setError("");
         try {
-            const resent = await resendInviteCode(email.trim());
-            if (resent.debug_code) setDebugCode(resent.debug_code);
+            const resent = await resendInviteCode({
+                email: email.trim() || undefined,
+                token: inviteToken.trim() || undefined,
+            });
+            if (resent.email) setEmail(resent.email);
+            if (showAuthDebugCodes() && resent.debug_code) {
+                setDebugCode(resent.debug_code);
+            }
             if (resent.debug_invite_token) {
                 setInviteToken(resent.debug_invite_token);
             }
@@ -138,22 +167,31 @@ const AcceptInvitePage = () => {
                     className="flex flex-col gap-4.5"
                     onSubmit={(event) => void handleSubmit(event)}
                 >
-                    <Field
-                        placeholder="Work email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        autoComplete="email"
-                    />
+                    {resolved && emailHint ? (
+                        <p className="text-label-sm text-sub-600">
+                            Activating invite for{" "}
+                            <span className="font-medium text-strong-950">
+                                {emailHint}
+                            </span>
+                        </p>
+                    ) : null}
                     {!tokenFromQuery ? (
-                        <Field
-                            placeholder="Invite token from email link"
-                            value={inviteToken}
-                            onChange={(e) => setInviteToken(e.target.value)}
-                            required
-                            autoComplete="off"
-                        />
+                        <>
+                            <Field
+                                placeholder="Invite token from email link"
+                                value={inviteToken}
+                                onChange={(e) => setInviteToken(e.target.value)}
+                                required
+                                autoComplete="off"
+                            />
+                            <Field
+                                placeholder="Work email"
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                autoComplete="email"
+                            />
+                        </>
                     ) : null}
                     <Field
                         placeholder="6-digit email code"
@@ -184,7 +222,7 @@ const AcceptInvitePage = () => {
                         required
                         autoComplete="new-password"
                     />
-                    {debugCode ? (
+                    {showAuthDebugCodes() && debugCode ? (
                         <p className="text-label-xs text-amber-600">
                             Dev code: {debugCode}
                         </p>
@@ -203,7 +241,7 @@ const AcceptInvitePage = () => {
                     <button
                         type="button"
                         className="text-label-sm text-blue-500"
-                        disabled={busy || !email.trim()}
+                        disabled={busy || (!email.trim() && !inviteToken.trim())}
                         onClick={() => void handleResend()}
                     >
                         Resend activation code

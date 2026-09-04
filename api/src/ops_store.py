@@ -889,18 +889,22 @@ class OpsStore:
         }
 
     def peek_invite_token(
-        self, email: str, token: str, *, purpose: str = "invite"
+        self,
+        token: str,
+        *,
+        purpose: str = "invite",
+        email: str | None = None,
+        org_id: str | None = None,
     ) -> Dict[str, str]:
-        clean = (email or "").strip().lower()
+        """Resolve invite by raw token hash. Optional email/org must match if given."""
         raw = (token or "").strip()
-        if not clean or not raw:
+        if not raw:
             raise ValueError("invite_token_required")
         hashed = _hash(raw)
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM invite_tokens WHERE token_hash=? AND email=? "
-                "AND purpose=?",
-                [hashed, clean, purpose],
+                "SELECT * FROM invite_tokens WHERE token_hash=? AND purpose=?",
+                [hashed, purpose],
             ).fetchone()
         if not row:
             raise ValueError("invalid_invite_token")
@@ -908,17 +912,34 @@ class OpsStore:
             raise ValueError("invite_token_used")
         if row["expires_at"] < _now_iso():
             raise ValueError("invite_token_expired")
+        bound_email = str(row["email"] or "").strip().lower()
+        bound_org = str(row["org_id"] or "").strip()
+        if email is not None:
+            clean = (email or "").strip().lower()
+            if clean and clean != bound_email:
+                raise ValueError("invite_email_mismatch")
+        if org_id is not None:
+            wanted = (org_id or "").strip()
+            if wanted and wanted != bound_org:
+                raise ValueError("invite_org_mismatch")
         return {
             "token_id": str(row["token_id"]),
-            "email": clean,
-            "org_id": str(row["org_id"] or ""),
+            "email": bound_email,
+            "org_id": bound_org,
             "purpose": str(row["purpose"] or purpose),
         }
 
     def consume_invite_token(
-        self, email: str, token: str, *, purpose: str = "invite"
+        self,
+        token: str,
+        *,
+        purpose: str = "invite",
+        email: str | None = None,
+        org_id: str | None = None,
     ) -> Dict[str, str]:
-        peeked = self.peek_invite_token(email, token, purpose=purpose)
+        peeked = self.peek_invite_token(
+            token, purpose=purpose, email=email, org_id=org_id
+        )
         with self._write_lock, self._connect() as conn:
             cursor = conn.execute(
                 "UPDATE invite_tokens SET used_at=? WHERE token_id=? AND used_at IS NULL",

@@ -193,14 +193,11 @@ def build_email(
     company = (company_name or "").strip() or "your company"
     sign_in = f"{login_app_origin()}/auth/sign-in"
     accept_invite = f"{login_app_origin()}/auth/accept-invite"
-    params: list[tuple[str, str]] = []
-    if recipient:
-        params.append(("email", recipient))
     token = (invite_token or "").strip()
     if token:
-        params.append(("token", token))
-    if params:
-        accept_invite = f"{accept_invite}?{urllib.parse.urlencode(params)}"
+        accept_invite = (
+            f"{accept_invite}?{urllib.parse.urlencode([('token', token)])}"
+        )
     billing_url = f"{user_app_origin()}/company/billing"
     reset_base = f"{login_app_origin()}/auth/reset-password"
     reset_link = (

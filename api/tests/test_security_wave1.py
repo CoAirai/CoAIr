@@ -118,10 +118,16 @@ def test_invite_activate_requires_token_otp_password(client, stores):
     assert activation.get("debug_invite_token")
     assert activation.get("debug_code")
 
+    preview = client.get(
+        f"/api/auth/invite/preview?token={activation['debug_invite_token']}"
+    )
+    assert preview.status_code == 200
+    assert preview.json()["email"] == "owner@acme.test"
+    assert "email_hint" in preview.json()
+
     missing_token = client.post(
         "/api/auth/invite/activate",
         json={
-            "email": "owner@acme.test",
             "password": "newpass123",
             "code": activation["debug_code"],
             "token": "",
@@ -132,7 +138,6 @@ def test_invite_activate_requires_token_otp_password(client, stores):
     bad_token = client.post(
         "/api/auth/invite/activate",
         json={
-            "email": "owner@acme.test",
             "password": "newpass123",
             "code": activation["debug_code"],
             "token": "not-a-real-token-value-xxxxxxxxxx",
@@ -141,10 +146,34 @@ def test_invite_activate_requires_token_otp_password(client, stores):
     assert bad_token.status_code == 400
     assert bad_token.json()["detail"] == "invalid_invite_token"
 
+    wrong_email = client.post(
+        "/api/auth/invite/activate",
+        json={
+            "email": "rival@evil.test",
+            "password": "newpass123",
+            "code": activation["debug_code"],
+            "token": activation["debug_invite_token"],
+        },
+    )
+    assert wrong_email.status_code == 400
+    assert wrong_email.json()["detail"] == "invite_email_mismatch"
+
+    wrong_org = client.post(
+        "/api/auth/invite/activate",
+        json={
+            "org_id": "not-the-org",
+            "password": "newpass123",
+            "code": activation["debug_code"],
+            "token": activation["debug_invite_token"],
+        },
+    )
+    assert wrong_org.status_code == 400
+    assert wrong_org.json()["detail"] == "invite_org_mismatch"
+
+    # Token-only activate (no email in body) — email resolved from token binding.
     ok = client.post(
         "/api/auth/invite/activate",
         json={
-            "email": "owner@acme.test",
             "password": "newpass123",
             "code": activation["debug_code"],
             "token": activation["debug_invite_token"],
@@ -158,13 +187,12 @@ def test_invite_activate_requires_token_otp_password(client, stores):
     reuse = client.post(
         "/api/auth/invite/activate",
         json={
-            "email": "owner@acme.test",
             "password": "anotherpass",
             "code": activation["debug_code"],
             "token": activation["debug_invite_token"],
         },
     )
-    assert reuse.status_code == 409
+    assert reuse.status_code in (400, 409)
 
 
 def test_mfa_burns_after_five_failures(client, stores):

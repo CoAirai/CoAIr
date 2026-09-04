@@ -12,6 +12,7 @@ import {
     verifySignupEmailCode,
 } from "@/lib/coair/commerce";
 import { CoairApiError } from "@/lib/coair/client";
+import { showAuthDebugCodes } from "@/lib/coair/debugFlags";
 
 const ACCESS_ERRORS: Record<string, string> = {
     pending_request_exists: "A pending request already exists for this email",
@@ -189,7 +190,7 @@ const SignUpPage = () => {
                             required
                             autoComplete="one-time-code"
                         />
-                        {debugCode ? (
+                        {showAuthDebugCodes() && debugCode ? (
                             <p className="text-label-xs text-amber-600">
                                 Dev code: {debugCode}
                             </p>

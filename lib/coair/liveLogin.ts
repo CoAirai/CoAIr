@@ -1,4 +1,5 @@
 import { CoairApiError, coairFetch, isApiUnreachable } from "./client";
+import { showAuthDebugCodes } from "./debugFlags";
 import { mapLiveSession } from "./mapSession";
 import type { AuthSession } from "@/lib/auth/resolveLogin";
 import {
@@ -185,7 +186,7 @@ export async function tryLiveLogin(
                 ok: false,
                 kind: "mfa",
                 mfaToken: login.mfa_token,
-                debugCode: login.debug_code,
+                debugCode: showAuthDebugCodes() ? login.debug_code : undefined,
                 username: trimmed,
             };
         }

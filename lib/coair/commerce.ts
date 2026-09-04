@@ -160,23 +160,40 @@ export async function verifySignupEmailCode(challengeId: string, code: string) {
     });
 }
 
-export async function resendInviteCode(email: string) {
+export async function resendInviteCode(input: {
+    email?: string;
+    token?: string;
+}) {
     return coairFetch<{
         ok: boolean;
         challenge_id?: string;
+        email?: string;
         debug_code?: string;
         debug_invite_token?: string;
     }>("/auth/invite/resend-code", {
         method: "POST",
-        body: { email },
+        body: {
+            email: input.email || "",
+            token: input.token || "",
+        },
     });
 }
 
+export async function previewInvite(token: string) {
+    return coairFetch<{
+        email: string;
+        email_hint: string;
+        display_name: string;
+        org_id?: string;
+    }>(`/auth/invite/preview?token=${encodeURIComponent(token)}`);
+}
+
 export async function activateInvite(input: {
-    email: string;
-    password: string;
     token: string;
+    password: string;
     code?: string;
+    email?: string;
+    orgId?: string;
     emailVerificationToken?: string;
     challengeId?: string;
 }) {
@@ -185,10 +202,11 @@ export async function activateInvite(input: {
         {
             method: "POST",
             body: {
-                email: input.email,
-                password: input.password,
                 token: input.token,
+                password: input.password,
                 code: input.code || "",
+                email: input.email || "",
+                org_id: input.orgId || "",
                 email_verification_token: input.emailVerificationToken || "",
                 challenge_id: input.challengeId || "",
             },

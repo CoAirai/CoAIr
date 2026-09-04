@@ -72,16 +72,19 @@ class EmailVerifyCodeRequest(BaseModel):
 
 
 class InviteActivateRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=160)
-    password: str = Field(min_length=8, max_length=200)
     token: str = Field(min_length=8, max_length=200)
+    password: str = Field(min_length=8, max_length=200)
     code: str = Field(default="", min_length=0, max_length=12)
+    # Optional; when provided must match the invitation bound to the token.
+    email: str = Field(default="", min_length=0, max_length=160)
+    org_id: str = Field(default="", min_length=0, max_length=80)
     email_verification_token: str = Field(default="", min_length=0, max_length=200)
     challenge_id: str = Field(default="", min_length=0, max_length=200)
 
 
 class InviteResendRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=160)
+    email: str = Field(default="", min_length=0, max_length=160)
+    token: str = Field(default="", min_length=0, max_length=200)
 
 
 def _user_payload(record: Dict[str, Any], usage: Dict[str, Any]) -> Dict[str, Any]:
@@ -296,18 +299,65 @@ async def verify_email_code(
         raise HTTPException(400, str(exc)) from exc
 
 
+@router.get("/auth/invite/preview")
+async def preview_invite(
+    token: str,
+    request: Request,
+    ops: OpsStore = Depends(get_ops_store),
+    store: UserStore = Depends(get_user_store),
+):
+    """Resolve invite token → email for the Accept Invite UI (no consumption)."""
+    rate_limit(
+        f"auth:invite-preview:{client_ip(request) or 'unknown'}",
+        limit=30,
+        window_seconds=60,
+    )
+    try:
+        peeked = ops.peek_invite_token(token, purpose="invite")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    email = peeked["email"]
+    record = store.get_user(email)
+    status = (
+        normalize_account_status(
+            record.get("account_status"), is_active=bool(record.get("is_active"))
+        )
+        if record
+        else None
+    )
+    if not record or status != ACCOUNT_INVITED:
+        raise HTTPException(404, "invite_not_found")
+    local, _, domain = email.partition("@")
+    hint = f"{local[:1]}***@{domain}" if domain else "***"
+    return {
+        "email": email,
+        "email_hint": hint,
+        "display_name": record.get("display_name") or local,
+        "org_id": peeked.get("org_id") or "",
+    }
+
+
 @router.post("/auth/invite/resend-code")
 async def resend_invite_code(
     req: InviteResendRequest,
     request: Request,
     store: UserStore = Depends(get_user_store),
     orgs: OrgStore = Depends(get_org_store),
+    ops: OpsStore = Depends(get_ops_store),
 ):
     from src.auth_provision import issue_invite_activation_email
 
     ip = client_ip(request) or "unknown"
-    email = req.email.strip().lower()
     rate_limit(f"auth:invite-resend:{ip}", limit=8, window_seconds=60)
+    email = (req.email or "").strip().lower()
+    raw_token = (req.token or "").strip()
+    if raw_token and not email:
+        try:
+            email = ops.peek_invite_token(raw_token, purpose="invite")["email"]
+        except ValueError:
+            return {"ok": True}
+    if not email:
+        return {"ok": True}
     rate_limit(f"auth:invite-resend-addr:{email}", limit=5, window_seconds=600)
     record = store.get_user(email)
     status = (
@@ -335,7 +385,7 @@ async def resend_invite_code(
         email_kind=kind,
         org_id=org_id,
     )
-    payload = {"ok": True, "challenge_id": activation.get("challenge_id")}
+    payload = {"ok": True, "challenge_id": activation.get("challenge_id"), "email": email}
     if activation.get("debug_code"):
         payload["debug_code"] = activation["debug_code"]
     if activation.get("debug_invite_token"):
@@ -349,13 +399,32 @@ async def activate_invite(
     request: Request,
     store: UserStore = Depends(get_user_store),
     ops: OpsStore = Depends(get_ops_store),
+    orgs: OrgStore = Depends(get_org_store),
 ):
+    """Invited users only — not gated by active-session rules.
+
+    Requires: valid unused token + matching OTP + password, with email/org
+    binding checks. Consumes token+OTP then sets ACTIVE (fail closed on mismatch).
+    """
     rate_limit(
         f"auth:invite-activate:{client_ip(request) or 'unknown'}",
         limit=20,
         window_seconds=60,
     )
-    email = req.email.strip().lower()
+    optional_email = (req.email or "").strip().lower() or None
+    optional_org = (req.org_id or "").strip() or None
+    try:
+        peeked = ops.peek_invite_token(
+            req.token,
+            purpose="invite",
+            email=optional_email,
+            org_id=optional_org,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    email = peeked["email"]
+    bound_org = (peeked.get("org_id") or "").strip()
     record = store.get_user(email)
     if not record:
         raise HTTPException(404, "invite_not_found")
@@ -366,10 +435,18 @@ async def activate_invite(
         raise HTTPException(409, "invite_already_activated")
     if status != ACCOUNT_INVITED:
         raise HTTPException(403, account_auth_error(status))
+
+    membership = orgs.membership_for(email)
+    member_org = str((membership or {}).get("org_id") or "").strip()
+    if bound_org:
+        if not member_org or member_org != bound_org:
+            raise HTTPException(400, "invite_org_mismatch")
+        if optional_org and optional_org != bound_org:
+            raise HTTPException(400, "invite_org_mismatch")
+
     try:
-        ops.peek_invite_token(email, req.token, purpose="invite")
-        token = (req.email_verification_token or "").strip()
-        if not token:
+        proof = (req.email_verification_token or "").strip()
+        if not proof:
             if req.challenge_id and req.code:
                 verified = ops.verify_email_code(req.challenge_id, req.code)
             elif req.code:
@@ -378,18 +455,30 @@ async def activate_invite(
                 )
             else:
                 raise ValueError("email_verification_required")
-            token = verified["verification_token"]
+            if str(verified.get("email") or "").strip().lower() != email:
+                raise ValueError("invite_email_mismatch")
+            proof = verified["verification_token"]
+        # Consume credentials then activate — order minimizes half-done sessions.
         ops.consume_email_verification(
             email=email,
             purpose="invite",
-            verification_token=token,
+            verification_token=proof,
         )
-        ops.consume_invite_token(email, req.token, purpose="invite")
+        ops.consume_invite_token(
+            req.token,
+            purpose="invite",
+            email=email,
+            org_id=bound_org or None,
+        )
+        store.update_user(
+            email,
+            password=req.password,
+            account_status=ACCOUNT_ACTIVE,
+            is_active=True,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    store.update_user(
-        email, password=req.password, account_status=ACCOUNT_ACTIVE, is_active=True
-    )
+
     if use_supabase_auth():
         try:
             uid = ensure_auth_user(email, req.password)

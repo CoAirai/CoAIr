@@ -17,9 +17,18 @@ import {
     type MfaChallenge,
 } from "@/lib/coair/liveLogin";
 import { verifyMfa } from "@/lib/coair/ops";
+import { showAuthDebugCodes } from "@/lib/coair/debugFlags";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 
 const CODE_LENGTH = 6;
+
+function maskUsername(value: string) {
+    const clean = (value || "").trim();
+    if (!clean.includes("@")) return clean;
+    const [local, domain] = clean.split("@");
+    if (!domain) return "***";
+    return `${local.slice(0, 1)}***@${domain}`;
+}
 
 type Props = {
     /** Prefer admin portal redirect after MFA when set. */
@@ -91,8 +100,10 @@ const EnterCodePage = ({ portalHint }: Props) => {
                 description={
                     <>
                         We emailed a {CODE_LENGTH}-digit code for{" "}
-                        <span className="text-strong-950">{challenge.username}</span>.
-                        Enter it to finish signing in.
+                        <span className="text-strong-950">
+                            {maskUsername(challenge.username)}
+                        </span>
+                        . Enter it to finish signing in.
                     </>
                 }
             >
@@ -113,7 +124,7 @@ const EnterCodePage = ({ portalHint }: Props) => {
                         }}
                         required
                     />
-                    {challenge.debugCode ? (
+                    {showAuthDebugCodes() && challenge.debugCode ? (
                         <p className="mb-4 text-center text-label-xs text-amber-600">
                             Dev code: {challenge.debugCode}
                         </p>
