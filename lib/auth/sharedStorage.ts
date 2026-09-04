@@ -37,8 +37,23 @@ export function readSharedCookie(key: string): string | null {
     }
 }
 
+function isSupabaseAuthKey(key: string): boolean {
+    return key.startsWith("sb-");
+}
+
 export function readSharedItem(key: string): string | null {
     if (typeof window === "undefined") return null;
+    // Supabase session blobs exceed cookie limits and corrupt when truncated —
+    // always prefer localStorage for sb-* keys.
+    if (isSupabaseAuthKey(key)) {
+        try {
+            const fromLs = localStorage.getItem(key);
+            if (fromLs !== null) return fromLs;
+        } catch {
+            /* ignore */
+        }
+        return readSharedCookie(key);
+    }
     const fromCookie = readSharedCookie(key);
     if (fromCookie !== null) return fromCookie;
     try {
@@ -73,8 +88,16 @@ export function isSharedSignedOut(): boolean {
 
 export function writeSharedItem(key: string, value: string, cookie = true): void {
     if (typeof window === "undefined") return;
-    if (cookie && value.length < 3500) {
+    // Never store Supabase auth JSON in cookies (too large → truncation → false SIGNED_OUT).
+    const useCookie =
+        cookie && !isSupabaseAuthKey(key) && value.length < 3500;
+    if (useCookie) {
         document.cookie = `${key}=${encodeURIComponent(value)}; ${cookieSuffix()}`;
+    } else if (isSupabaseAuthKey(key)) {
+        // Drop any legacy truncated sb-* cookies so they cannot win on read.
+        expireCookie(key);
+        const domain = cookieDomain();
+        if (domain) expireCookie(key, domain);
     }
     try {
         localStorage.setItem(key, value);
@@ -143,6 +166,7 @@ export function clearSharedAuth(): void {
 
 export const sharedWebStorage = {
     getItem: (key: string) => readSharedItem(key),
-    setItem: (key: string, value: string) => writeSharedItem(key, value),
+    setItem: (key: string, value: string) =>
+        writeSharedItem(key, value, !isSupabaseAuthKey(key)),
     removeItem: (key: string) => removeSharedItem(key),
 };

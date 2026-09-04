@@ -83,13 +83,17 @@ function shouldIgnoreSessionOnThisPortal(session: AuthSession): boolean {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function persist(session: AuthSession | null) {
+function persist(session: AuthSession | null, options?: { wipeAll?: boolean }) {
     if (typeof window === "undefined") {
         return;
     }
     if (!session) {
         removeSharedItem(AUTH_SESSION_KEY);
-        clearSharedAuth();
+        removeSharedItem(ACCESS_TOKEN_KEY);
+        // Full wipe (including Supabase refresh material) only on intentional logout.
+        if (options?.wipeAll !== false) {
+            clearSharedAuth();
+        }
         sessionStorage.removeItem(AUTH_SESSION_KEY);
         return;
     }
@@ -128,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         let cancelled = false;
 
-        async function adoptToken(token: string) {
+        async function adoptToken(token: string, allowRefresh = true) {
             try {
                 const live = await sessionFromLiveToken(token);
                 if (cancelled) return;
@@ -143,7 +147,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const unauthorized =
                     error instanceof CoairApiError && error.status === 401;
                 if (unauthorized) {
-                    persist(null);
+                    if (allowRefresh && !isSignedOutFlag()) {
+                        const supabase = getSupabaseBrowser();
+                        if (supabase) {
+                            try {
+                                const { data, error: refreshError } =
+                                    await supabase.auth.refreshSession();
+                                const next =
+                                    data.session?.access_token?.trim() || "";
+                                if (!refreshError && next && next !== token) {
+                                    await adoptToken(next, false);
+                                    return;
+                                }
+                            } catch {
+                                /* fall through to soft clear */
+                            }
+                        }
+                    }
+                    // Soft clear app session only — do not wipe Supabase refresh tokens
+                    // unless the user explicitly signed out (avoids logout↔login flicker).
+                    if (isSignedOutFlag()) {
+                        persist(null);
+                    } else {
+                        persist(null, { wipeAll: false });
+                    }
                     if (!cancelled) setSession(null);
                     return;
                 }
@@ -236,10 +263,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return;
             }
             if (event === "SIGNED_OUT") {
-                persist(null);
-                // Preserve intentional logout across portals if the shared cookie was set.
+                // Intentional logout (user clicked Sign out) — wipe everything.
                 if (isSharedSignedOut()) {
+                    persist(null);
                     markSignedOut();
+                    setSession(null);
+                    return;
+                }
+                // Incidental SIGNED_OUT (multi-tab refresh race / storage glitch):
+                // do NOT clearSharedAuth — that causes logout→login flicker for all roles.
+                const recovered = await getSupabaseBrowser()?.auth.getSession();
+                const token = recovered?.data.session?.access_token;
+                if (token && !isSignedOutFlag()) {
+                    patchToken(token);
+                    return;
                 }
                 setSession(null);
                 return;
