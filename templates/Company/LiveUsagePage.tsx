@@ -46,7 +46,7 @@ const LiveUsagePage = () => {
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
             <CompanyUsageSkeleton loading={pool === null && !error}>
-                <>
+                <div className="space-y-6">
                     {pool ? (
                         <section className="surface-panel p-5">
                             <h2 className="text-label-lg text-strong-950">
@@ -219,7 +219,7 @@ const LiveUsagePage = () => {
                             </ul>
                         ) : null}
                     </section>
-                </>
+                </div>
             </CompanyUsageSkeleton>
         </div>
     );
