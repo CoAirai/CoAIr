@@ -19,6 +19,7 @@ import {
     toggleRightInFeatures,
     type RightKey,
 } from "@/lib/admin/rolesStub";
+import { planLabel } from "@/lib/admin/liveHelpers";
 import type { SupportTicket } from "@/lib/admin/wave2Types";
 import {
     addAdminOrgMember,
@@ -69,12 +70,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 
 const bytesToGb = (bytes?: number) =>
     Math.round(((bytes ?? 0) / 1_000_000_000) * 10) / 10;
-
-const planLabel = (planType?: string) => {
-    if (planType === "demo") return "Demo";
-    if (planType === "legacy") return "Legacy";
-    return planType || "—";
-};
 
 const formatWhen = (value?: string | null) => {
     if (!value) return "—";
@@ -419,7 +414,36 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                             <div>
                                 <dt className="text-label-xs text-sub-600">Plan</dt>
                                 <dd className="mt-1 text-label-sm text-strong-950">
-                                    {planLabel(org.default_plan_type)}
+                                    {planLabel(
+                                        org.subscription?.plan_id ||
+                                            org.default_plan_type
+                                    )}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt className="text-label-xs text-sub-600">
+                                    Subscription
+                                </dt>
+                                <dd className="mt-1 text-label-sm text-strong-950">
+                                    {org.subscription?.status || "—"}
+                                    {org.subscription?.auto_renew
+                                        ? " · auto-renew"
+                                        : ""}
+                                    {org.subscription?.cancel_at_period_end
+                                        ? " · cancels at period end"
+                                        : ""}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt className="text-label-xs text-sub-600">
+                                    Period ends
+                                </dt>
+                                <dd className="mt-1 text-label-sm text-strong-950">
+                                    {org.subscription?.current_period_end
+                                        ? formatWhen(
+                                              org.subscription.current_period_end
+                                          )
+                                        : "—"}
                                 </dd>
                             </div>
                             <div>
@@ -450,9 +474,16 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                         <h2 className="text-label-lg text-strong-950">Quotas</h2>
                         <div className="mt-5 grid gap-5 lg:grid-cols-2">
                             <QuotaBar
-                                label="Tokens"
-                                used={tokenTotals.used}
-                                limit={tokenLimit}
+                                label="Token pool"
+                                used={
+                                    org.token_pool?.total_used ??
+                                    tokenTotals.used
+                                }
+                                limit={
+                                    org.token_pool?.pool ||
+                                    tokenLimit ||
+                                    0
+                                }
                             />
                             <QuotaBar
                                 label="Storage"
@@ -462,6 +493,9 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                             />
                         </div>
                         <p className="mt-3 text-label-sm text-sub-600">
+                            {org.token_pool
+                                ? `Equal share ${numberFormatter.format(org.token_pool.equal_share)} · ${org.token_pool.member_count} members · `
+                                : ""}
                             Default credits:{" "}
                             {numberFormatter.format(org.default_credits ?? 0)} ·
                             Remaining on accounts:{" "}
@@ -776,24 +810,81 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                 <div className="space-y-6">
                 <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                     <h2 className="text-label-lg text-strong-950">
-                        Token balance
+                        Company token pool
                     </h2>
+                    <p className="mt-1 text-label-xs text-sub-600">
+                        Same shared pool company admins and members see in their
+                        portal.
+                    </p>
                     <div className="mt-4">
                         <QuotaBar
                             label="Tokens"
-                            used={tokenTotals.used}
-                            limit={tokenLimit}
+                            used={org.token_pool?.total_used ?? tokenTotals.used}
+                            limit={org.token_pool?.pool || tokenLimit || 0}
                         />
                     </div>
                     <p className="mt-3 text-label-sm text-sub-600">
                         Remaining:{" "}
                         {numberFormatter.format(
-                            Math.max(0, tokenLimit - tokenTotals.used)
+                            org.token_pool?.remaining ??
+                                Math.max(0, tokenLimit - tokenTotals.used)
                         )}
-                        {tokenLimit === 0
-                            ? " · No per-user token limits reported yet."
-                            : ""}
+                        {org.token_pool
+                            ? ` · Equal share ${numberFormatter.format(org.token_pool.equal_share)} across ${org.token_pool.member_count} members`
+                            : tokenLimit === 0
+                              ? " · No token pool reported yet."
+                              : ""}
                     </p>
+                    {org.token_pool?.members?.length ? (
+                        <div className="mt-5 overflow-x-auto">
+                            <table className="w-full min-w-[640px] text-left">
+                                <thead className="bg-weak-50 text-label-xs text-sub-600">
+                                    <tr>
+                                        <th className="px-4 py-2 font-medium">
+                                            Member
+                                        </th>
+                                        <th className="px-4 py-2 font-medium">
+                                            Used
+                                        </th>
+                                        <th className="px-4 py-2 font-medium">
+                                            Limit
+                                        </th>
+                                        <th className="px-4 py-2 font-medium">
+                                            Remaining
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-stroke-soft-200">
+                                    {org.token_pool.members.map((member) => (
+                                        <tr
+                                            key={member.username}
+                                            className="text-label-sm"
+                                        >
+                                            <td className="px-4 py-3 text-strong-950">
+                                                {member.display_name ||
+                                                    member.username}
+                                            </td>
+                                            <td className="px-4 py-3 text-sub-600">
+                                                {numberFormatter.format(
+                                                    member.used_tokens
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-sub-600">
+                                                {numberFormatter.format(
+                                                    member.token_limit
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-sub-600">
+                                                {numberFormatter.format(
+                                                    member.remaining
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : null}
                 </section>
                 <form
                     onSubmit={(event) => void onAdjustCredits(event)}
@@ -803,7 +894,8 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                         Credit adjustment
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        Live API adjusts credits, not a company-wide token pool.
+                        Adjusts API credits for a member. Token pool shares are
+                        managed by company admins via transfers and purchases.
                     </p>
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                         <select

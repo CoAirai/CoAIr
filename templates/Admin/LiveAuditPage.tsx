@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
-import PreviewBanner from "@/components/Admin/PreviewBanner";
-import { SEED_AUDIT } from "@/lib/admin/auditSeed";
 import { AUDIT_ACTION_LABELS } from "@/lib/admin/auditLabels";
-import { withPreview } from "@/lib/admin/preview";
 import type { AuditAction, AuditEntry } from "@/lib/admin/types";
 import { apiErrorMessage } from "@/lib/coair/commerce";
 import { listAudit } from "@/lib/coair/ops";
@@ -25,7 +22,11 @@ const LiveAuditPage = () => {
     const [error, setError] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
-        if (!token) return;
+        if (!token) {
+            setEvents([]);
+            setEventsReady(true);
+            return;
+        }
         try {
             setEvents(await listAudit(token, action));
             setError(null);
@@ -40,12 +41,7 @@ const LiveAuditPage = () => {
         void refresh();
     }, [refresh]);
 
-    const { rows: eventRows, preview } = withPreview(
-        events,
-        SEED_AUDIT,
-        eventsReady
-    );
-    const visible = eventRows.filter(
+    const visible = events.filter(
         (entry) => action === "all" || entry.action === action
     );
 
@@ -60,7 +56,6 @@ const LiveAuditPage = () => {
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
-            {preview ? <PreviewBanner /> : null}
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
                 <div className="border-b border-stroke-soft-200 p-5">
@@ -123,7 +118,9 @@ const LiveAuditPage = () => {
                 {visible.length === 0 ? (
                     <div className="px-5 py-12 text-center">
                         <p className="text-label-sm text-strong-950">
-                            No audit events yet
+                            {eventsReady
+                                ? "No audit events yet"
+                                : "Loading audit events…"}
                         </p>
                     </div>
                 ) : null}

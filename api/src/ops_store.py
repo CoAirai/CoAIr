@@ -1065,6 +1065,23 @@ class OpsStore:
             rows = conn.execute(sql, params).fetchall()
         return [self._member_token_request_row(row) for row in rows]
 
+    def list_all_member_token_requests(
+        self,
+        *,
+        status: Optional[str] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM member_token_requests"
+        params: List[Any] = []
+        if status:
+            sql += " WHERE status=?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(1, min(int(limit), 2000)))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._member_token_request_row(row) for row in rows]
+
     def get_member_token_request(
         self, request_id: str
     ) -> Optional[Dict[str, Any]]:

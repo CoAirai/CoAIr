@@ -92,9 +92,13 @@ def list_orgs(
     store: OrgStore = Depends(get_org_store),
 ):
     counts = store.summaries()
+    commerce = get_commerce_store()
     return {
         "orgs": [
-            _with_counts(org, counts)
+            {
+                **_with_counts(org, counts),
+                "subscription": commerce.get_subscription(org["org_id"]),
+            }
             for org in store.list_orgs(include_archived=include_archived)
         ]
     }
@@ -169,10 +173,78 @@ async def get_org(
         member for member in store.list_members(org_id)
         if (users.get_user(member["username"]) or {}).get("is_active", True)
     ]
+    from src.org_token_pool import pool_snapshot
+
     return {
         **_with_counts(org, store.summaries()),
         "members": members,
         "projects": projects.list_for_org(org_id),
+        "subscription": get_commerce_store().get_subscription(org_id),
+        "token_pool": pool_snapshot(org_id, orgs=store, users=users),
+    }
+
+
+@router.get("/admin/subscriptions")
+def list_subscriptions(
+    _admin: UserContext = Depends(require_admin),
+    store: OrgStore = Depends(get_org_store),
+):
+    commerce = get_commerce_store()
+    names = {org["org_id"]: org["name"] for org in store.list_orgs(include_archived=True)}
+    rows = []
+    for sub in commerce.list_subscriptions():
+        org_id = str(sub.get("org_id") or "")
+        rows.append({**sub, "org_name": names.get(org_id)})
+    # Also surface orgs that have never written a subscription row (defaults).
+    known = {str(row.get("org_id") or "") for row in rows}
+    for org in store.list_orgs(include_archived=False):
+        if org["org_id"] in known:
+            continue
+        rows.append(
+            {
+                **commerce.get_subscription(org["org_id"]),
+                "org_id": org["org_id"],
+                "org_name": org["name"],
+            }
+        )
+    return {"subscriptions": rows}
+
+
+@router.get("/admin/token-pools")
+def list_token_pools(
+    _admin: UserContext = Depends(require_admin),
+    store: OrgStore = Depends(get_org_store),
+    users: UserStore = Depends(get_user_store),
+):
+    from src.org_token_pool import pool_snapshot
+
+    pools = [
+        {
+            **pool_snapshot(org["org_id"], orgs=store, users=users),
+            "org_name": org["name"],
+            "archived_at": org.get("archived_at"),
+            "subscription": get_commerce_store().get_subscription(org["org_id"]),
+        }
+        for org in store.list_orgs(include_archived=False)
+    ]
+    return {"pools": pools}
+
+
+@router.get("/admin/token-requests")
+def list_token_requests(
+    status: Optional[str] = None,
+    _admin: UserContext = Depends(require_admin),
+    store: OrgStore = Depends(get_org_store),
+):
+    from src.ops_store import get_ops_store
+
+    names = {org["org_id"]: org["name"] for org in store.list_orgs(include_archived=True)}
+    requests = get_ops_store().list_all_member_token_requests(status=status)
+    return {
+        "requests": [
+            {**row, "org_name": names.get(str(row.get("org_id") or ""))}
+            for row in requests
+        ]
     }
 
 

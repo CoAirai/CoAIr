@@ -1,6 +1,21 @@
 import { coairFetch } from "./client";
 import { weekWindows } from "@/lib/admin/liveHelpers";
 import type { ChartPoint } from "@/lib/admin/dashboardSeries";
+import type { CoairMemberTokenRequest, CoairTokenPool } from "./org";
+
+export type CoairOrgSubscription = {
+    plan_id: string;
+    needs_checkout?: boolean;
+    sell_tokens_per_usd_override?: number | null;
+    stripe_customer_id?: string | null;
+    stripe_subscription_id?: string | null;
+    status?: string;
+    cancel_at_period_end?: boolean;
+    current_period_end?: string | null;
+    auto_renew?: boolean;
+    org_id?: string;
+    org_name?: string | null;
+};
 
 export type CoairAdminOrg = {
     org_id: string;
@@ -14,6 +29,7 @@ export type CoairAdminOrg = {
     default_storage_bytes?: number;
     project_limit?: number;
     allow_member_projects?: boolean;
+    subscription?: CoairOrgSubscription;
     counts?: {
         members?: number;
         owners?: number;
@@ -39,6 +55,7 @@ export type CoairOrgProject = {
 export type CoairAdminOrgDetail = CoairAdminOrg & {
     members?: CoairOrgMember[];
     projects?: CoairOrgProject[];
+    token_pool?: CoairTokenPool;
 };
 
 export type CoairAdminUser = {
@@ -157,6 +174,40 @@ export async function createAdminOrg(
 export async function readAdminOrg(token: string, orgId: string) {
     return coairFetch<CoairAdminOrgDetail>(
         `/admin/orgs/${encodeURIComponent(orgId)}`,
+        { token }
+    );
+}
+
+export async function listAdminSubscriptions(token: string) {
+    return coairFetch<{ subscriptions: CoairOrgSubscription[] }>(
+        "/admin/subscriptions",
+        { token }
+    );
+}
+
+export type CoairAdminTokenPool = CoairTokenPool & {
+    org_name?: string;
+    archived_at?: string | null;
+    subscription?: CoairOrgSubscription;
+};
+
+export async function listAdminTokenPools(token: string) {
+    return coairFetch<{ pools: CoairAdminTokenPool[] }>("/admin/token-pools", {
+        token,
+    });
+}
+
+export type CoairAdminTokenRequest = CoairMemberTokenRequest & {
+    org_name?: string | null;
+};
+
+export async function listAdminTokenRequests(
+    token: string,
+    status?: string
+) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return coairFetch<{ requests: CoairAdminTokenRequest[] }>(
+        `/admin/token-requests${query}`,
         { token }
     );
 }

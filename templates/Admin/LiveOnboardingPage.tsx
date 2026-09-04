@@ -5,9 +5,6 @@ import AccessRequestsPanel from "@/components/Admin/AccessRequestsPanel";
 import PageHeader from "@/components/Admin/PageHeader";
 import { pendingAccessRequests } from "@/lib/admin/accessRequests";
 import type { AccessRequest } from "@/lib/admin/accessRequests";
-import { SEED_ACCESS_REQUESTS } from "@/lib/admin/accessRequestSeed";
-import { withPreview } from "@/lib/admin/preview";
-import PreviewBanner from "@/components/Admin/PreviewBanner";
 import { useAuth } from "@/context/AuthContext";
 import {
     apiErrorMessage,
@@ -25,7 +22,11 @@ const LiveOnboardingPage = () => {
     const [message, setMessage] = useState<string | null>(null);
 
     const loadRequests = useCallback(async () => {
-        if (!token) return;
+        if (!token) {
+            setRequests([]);
+            setRequestsReady(true);
+            return;
+        }
         try {
             setRequests(await listAccessRequests(token));
             setError(null);
@@ -40,14 +41,9 @@ const LiveOnboardingPage = () => {
         void loadRequests();
     }, [loadRequests]);
 
-    const pendingLive = useMemo(
+    const pending = useMemo(
         () => pendingAccessRequests(requests),
         [requests]
-    );
-    const { rows: pending, preview } = withPreview(
-        pendingLive,
-        pendingAccessRequests(SEED_ACCESS_REQUESTS),
-        requestsReady
     );
 
     return (
@@ -56,12 +52,11 @@ const LiveOnboardingPage = () => {
                 title="Onboarding"
                 description="Approve public access requests. The owner then signs in, chooses a package, and pays with Stripe Checkout."
             />
-            {preview ? <PreviewBanner /> : null}
             <AccessRequestsPanel
                 pending={pending}
                 error={error}
                 message={message}
-                readOnly={preview}
+                readOnly={!requestsReady}
                 onApprove={(requestId) => {
                     void (async () => {
                         try {

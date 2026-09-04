@@ -4,15 +4,11 @@ import { FormEvent, Fragment, useCallback, useEffect, useMemo, useState } from "
 
 import StatCard from "@/components/Admin/StatCard";
 import StatusBadge from "@/components/Admin/StatusBadge";
-import PreviewBanner from "@/components/Admin/PreviewBanner";
 import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
 import { useAuth } from "@/context/AuthContext";
-import { INVOICES } from "@/lib/admin/billingDemoData";
 import { filterInvoices, getBillingStats } from "@/lib/admin/billingSelectors";
 import type { Invoice, InvoiceStatus } from "@/lib/admin/billingTypes";
 import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
-import { COMPANIES } from "@/lib/admin/demoData";
-import { withPreview } from "@/lib/admin/preview";
 import type { Coupon, CouponDiscountType } from "@/lib/admin/wave2Types";
 import { apiErrorMessage } from "@/lib/coair/commerce";
 import {
@@ -27,7 +23,13 @@ import {
     toggleCoupon,
     writeTax,
 } from "@/lib/coair/ops";
+import {
+    listAdminSubscriptions,
+    type CoairOrgSubscription,
+} from "@/lib/coair/admin";
+import { planLabel } from "@/lib/admin/liveHelpers";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
+import Link from "next/link";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -49,6 +51,9 @@ const LiveBillingPage = () => {
     const { orgs } = useLiveAdmin();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [coupons, setCoupons] = useState<Coupon[]>([]);
+    const [subscriptions, setSubscriptions] = useState<CoairOrgSubscription[]>(
+        []
+    );
     const [invoicesReady, setInvoicesReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [search, setSearch] = useState("");
@@ -69,15 +74,24 @@ const LiveBillingPage = () => {
     const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
 
     const refresh = useCallback(async () => {
-        if (!token) return;
+        if (!token) {
+            setInvoices([]);
+            setCoupons([]);
+            setSubscriptions([]);
+            setInvoicesReady(true);
+            return;
+        }
         try {
-            const [invoiceRows, couponRows, tax] = await Promise.all([
-                listAdminInvoices(token),
-                listCoupons(token),
-                readTax(token),
-            ]);
+            const [invoiceRows, couponRows, tax, subscriptionRows] =
+                await Promise.all([
+                    listAdminInvoices(token),
+                    listCoupons(token),
+                    readTax(token),
+                    listAdminSubscriptions(token),
+                ]);
             setInvoices(invoiceRows);
             setCoupons(couponRows);
+            setSubscriptions(subscriptionRows.subscriptions ?? []);
             setTaxPercent(String(tax.percent));
             setTaxRegion(tax.regionLabel);
             setError(null);
@@ -93,22 +107,13 @@ const LiveBillingPage = () => {
     }, [refresh]);
 
     const companyNameById = useMemo(
-        () => ({
-            ...Object.fromEntries(
-                COMPANIES.map((company) => [company.id, company.name])
-            ),
-            ...Object.fromEntries(orgs.map((org) => [org.org_id, org.name])),
-        }),
+        () =>
+            Object.fromEntries(orgs.map((org) => [org.org_id, org.name])),
         [orgs]
-    );
-    const { rows: invoiceRows, preview: previewInvoices } = withPreview(
-        invoices,
-        INVOICES,
-        invoicesReady
     );
 
     const billingStats = useMemo(() => {
-        const paidThisMonth = invoiceRows
+        const paidThisMonth = invoices
             .filter((invoice) => invoice.status === "paid")
             .map((invoice) => ({
                 id: invoice.id,
@@ -119,20 +124,18 @@ const LiveBillingPage = () => {
                 status: "succeeded" as const,
                 paidAt: invoice.issuedAt,
             }));
-        const stats = getBillingStats(invoiceRows, paidThisMonth);
-        return previewInvoices
-            ? stats
-            : { ...stats, mrrUsd: stats.paidThisMonthUsd };
-    }, [invoiceRows, previewInvoices]);
+        const stats = getBillingStats(invoices, paidThisMonth);
+        return { ...stats, mrrUsd: stats.paidThisMonthUsd };
+    }, [invoices]);
 
     const filteredInvoices = useMemo(
         () =>
-            filterInvoices(invoiceRows, {
+            filterInvoices(invoices, {
                 search,
                 status,
                 companyNameById,
             }),
-        [invoiceRows, search, status, companyNameById]
+        [invoices, search, status, companyNameById]
     );
 
     const onRetry = async (invoiceId: string) => {
@@ -211,7 +214,6 @@ const LiveBillingPage = () => {
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
-            {previewInvoices ? <PreviewBanner /> : null}
 
             <form
                 onSubmit={async (event: FormEvent) => {
@@ -269,9 +271,15 @@ const LiveBillingPage = () => {
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
-                    label="MRR"
-                    value={currencyFormatter.format(billingStats.mrrUsd)}
-                    hint="Monthly recurring revenue"
+                    label="Active packages"
+                    value={String(
+                        subscriptions.filter(
+                            (sub) =>
+                                (sub.status || "active") === "active" &&
+                                !sub.needs_checkout
+                        ).length
+                    )}
+                    hint="Companies with active subscriptions"
                 />
                 <StatCard
                     label="Outstanding"
@@ -291,6 +299,81 @@ const LiveBillingPage = () => {
                     hint="Invoices requiring attention"
                 />
             </div>
+
+            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                <div className="border-b border-stroke-soft-200 p-5">
+                    <h2 className="text-label-lg text-strong-950">
+                        Company packages
+                    </h2>
+                    <p className="mt-1 text-label-xs text-sub-600">
+                        Live subscription status from company billing (auto-renew,
+                        cancel at period end).
+                    </p>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[900px] text-left">
+                        <thead className="bg-weak-50 text-label-xs text-sub-600">
+                            <tr>
+                                <th className="px-5 py-3 font-medium">Company</th>
+                                <th className="px-5 py-3 font-medium">Plan</th>
+                                <th className="px-5 py-3 font-medium">Status</th>
+                                <th className="px-5 py-3 font-medium">
+                                    Auto-renew
+                                </th>
+                                <th className="px-5 py-3 font-medium">
+                                    Period end
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stroke-soft-200">
+                            {subscriptions.map((sub) => (
+                                <tr
+                                    key={sub.org_id || sub.plan_id}
+                                    className="text-label-sm"
+                                >
+                                    <td className="px-5 py-4">
+                                        {sub.org_id ? (
+                                            <Link
+                                                href={`/admin/companies/${sub.org_id}?tab=billing`}
+                                                className="text-strong-950 hover:text-blue-500"
+                                            >
+                                                {sub.org_name || sub.org_id}
+                                            </Link>
+                                        ) : (
+                                            "—"
+                                        )}
+                                    </td>
+                                    <td className="px-5 py-4 text-sub-600">
+                                        {planLabel(sub.plan_id)}
+                                    </td>
+                                    <td className="px-5 py-4">
+                                        <StatusBadge
+                                            status={sub.status || "active"}
+                                        />
+                                    </td>
+                                    <td className="px-5 py-4 text-sub-600">
+                                        {sub.auto_renew
+                                            ? "On"
+                                            : sub.cancel_at_period_end
+                                              ? "Cancels at period end"
+                                              : "Off"}
+                                    </td>
+                                    <td className="px-5 py-4 text-sub-600">
+                                        {sub.current_period_end
+                                            ? formatDate(sub.current_period_end)
+                                            : "—"}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                {invoicesReady && subscriptions.length === 0 ? (
+                    <p className="px-5 py-12 text-center text-label-sm text-sub-600">
+                        No company packages yet.
+                    </p>
+                ) : null}
+            </section>
 
             <form
                 onSubmit={(event) => void onSaveTax(event)}
@@ -450,11 +533,10 @@ const LiveBillingPage = () => {
                                                 {invoice.status === "past_due" ? (
                                                     <button
                                                         type="button"
-                                                        disabled={previewInvoices}
                                                         onClick={() =>
                                                             void onRetry(invoice.id)
                                                         }
-                                                        className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        className="h-9 rounded-xl bg-blue-500 px-3 text-label-sm text-white-0 hover:bg-blue-600"
                                                     >
                                                         Retry
                                                     </button>
@@ -462,12 +544,11 @@ const LiveBillingPage = () => {
                                                 {invoice.status === "paid" ? (
                                                     <button
                                                         type="button"
-                                                        disabled={previewInvoices}
                                                         onClick={() => {
                                                             setRefundTargetId(invoice.id);
                                                             setRefundReason("");
                                                         }}
-                                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
                                                     >
                                                         Refund
                                                     </button>

@@ -3,9 +3,16 @@ export function bytesToGb(bytes?: number | null) {
 }
 
 export function planLabel(planType?: string | null) {
-    if (planType === "demo") return "Demo";
-    if (planType === "legacy") return "Legacy";
-    return planType || "—";
+    if (!planType) return "—";
+    const labels: Record<string, string> = {
+        demo: "Demo",
+        legacy: "Legacy",
+        foundation: "Foundation",
+        pro: "Pro",
+        enterprise: "Enterprise",
+        custom: "Custom",
+    };
+    return labels[planType] || planType;
 }
 
 export type WeekWindow = {

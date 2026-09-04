@@ -28,6 +28,8 @@ type CompanyRow = {
     tokenLimit: number;
     status: CompanyStatus;
     created: string;
+    renews: string;
+    autoRenew: boolean;
 };
 
 const LiveCompaniesPage = () => {
@@ -59,24 +61,42 @@ const LiveCompaniesPage = () => {
     }
     const rows: CompanyRow[] = orgs.map((org) => {
         const tokens = tokensByOrg.get(org.org_id);
-        const tokenLimit = tokens?.limit || org.default_token_limit || 0;
+        const tokenLimit =
+            tokens?.limit ||
+            org.default_token_limit ||
+            0;
+        const planId =
+            org.subscription?.plan_id || org.default_plan_type;
+        const subStatus = org.subscription?.status;
+        let status: CompanyStatus = org.archived_at
+            ? "suspended"
+            : "active";
+        if (!org.archived_at && subStatus === "canceled") {
+            status = "suspended";
+        }
         return {
             id: org.org_id,
             name: org.name,
             slug: org.slug ?? org.org_id.slice(0, 8),
             members: org.counts?.members ?? "—",
             projects: org.counts?.projects ?? "—",
-            planName: planLabel(org.default_plan_type),
+            planName: planLabel(planId),
             storageUsed: bytesToGb(tokens?.storageUsed),
             storageLimit: bytesToGb(
                 tokens?.storageLimit || org.default_storage_bytes
             ),
             tokensUsed: tokens?.used ?? 0,
             tokenLimit,
-            status: org.archived_at ? "suspended" : "active",
+            status,
             created: org.created_at
                 ? dateFormatter.format(new Date(org.created_at))
                 : "—",
+            renews: org.subscription?.current_period_end
+                ? dateFormatter.format(
+                      new Date(org.subscription.current_period_end)
+                  )
+                : "—",
+            autoRenew: Boolean(org.subscription?.auto_renew),
         };
     });
 
@@ -164,6 +184,7 @@ const LiveCompaniesPage = () => {
                                 <th className="px-5 py-3 font-medium">Storage</th>
                                 <th className="px-5 py-3 font-medium">Tokens</th>
                                 <th className="px-5 py-3 font-medium">Status</th>
+                                <th className="px-5 py-3 font-medium">Renews</th>
                                 <th className="px-5 py-3 font-medium">Created</th>
                             </tr>
                         </thead>
@@ -172,7 +193,7 @@ const LiveCompaniesPage = () => {
                                 <tr>
                                     <td
                                         className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={8}
+                                        colSpan={9}
                                     >
                                         Loading companies…
                                     </td>
@@ -193,6 +214,11 @@ const LiveCompaniesPage = () => {
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
                                         {org.planName}
+                                        {org.autoRenew ? (
+                                            <span className="mt-1 block text-label-xs text-sub-600">
+                                                Auto-renew
+                                            </span>
+                                        ) : null}
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
                                         {org.members}
@@ -224,6 +250,9 @@ const LiveCompaniesPage = () => {
                                         <StatusBadge status={org.status} />
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
+                                        {org.renews}
+                                    </td>
+                                    <td className="px-5 py-4 text-sub-600">
                                         {org.created}
                                     </td>
                                 </tr>
@@ -232,7 +261,7 @@ const LiveCompaniesPage = () => {
                                 <tr>
                                     <td
                                         className="px-5 py-4 text-label-sm text-sub-600"
-                                        colSpan={8}
+                                        colSpan={9}
                                     >
                                         No companies yet.
                                     </td>

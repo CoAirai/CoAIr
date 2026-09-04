@@ -84,7 +84,9 @@ const LiveDashboardPage = () => {
             return {
                 id: org.org_id,
                 name: org.name,
-                planName: planLabel(org.default_plan_type),
+                planName: planLabel(
+                    org.subscription?.plan_id || org.default_plan_type
+                ),
                 storageUsed,
                 storageLimit,
                 tokensUsed,

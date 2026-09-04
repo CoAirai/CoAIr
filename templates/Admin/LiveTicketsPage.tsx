@@ -3,10 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
-import PreviewBanner from "@/components/Admin/PreviewBanner";
-import { COMPANIES } from "@/lib/admin/demoData";
-import { withPreview } from "@/lib/admin/preview";
-import { SEED_TICKETS } from "@/lib/admin/wave2DemoData";
 import {
     apiErrorMessage,
     listAdminTickets,
@@ -14,8 +10,6 @@ import {
 } from "@/lib/coair/commerce";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
 import type { SupportTicket, TicketPriority, TicketStatus } from "@/lib/admin/wave2Types";
-
-const AGENTS = ["Unassigned", "Aisha Khan", "Marcus Lee", "Priya Rao"] as const;
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
@@ -58,7 +52,11 @@ const LiveTicketsPage = () => {
     const [priority, setPriority] = useState<TicketPriority | "all">("all");
 
     const refresh = useCallback(async () => {
-        if (!token) return;
+        if (!token) {
+            setTickets([]);
+            setTicketsReady(true);
+            return;
+        }
         try {
             setTickets(await listAdminTickets(token));
             setError(null);
@@ -73,19 +71,20 @@ const LiveTicketsPage = () => {
         void refresh();
     }, [refresh]);
 
-    const { rows: ticketRows, preview } = withPreview(
-        tickets,
-        SEED_TICKETS,
-        ticketsReady
-    );
     const companyName = (companyId: string) =>
-        orgs.find((org) => org.org_id === companyId)?.name ??
-        COMPANIES.find((company) => company.id === companyId)?.name ??
-        "Unknown company";
+        orgs.find((org) => org.org_id === companyId)?.name ?? "Unknown company";
+
+    const agentOptions = useMemo(() => {
+        const named = new Set<string>();
+        for (const ticket of tickets) {
+            if (ticket.assigneeId) named.add(ticket.assigneeId);
+        }
+        return ["Unassigned", ...Array.from(named).sort()];
+    }, [tickets]);
 
     const filtered = useMemo(() => {
         const query = search.trim().toLowerCase();
-        return ticketRows.filter((ticket) => {
+        return tickets.filter((ticket) => {
             if (
                 query &&
                 !ticket.subject.toLowerCase().includes(query) &&
@@ -97,9 +96,9 @@ const LiveTicketsPage = () => {
             if (priority !== "all" && ticket.priority !== priority) return false;
             return true;
         });
-    }, [ticketRows, search, status, priority, orgs]);
+    }, [tickets, search, status, priority, orgs]);
 
-    const openCount = ticketRows.filter((ticket) => ticket.status === "open").length;
+    const openCount = tickets.filter((ticket) => ticket.status === "open").length;
 
     const assign = async (ticketId: string, assigneeId: string | null) => {
         try {
@@ -132,12 +131,11 @@ const LiveTicketsPage = () => {
             <div>
                 <h1 className="text-label-xl text-strong-950">Support tickets</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
-                    {openCount} open of {ticketRows.length} total. Assign, resolve,
+                    {openCount} open of {tickets.length} total. Assign, resolve,
                     or reopen tickets raised by company admins.
                 </p>
             </div>
             {error ? <p className="text-label-sm text-red-500">{error}</p> : null}
-            {preview ? <PreviewBanner /> : null}
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
                 <div className="grid gap-3 border-b border-stroke-soft-200 p-5 md:grid-cols-[minmax(240px,1fr)_180px_180px]">
@@ -226,7 +224,6 @@ const LiveTicketsPage = () => {
                                     </td>
                                     <td className="px-5 py-4">
                                         <select
-                                            disabled={preview}
                                             value={ticket.assigneeId ?? "Unassigned"}
                                             onChange={(event) =>
                                                 void assign(
@@ -238,7 +235,7 @@ const LiveTicketsPage = () => {
                                             }
                                             className="h-9 rounded-lg border border-stroke-soft-200 px-2.5 text-label-xs outline-none focus:border-blue-500"
                                         >
-                                            {AGENTS.map((agent) => (
+                                            {agentOptions.map((agent) => (
                                                 <option key={agent} value={agent}>
                                                     {agent}
                                                 </option>
@@ -258,8 +255,7 @@ const LiveTicketsPage = () => {
                                         {ticket.status === "resolved" ? (
                                             <button
                                                 type="button"
-                                                disabled={preview}
-                                                className="text-label-sm text-blue-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                                className="text-label-sm text-blue-500 hover:text-blue-600"
                                                 onClick={() =>
                                                     void setTicketStatus(ticket.id, "open")
                                                 }
@@ -269,8 +265,7 @@ const LiveTicketsPage = () => {
                                         ) : (
                                             <button
                                                 type="button"
-                                                disabled={preview}
-                                                className="text-label-sm text-green-600 hover:text-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                className="text-label-sm text-green-600 hover:text-green-700"
                                                 onClick={() =>
                                                     void setTicketStatus(
                                                         ticket.id,
@@ -290,7 +285,7 @@ const LiveTicketsPage = () => {
                 {filtered.length === 0 ? (
                     <div className="px-5 py-12 text-center">
                         <p className="text-label-sm text-strong-950">
-                            No tickets found
+                            {ticketsReady ? "No tickets found" : "Loading tickets…"}
                         </p>
                     </div>
                 ) : null}

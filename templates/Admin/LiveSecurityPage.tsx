@@ -3,7 +3,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import Switch from "@/components/Switch";
-import PreviewBanner from "@/components/Admin/PreviewBanner";
 import { useAuth } from "@/context/AuthContext";
 import { maskApiKey } from "@/lib/admin/wave2Helpers";
 import type { ApiKeyRecord } from "@/lib/admin/wave2Types";
@@ -23,24 +22,6 @@ const SESSION_TIMEOUTS = [
     { minutes: 60, label: "1 hour" },
     { minutes: 480, label: "8 hours" },
 ] as const;
-
-const PREVIEW_IPS = ["203.0.113.10", "198.51.100.0/24"];
-const PREVIEW_KEYS: ApiKeyRecord[] = [
-    {
-        id: "key-preview-1",
-        label: "Billing sync",
-        prefix: "coair_live_",
-        lastFour: "9f2a",
-        createdAt: "2026-08-01",
-    },
-    {
-        id: "key-preview-2",
-        label: "Usage exporter",
-        prefix: "coair_live_",
-        lastFour: "c418",
-        createdAt: "2026-07-18",
-    },
-];
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
@@ -119,10 +100,8 @@ const LiveSecurityPage = () => {
         }
     };
 
-    const previewIps = security.ipAllowlist.length === 0;
-    const previewKeys = security.apiKeys.length === 0;
-    const ips = previewIps ? PREVIEW_IPS : security.ipAllowlist;
-    const keys = previewKeys ? PREVIEW_KEYS : security.apiKeys;
+    const ips = security.ipAllowlist;
+    const keys = security.apiKeys;
 
     return (
         <div className="space-y-6">
@@ -136,7 +115,6 @@ const LiveSecurityPage = () => {
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
-            {previewIps || previewKeys ? <PreviewBanner /> : null}
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -226,11 +204,10 @@ const LiveSecurityPage = () => {
                                 </span>
                                 <button
                                     type="button"
-                                    disabled={previewIps}
                                     onClick={() =>
                                         void removeSecurityIp(token, ip).then(refresh)
                                     }
-                                    className="h-8 rounded-lg px-3 text-label-xs text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="h-8 rounded-lg px-3 text-label-xs text-red-600 hover:bg-red-50"
                                 >
                                     Remove
                                 </button>
@@ -329,9 +306,7 @@ const LiveSecurityPage = () => {
                                     <td className="px-5 py-4">
                                         <button
                                             type="button"
-                                            disabled={
-                                                previewKeys || Boolean(key.revokedAt)
-                                            }
+                                            disabled={Boolean(key.revokedAt)}
                                             onClick={() =>
                                                 void revokeSecurityApiKey(
                                                     token,

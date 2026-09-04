@@ -3,12 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import StatusBadge from "@/components/Admin/StatusBadge";
-import PreviewBanner from "@/components/Admin/PreviewBanner";
 import { useAuth } from "@/context/AuthContext";
-import { DUNNING_CASES } from "@/lib/admin/billingDemoData";
 import type { DunningCase } from "@/lib/admin/billingTypes";
-import { COMPANIES } from "@/lib/admin/demoData";
-import { withPreview } from "@/lib/admin/preview";
 import { apiErrorMessage } from "@/lib/coair/commerce";
 import { extendDunning, listDunning, retryDunning } from "@/lib/coair/ops";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
@@ -31,7 +27,11 @@ const LiveDunningPage = () => {
     const [error, setError] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
-        if (!token) return;
+        if (!token) {
+            setCases([]);
+            setCasesReady(true);
+            return;
+        }
         try {
             setCases(await listDunning(token));
             setError(null);
@@ -46,15 +46,8 @@ const LiveDunningPage = () => {
         void refresh();
     }, [refresh]);
 
-    const { rows: caseRows, preview } = withPreview(
-        cases,
-        DUNNING_CASES,
-        casesReady
-    );
     const companyName = (companyId: string) =>
-        orgs.find((org) => org.org_id === companyId)?.name ??
-        COMPANIES.find((company) => company.id === companyId)?.name ??
-        companyId;
+        orgs.find((org) => org.org_id === companyId)?.name ?? companyId;
 
     const handleRetry = async (id: string) => {
         try {
@@ -85,7 +78,6 @@ const LiveDunningPage = () => {
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
-            {preview ? <PreviewBanner /> : null}
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
                 <div className="border-b border-stroke-soft-200 p-5">
@@ -112,7 +104,7 @@ const LiveDunningPage = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stroke-soft-200">
-                            {caseRows.map((dunningCase) => (
+                            {cases.map((dunningCase) => (
                                 <tr key={dunningCase.id} className="text-label-sm">
                                     <td className="px-5 py-4 text-strong-950">
                                         {companyName(dunningCase.companyId)}
@@ -133,7 +125,6 @@ const LiveDunningPage = () => {
                                         <div className="flex gap-2">
                                             <button
                                                 type="button"
-                                                disabled={preview}
                                                 onClick={() =>
                                                     void handleRetry(dunningCase.id)
                                                 }
@@ -143,7 +134,6 @@ const LiveDunningPage = () => {
                                             </button>
                                             <button
                                                 type="button"
-                                                disabled={preview}
                                                 onClick={() =>
                                                     void handleExtend(dunningCase.id)
                                                 }
@@ -158,13 +148,13 @@ const LiveDunningPage = () => {
                         </tbody>
                     </table>
                 </div>
-                {caseRows.length === 0 ? (
+                {cases.length === 0 ? (
                     <p className="px-5 py-12 text-center text-label-sm text-sub-600">
-                        No dunning cases
+                        {casesReady ? "No dunning cases" : "Loading dunning cases…"}
                     </p>
                 ) : null}
                 <div className="border-t border-stroke-soft-200 px-5 py-3 text-label-xs text-sub-600">
-                    Showing {caseRows.length} dunning cases
+                    Showing {cases.length} dunning cases
                 </div>
             </section>
         </div>

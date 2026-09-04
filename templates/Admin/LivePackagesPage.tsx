@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
-import PreviewBanner from "@/components/Admin/PreviewBanner";
-import { PLANS } from "@/lib/admin/plans";
 import type { ModuleAccess, ModuleId, Plan } from "@/lib/admin/types";
 import { apiErrorMessage, listPackages, patchPackage } from "@/lib/coair/commerce";
 
@@ -18,22 +16,19 @@ const LivePackagesPage = () => {
     const { session } = useAuth();
     const token = session?.accessToken ?? "";
     const [plans, setPlans] = useState<Plan[]>([]);
-    const [preview, setPreview] = useState(false);
+    const [plansReady, setPlansReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!token) return;
+        if (!token) {
+            setPlans([]);
+            setPlansReady(true);
+            return;
+        }
         void listPackages(token)
-            .then((rows) => {
-                if (rows.length > 0) {
-                    setPlans(rows);
-                    setPreview(false);
-                } else {
-                    setPlans(PLANS.map((plan) => ({ ...plan })));
-                    setPreview(true);
-                }
-            })
-            .catch((err) => setError(apiErrorMessage(err)));
+            .then((rows) => setPlans(rows))
+            .catch((err) => setError(apiErrorMessage(err)))
+            .finally(() => setPlansReady(true));
     }, [token]);
 
     const save = useCallback(
@@ -41,7 +36,6 @@ const LivePackagesPage = () => {
             setPlans((prev) =>
                 prev.map((plan) => (plan.id === next.id ? next : plan))
             );
-            if (preview) return;
             try {
                 const saved = await patchPackage(token, next);
                 setPlans((prev) =>
@@ -52,7 +46,7 @@ const LivePackagesPage = () => {
                 setError(apiErrorMessage(err));
             }
         },
-        [preview, token]
+        [token]
     );
 
     const patch = (plan: Plan, next: Partial<Omit<Plan, "id" | "modules">>) => {
@@ -87,7 +81,13 @@ const LivePackagesPage = () => {
                 </p>
             </div>
             {error ? <p className="text-label-sm text-red-500">{error}</p> : null}
-            {preview ? <PreviewBanner /> : null}
+            {plans.length === 0 ? (
+                <p className="rounded-2xl border border-stroke-soft-200 bg-white-0 px-5 py-12 text-center text-label-sm text-sub-600">
+                    {plansReady
+                        ? "No packages configured yet."
+                        : "Loading packages…"}
+                </p>
+            ) : null}
 
             <div className="space-y-4">
                 {plans.map((plan) => (
