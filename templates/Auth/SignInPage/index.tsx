@@ -8,7 +8,6 @@ import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { useAdminData } from "@/context/AdminDataContext";
-import { adminSignInUrl } from "@/lib/auth/hosts";
 import { postLoginUrl } from "@/lib/auth/postLoginPath";
 import { MFA_CHALLENGE_KEY } from "@/lib/coair/liveLogin";
 
@@ -119,15 +118,6 @@ const SignInPage = () => {
                         href="/auth/forgot-password"
                     >
                         Forgot password?
-                    </Link>
-                </p>
-                <p className="mt-3 text-center text-label-sm text-sub-600">
-                    Platform admin?{" "}
-                    <Link
-                        className="text-blue-500 hover:text-blue-700"
-                        href={adminSignInUrl()}
-                    >
-                        Super Admin sign in
                     </Link>
                 </p>
             </div>

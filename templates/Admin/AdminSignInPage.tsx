@@ -3,11 +3,11 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "@/components/Image";
+import LayoutLogin from "@/components/LayoutLogin";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
-import { adminOrigin, homeUrlForRole, signInUrl } from "@/lib/auth/hosts";
+import { homeUrlForRole, signInUrl } from "@/lib/auth/hosts";
 import { readSharedItem, SIGNED_OUT_KEY } from "@/lib/auth/sharedStorage";
 
 function hasSignedOutMarker(): boolean {
@@ -46,7 +46,6 @@ const AdminSignInPage = () => {
 
     useEffect(() => {
         if (!ready || !session || signedOut) return;
-        // Block auto-login while the shared logout marker is set.
         if (hasSignedOutMarker() && !allowAutoEnter.current) {
             return;
         }
@@ -87,32 +86,24 @@ const AdminSignInPage = () => {
         }
     };
 
-    const hostLabel =
-        adminOrigin().replace(/^https?:\/\//, "") || "admin.coair.ai";
-
     return (
-        <div className="flex min-h-screen items-center justify-center bg-weak-50 px-6 py-10">
-            <div className="w-full max-w-md rounded-3xl border border-stroke-soft-200 bg-white-0 p-8 shadow-[0_0_1.25rem_0_rgba(0,0,0,0.03)]">
-                <Image
-                    className="mb-6 h-9 w-auto rounded-xl object-contain opacity-100"
-                    src="/images/coair-logo.png"
-                    width={120}
-                    height={36}
-                    alt="COAir"
-                />
-                <p className="text-[11px] uppercase tracking-[0.18em] text-soft-400">
-                    Platform control
-                </p>
-                <h1 className="mt-2 text-h4 text-strong-950">Super Admin sign in</h1>
-                <p className="mt-2 text-label-sm text-sub-600">
-                    Sign in to manage companies, packages, and platform ops on {hostLabel}.
-                </p>
-
-                <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit}>
+        <LayoutLogin
+            title="Sign in to Super Admin"
+            description={
+                <>
+                    Company or team account?{" "}
+                    <Link className="text-blue-500" href={signInUrl()}>
+                        Use workspace login
+                    </Link>
+                </>
+            }
+        >
+            <div>
+                <form className="flex flex-col gap-4.5" onSubmit={handleSubmit}>
                     <Field
-                        placeholder="Super admin email"
+                        placeholder="Username or work email"
                         value={email}
-                        type="email"
+                        type="text"
                         autoComplete="username"
                         onChange={(e) => setEmail(e.target.value)}
                         required
@@ -134,21 +125,14 @@ const AdminSignInPage = () => {
                         type="submit"
                         disabled={submitting}
                     >
-                        {submitting ? "Signing in…" : "Sign in to admin"}
+                        {submitting ? "Signing in…" : "Sign in"}
                     </Button>
                 </form>
-
-                <p className="mt-6 text-center text-label-sm text-sub-600">
-                    Company user?{" "}
-                    <Link
-                        className="text-blue-500 hover:text-blue-700"
-                        href={signInUrl()}
-                    >
-                        Use the workspace login
-                    </Link>
+                <p className="mt-5 text-center text-label-sm text-sub-600">
+                    Platform control for companies, packages, and ops.
                 </p>
             </div>
-        </div>
+        </LayoutLogin>
     );
 };
 
