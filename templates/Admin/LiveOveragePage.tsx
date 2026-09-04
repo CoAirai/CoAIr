@@ -16,17 +16,20 @@ const MODES: Array<{
     {
         value: "block",
         label: "Block",
-        description: "Stop additional token usage when the threshold is reached.",
+        description:
+            "Stop chat tokens and file uploads once usage reaches the trigger percent.",
     },
     {
         value: "throttle",
         label: "Throttle",
-        description: "Reduce service capacity after the threshold is reached.",
+        description:
+            "Warn after the trigger, but only hard-stop tokens/uploads at 100% of the package limit.",
     },
     {
         value: "bill",
         label: "Bill",
-        description: "Continue service and charge for additional token usage.",
+        description:
+            "Keep serving tokens and accepting uploads past the limit so overage can be billed.",
     },
 ];
 
@@ -79,8 +82,8 @@ const LiveOveragePage = () => {
             <div>
                 <h1 className="text-label-xl text-strong-950">Overage policy</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
-                    Configure the default response when a company exceeds its token
-                    quota.
+                    Configure what happens when a company hits its token or
+                    storage quota threshold.
                 </p>
             </div>
             {error ? (
@@ -88,9 +91,9 @@ const LiveOveragePage = () => {
             ) : null}
 
             <div className="rounded-xl border border-stroke-soft-200 bg-weak-50 px-4 py-3 text-label-xs text-sub-600">
-                Sell rate: {sellRate} tokens/$1 · Overage billing: $
-                {derivedOverageRate.toFixed(2)} per 1,000 tokens (derived from sell
-                rate on Tokens page)
+                Applies to both token chat usage and file-upload storage.
+                Sell rate: {sellRate} tokens/$1 · Overage billing reference: $
+                {derivedOverageRate.toFixed(2)} per 1,000 tokens (from Tokens page).
             </div>
 
             <form

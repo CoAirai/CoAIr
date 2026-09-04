@@ -525,12 +525,14 @@ class UserStore:
         return self.get_usage(username)
 
     def enforce_quota(self, username: str) -> None:
-        """Raise UserQuotaExceededError if the user has consumed >= token_limit."""
+        """Raise UserQuotaExceededError per the live overage policy."""
+        from src.overage import should_block_quota
+
         snapshot = self.get_usage(username)
-        if snapshot["token_limit"] > 0 and snapshot["used_tokens"] >= snapshot["token_limit"]:
-            raise UserQuotaExceededError(
-                username, snapshot["used_tokens"], snapshot["token_limit"]
-            )
+        limit = int(snapshot["token_limit"] or 0)
+        used = int(snapshot["used_tokens"] or 0)
+        if should_block_quota(used=used, limit=limit, attempted=0):
+            raise UserQuotaExceededError(username, used, limit)
 
 
 def get_user_store() -> UserStore:

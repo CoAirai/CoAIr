@@ -308,7 +308,10 @@ async def write_overage(
         target_type="ops",
         target_id="overage",
         target_label="Overage policy",
-        detail=f"{policy['mode']} at {policy['trigger_pct']}%",
+        detail=(
+            f"{policy['mode']} at {policy['trigger_pct']}% "
+            "(tokens + storage)"
+        ),
     )
     return policy
 

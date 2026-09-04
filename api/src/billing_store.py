@@ -441,7 +441,9 @@ class BillingStore:
             if not account:
                 return self.summary(username, conn=conn)
             used = int(account["storage_used_bytes"]); limit = int(account["storage_limit_bytes"])
-            if limit > 0 and used + size > limit:
+            from src.overage import should_block_quota
+
+            if should_block_quota(used=used, limit=limit, attempted=size):
                 raise StorageQuotaExceededError(username, used, limit, size)
             if old:
                 conn.execute(
