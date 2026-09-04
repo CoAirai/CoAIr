@@ -10,12 +10,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bones": "boneyard-js build http://localhost:3000/dev/bones --force"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.8",
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.112.3",
+    "boneyard-js": "^1.10.0",
     "framer-motion": "^12.23.22",
     "millify": "^6.1.0",
     "monaco-editor": "^0.53.0",

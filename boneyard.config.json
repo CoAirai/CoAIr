@@ -1,0 +1,15 @@
+{
+  "breakpoints": [375, 768, 1280],
+  "out": "./bones",
+  "wait": 2000,
+  "color": "rgba(0,0,0,0.08)",
+  "darkColor": "rgba(255,255,255,0.06)",
+  "animate": "shimmer",
+  "shimmerColor": "rgba(0,0,0,0.04)",
+  "darkShimmerColor": "rgba(255,255,255,0.1)",
+  "speed": "2s",
+  "shimmerAngle": 110,
+  "transition": true,
+  "select": "viewport",
+  "routes": ["/dev/bones"]
+}

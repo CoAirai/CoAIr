@@ -1,5 +1,6 @@
 "use client";
 
+import "@/bones/registry";
 import { ThemeProvider } from "next-themes";
 import { AdminDataProvider } from "@/context/AdminDataContext";
 import { AuthProvider } from "@/context/AuthContext";
