@@ -43,13 +43,15 @@ const SignInPage = () => {
         try {
             const result = await signIn(email, password);
             if (!result.ok && result.mfa) {
+                // Clear stale session so portal auto-redirect does not skip MFA.
+                await signOut();
                 saveMfaChallenge({
                     mfaToken: result.mfaToken,
                     debugCode: result.debugCode,
-                    username: result.username,
+                    username: result.username || email.trim(),
                     portal: "workspace",
                 });
-                router.push("/auth/enter-code");
+                window.location.assign("/auth/enter-code");
                 return;
             }
             if (!result.ok) {

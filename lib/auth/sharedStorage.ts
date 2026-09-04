@@ -116,6 +116,8 @@ export function clearSharedAuth(): void {
         .filter(Boolean);
     for (const name of names) {
         if (name === SIGNED_OUT_KEY) continue;
+        // Keep pending MFA challenge across a pre-code signOut.
+        if (name === "coair.mfaChallenge") continue;
         if (name.startsWith("coair.") || name.startsWith("sb-")) {
             removeSharedItem(name);
         }
@@ -127,6 +129,7 @@ export function clearSharedAuth(): void {
             if (
                 key &&
                 key !== SIGNED_OUT_KEY &&
+                key !== "coair.mfaChallenge" &&
                 (key.startsWith("coair.") || key.startsWith("sb-"))
             ) {
                 keys.push(key);

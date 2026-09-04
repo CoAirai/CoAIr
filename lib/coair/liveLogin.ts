@@ -181,7 +181,14 @@ export async function tryLiveLogin(
     // Prefer API login so MFA + login-alert emails always run server-side.
     try {
         const login = await loginViaApi(trimmed, password);
-        if (login.mfa_required && login.mfa_token) {
+        if (login.mfa_required) {
+            if (!login.mfa_token) {
+                return {
+                    ok: false,
+                    kind: "invalid",
+                    error: "MFA was required but no challenge was issued. Try again.",
+                };
+            }
             return {
                 ok: false,
                 kind: "mfa",

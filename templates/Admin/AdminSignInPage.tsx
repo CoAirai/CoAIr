@@ -9,7 +9,7 @@ import Field from "@/components/Field";
 import { useAuth } from "@/context/AuthContext";
 import { homeUrlForRole, signInUrl } from "@/lib/auth/hosts";
 import { readSharedItem, SIGNED_OUT_KEY } from "@/lib/auth/sharedStorage";
-import { saveMfaChallenge } from "@/lib/coair/liveLogin";
+import { readMfaChallenge, saveMfaChallenge } from "@/lib/coair/liveLogin";
 
 function hasSignedOutMarker(): boolean {
     if (typeof window === "undefined") return false;
@@ -47,6 +47,8 @@ const AdminSignInPage = () => {
 
     useEffect(() => {
         if (!ready || !session || signedOut) return;
+        // Do not auto-enter admin while an MFA challenge is pending.
+        if (readMfaChallenge()) return;
         if (hasSignedOutMarker() && !allowAutoEnter.current) {
             return;
         }
@@ -65,13 +67,17 @@ const AdminSignInPage = () => {
             const result = await signIn(email, password);
             // Super Admin uses the same email MFA as workspace login.
             if (!result.ok && "mfa" in result && result.mfa) {
+                // Drop any stale session first — otherwise the auto-enter effect
+                // races us back to /admin (or sign-in) and skips the code screen.
+                await signOut();
                 saveMfaChallenge({
                     mfaToken: result.mfaToken,
                     debugCode: result.debugCode,
-                    username: result.username,
+                    username: result.username || email.trim(),
                     portal: "admin",
                 });
-                router.push("/admin/enter-code");
+                // Hard navigation so the challenge is reliably present on the next page.
+                window.location.assign("/admin/enter-code");
                 return;
             }
             if (!result.ok) {
