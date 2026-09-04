@@ -12,12 +12,17 @@ import { CoairApiError } from "@/lib/coair/client";
 const ERRORS: Record<string, string> = {
     invite_not_found: "No pending invite for this email",
     invite_already_activated: "This invite is already activated — sign in",
+    invite_token_required: "Open the invite link from your email",
+    invalid_invite_token: "Invite link is invalid — request a new one",
+    invite_token_used: "Invite link was already used — request a new one",
+    invite_token_expired: "Invite link expired — request a new one",
     email_not_verified: "Verify the email code first",
     email_verification_required: "Enter the 6-digit email code",
     email_verification_expired: "Code expired — request a new one",
     email_challenge_expired: "Code expired — request a new one",
     invalid_email_code: "That activation code is incorrect",
     invalid_email_challenge: "Request a new activation code",
+    otp_attempts_exceeded: "Too many wrong codes — request a new one",
     rate_limited: "Too many attempts — wait a minute and try again",
     supabase_sync_failed: "Could not finish account setup — try again",
 };
@@ -45,7 +50,12 @@ const AcceptInvitePage = () => {
         () => (searchParams.get("email") || "").trim().toLowerCase(),
         [searchParams]
     );
+    const tokenFromQuery = useMemo(
+        () => (searchParams.get("token") || "").trim(),
+        [searchParams]
+    );
     const [email, setEmail] = useState(emailFromQuery);
+    const [inviteToken, setInviteToken] = useState(tokenFromQuery);
     const [code, setCode] = useState("");
     const [password, setPassword] = useState("");
     const [confirm, setConfirm] = useState("");
@@ -57,6 +67,10 @@ const AcceptInvitePage = () => {
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
         setError("");
+        if (!inviteToken.trim()) {
+            setError("Open the invite link from your email (token required)");
+            return;
+        }
         if (password.length < 8) {
             setError("Password must be at least 8 characters");
             return;
@@ -69,6 +83,7 @@ const AcceptInvitePage = () => {
         try {
             await activateInvite({
                 email: email.trim(),
+                token: inviteToken.trim(),
                 code: code.trim(),
                 password,
             });
@@ -89,6 +104,9 @@ const AcceptInvitePage = () => {
         try {
             const resent = await resendInviteCode(email.trim());
             if (resent.debug_code) setDebugCode(resent.debug_code);
+            if (resent.debug_invite_token) {
+                setInviteToken(resent.debug_invite_token);
+            }
         } catch (err) {
             setError(humanError(err));
         } finally {
@@ -128,6 +146,15 @@ const AcceptInvitePage = () => {
                         required
                         autoComplete="email"
                     />
+                    {!tokenFromQuery ? (
+                        <Field
+                            placeholder="Invite token from email link"
+                            value={inviteToken}
+                            onChange={(e) => setInviteToken(e.target.value)}
+                            required
+                            autoComplete="off"
+                        />
+                    ) : null}
                     <Field
                         placeholder="6-digit email code"
                         value={code}

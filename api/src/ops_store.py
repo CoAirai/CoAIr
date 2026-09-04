@@ -25,6 +25,8 @@ RESET_TTL_MINUTES = 60
 MFA_TTL_MINUTES = 10
 EMAIL_VERIFY_TTL_MINUTES = 15
 EMAIL_VERIFY_PURPOSES = ("signup", "invite")
+OTP_MAX_ATTEMPTS = 5
+INVITE_TOKEN_TTL_HOURS = 48
 SEED_FLAGS = (
     ("flag-001", "embed", "COAIR-Embed", 1),
     ("flag-002", "analyze", "COAIR-Analyze", 1),
@@ -118,7 +120,8 @@ CREATE TABLE IF NOT EXISTS mfa_challenges (
     username TEXT NOT NULL,
     code_hash TEXT NOT NULL,
     expires_at TEXT NOT NULL,
-    used_at TEXT
+    used_at TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS email_verifications (
@@ -129,10 +132,25 @@ CREATE TABLE IF NOT EXISTS email_verifications (
     proof_hash TEXT,
     expires_at TEXT NOT NULL,
     verified_at TEXT,
-    consumed_at TEXT
+    consumed_at TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_email_verifications_email
     ON email_verifications(email, purpose, expires_at);
+
+CREATE TABLE IF NOT EXISTS invite_tokens (
+    token_id TEXT PRIMARY KEY,
+    token_hash TEXT UNIQUE NOT NULL,
+    email TEXT NOT NULL,
+    org_id TEXT,
+    purpose TEXT NOT NULL DEFAULT 'invite',
+    created_by TEXT,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invite_tokens_email
+    ON invite_tokens(email, expires_at);
 
 CREATE TABLE IF NOT EXISTS email_outbox (
     outbox_id TEXT PRIMARY KEY,
@@ -232,6 +250,7 @@ class OpsStore:
         if not use_postgres():
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
+                self._migrate_columns(conn)
                 self._seed(conn)
         else:
             with self._connect() as conn:
@@ -260,7 +279,46 @@ class OpsStore:
                         ON member_token_requests(org_id, status, created_at)
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS invite_tokens (
+                        token_id TEXT PRIMARY KEY,
+                        token_hash TEXT UNIQUE NOT NULL,
+                        email TEXT NOT NULL,
+                        org_id TEXT,
+                        purpose TEXT NOT NULL DEFAULT 'invite',
+                        created_by TEXT,
+                        expires_at TEXT NOT NULL,
+                        used_at TEXT,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_invite_tokens_email
+                        ON invite_tokens(email, expires_at)
+                    """
+                )
+                self._migrate_columns(conn)
                 self._seed(conn)
+
+    @staticmethod
+    def _migrate_columns(conn) -> None:
+        from .database import table_columns
+
+        mfa_cols = table_columns(conn, "mfa_challenges")
+        if "attempt_count" not in mfa_cols:
+            conn.execute(
+                "ALTER TABLE mfa_challenges ADD COLUMN attempt_count "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+        email_cols = table_columns(conn, "email_verifications")
+        if "attempt_count" not in email_cols:
+            conn.execute(
+                "ALTER TABLE email_verifications ADD COLUMN attempt_count "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
 
     @classmethod
     def instance(cls) -> "OpsStore":
@@ -792,6 +850,84 @@ class OpsStore:
             )
         return str(row["username"])
 
+    def create_invite_token(
+        self,
+        email: str,
+        *,
+        org_id: str | None = None,
+        purpose: str = "invite",
+        created_by: str | None = None,
+    ) -> Dict[str, str]:
+        clean = (email or "").strip().lower()
+        if "@" not in clean:
+            raise ValueError("invalid_email")
+        raw = secrets.token_urlsafe(32)
+        token_id = secrets.token_urlsafe(12)
+        expires = (_now() + timedelta(hours=INVITE_TOKEN_TTL_HOURS)).isoformat()
+        now = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO invite_tokens (token_id, token_hash, email, org_id, "
+                "purpose, created_by, expires_at, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                [
+                    token_id,
+                    _hash(raw),
+                    clean,
+                    (org_id or "").strip() or None,
+                    purpose,
+                    (created_by or "").strip() or None,
+                    expires,
+                    now,
+                ],
+            )
+        return {
+            "token_id": token_id,
+            "token": raw,
+            "email": clean,
+            "expires_at": expires,
+        }
+
+    def peek_invite_token(
+        self, email: str, token: str, *, purpose: str = "invite"
+    ) -> Dict[str, str]:
+        clean = (email or "").strip().lower()
+        raw = (token or "").strip()
+        if not clean or not raw:
+            raise ValueError("invite_token_required")
+        hashed = _hash(raw)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM invite_tokens WHERE token_hash=? AND email=? "
+                "AND purpose=?",
+                [hashed, clean, purpose],
+            ).fetchone()
+        if not row:
+            raise ValueError("invalid_invite_token")
+        if row["used_at"]:
+            raise ValueError("invite_token_used")
+        if row["expires_at"] < _now_iso():
+            raise ValueError("invite_token_expired")
+        return {
+            "token_id": str(row["token_id"]),
+            "email": clean,
+            "org_id": str(row["org_id"] or ""),
+            "purpose": str(row["purpose"] or purpose),
+        }
+
+    def consume_invite_token(
+        self, email: str, token: str, *, purpose: str = "invite"
+    ) -> Dict[str, str]:
+        peeked = self.peek_invite_token(email, token, purpose=purpose)
+        with self._write_lock, self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE invite_tokens SET used_at=? WHERE token_id=? AND used_at IS NULL",
+                [_now_iso(), peeked["token_id"]],
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("invite_token_used")
+        return peeked
+
     def create_mfa_challenge(self, username: str) -> Dict[str, str]:
         challenge_id = secrets.token_urlsafe(18)
         code = f"{secrets.randbelow(1000000):06d}"
@@ -799,7 +935,7 @@ class OpsStore:
         with self._write_lock, self._connect() as conn:
             conn.execute(
                 "INSERT INTO mfa_challenges (challenge_id, username, code_hash, "
-                "expires_at) VALUES (?,?,?,?)",
+                "expires_at, attempt_count) VALUES (?,?,?,?,0)",
                 [challenge_id, username, _hash(code), expires],
             )
         from .email_delivery import recipient_address, send_coair_email
@@ -838,7 +974,7 @@ class OpsStore:
         with self._write_lock, self._connect() as conn:
             conn.execute(
                 "INSERT INTO email_verifications (challenge_id, email, purpose, "
-                "code_hash, expires_at) VALUES (?,?,?,?,?)",
+                "code_hash, expires_at, attempt_count) VALUES (?,?,?,?,?,0)",
                 [challenge_id, clean, purpose, _hash(code), expires],
             )
         from .email_delivery import send_coair_email
@@ -866,6 +1002,32 @@ class OpsStore:
             payload["code"] = code
         return payload
 
+    def _burn_or_bump_attempts(
+        self, table: str, id_col: str, row_id: str, attempts: int
+    ) -> None:
+        next_count = int(attempts or 0) + 1
+        with self._write_lock, self._connect() as conn:
+            if next_count >= OTP_MAX_ATTEMPTS:
+                if table == "mfa_challenges":
+                    conn.execute(
+                        f"UPDATE {table} SET attempt_count=?, used_at=? "
+                        f"WHERE {id_col}=?",
+                        [next_count, _now_iso(), row_id],
+                    )
+                else:
+                    conn.execute(
+                        f"UPDATE {table} SET attempt_count=?, consumed_at=? "
+                        f"WHERE {id_col}=?",
+                        [next_count, _now_iso(), row_id],
+                    )
+            else:
+                conn.execute(
+                    f"UPDATE {table} SET attempt_count=? WHERE {id_col}=?",
+                    [next_count, row_id],
+                )
+        if next_count >= OTP_MAX_ATTEMPTS:
+            raise ValueError("otp_attempts_exceeded")
+
     def verify_email_code(self, challenge_id: str, code: str) -> Dict[str, str]:
         with self._connect() as conn:
             row = conn.execute(
@@ -876,7 +1038,13 @@ class OpsStore:
             raise ValueError("invalid_email_challenge")
         if row["expires_at"] < _now_iso():
             raise ValueError("email_challenge_expired")
+        attempts = int(row["attempt_count"] if "attempt_count" in row.keys() else 0)
+        if attempts >= OTP_MAX_ATTEMPTS:
+            raise ValueError("otp_attempts_exceeded")
         if row["code_hash"] != _hash((code or "").strip()):
+            self._burn_or_bump_attempts(
+                "email_verifications", "challenge_id", challenge_id, attempts
+            )
             raise ValueError("invalid_email_code")
         proof = secrets.token_urlsafe(24)
         with self._write_lock, self._connect() as conn:
@@ -940,7 +1108,13 @@ class OpsStore:
             raise ValueError("invalid_mfa_token")
         if row["expires_at"] < _now_iso():
             raise ValueError("mfa_token_expired")
+        attempts = int(row["attempt_count"] if "attempt_count" in row.keys() else 0)
+        if attempts >= OTP_MAX_ATTEMPTS:
+            raise ValueError("otp_attempts_exceeded")
         if row["code_hash"] != _hash((code or "").strip()):
+            self._burn_or_bump_attempts(
+                "mfa_challenges", "challenge_id", challenge_id, attempts
+            )
             raise ValueError("invalid_mfa_code")
         with self._write_lock, self._connect() as conn:
             conn.execute(

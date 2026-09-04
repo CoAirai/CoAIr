@@ -421,17 +421,22 @@ async def invite_org_user(
         raise HTTPException(400, "invalid_email")
     from src.auth_provision import issue_invite_activation_email
     from src.org_token_pool import rebalance_equal_remaining
+    from src.user_store import ACCOUNT_INVITED
 
     package_storage = int(org.policy.get("default_storage_bytes") or 0)
     existing = users.get_user(email)
     password = secrets.token_urlsafe(12)
     if existing:
-        if existing.get("is_active", True):
+        status = existing.get("account_status") or (
+            "active" if existing.get("is_active", True) else "invited"
+        )
+        if status == "active" or existing.get("is_active", True):
             raise HTTPException(409, "email_already_registered")
         users.update_user(
             email,
             password=password,
             display_name=req.display_name or existing.get("display_name"),
+            account_status=ACCOUNT_INVITED,
             is_active=False,
             token_limit=0,
         )
@@ -458,6 +463,7 @@ async def invite_org_user(
                 initial_credits=org.policy.get("default_credits", 0),
                 storage_limit_bytes=package_storage,
                 is_active=False,
+                account_status=ACCOUNT_INVITED,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -485,6 +491,8 @@ async def invite_org_user(
         company_name=org.name,
         email_kind="team_invite",
         ops=ops,
+        org_id=org.org_id,
+        created_by=actor.username,
     )
     emailed = bool(activation.get("emailed"))
     ops.record_audit(

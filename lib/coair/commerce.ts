@@ -165,6 +165,7 @@ export async function resendInviteCode(email: string) {
         ok: boolean;
         challenge_id?: string;
         debug_code?: string;
+        debug_invite_token?: string;
     }>("/auth/invite/resend-code", {
         method: "POST",
         body: { email },
@@ -174,6 +175,7 @@ export async function resendInviteCode(email: string) {
 export async function activateInvite(input: {
     email: string;
     password: string;
+    token: string;
     code?: string;
     emailVerificationToken?: string;
     challengeId?: string;
@@ -185,6 +187,7 @@ export async function activateInvite(input: {
             body: {
                 email: input.email,
                 password: input.password,
+                token: input.token,
                 code: input.code || "",
                 email_verification_token: input.emailVerificationToken || "",
                 challenge_id: input.challengeId || "",

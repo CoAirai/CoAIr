@@ -16,11 +16,14 @@ import jwt
 from fastapi import Depends, Header, HTTPException, status
 
 from src.user_store import (
+    ACCOUNT_ACTIVE,
     ADMIN_ROLES,
     SUPERADMIN_ROLE,
     VALID_ROLES,
     UserStore,
+    account_auth_error,
     get_user_store,
+    normalize_account_status,
 )
 
 
@@ -70,7 +73,13 @@ def get_current_username() -> Optional[str]:
 def set_current_user_context(username: str) -> Optional[UserContext]:
     """Stamp a worker thread with the same identity used by request handlers."""
     record = get_user_store().get_user(username)
-    if not record or not record.get("is_active"):
+    if not record:
+        current_user_var.set(None)
+        return None
+    status = normalize_account_status(
+        record.get("account_status"), is_active=bool(record.get("is_active"))
+    )
+    if status != ACCOUNT_ACTIVE:
         current_user_var.set(None)
         return None
     user = UserContext(
@@ -227,8 +236,11 @@ def get_current_user(
 
     if not record:
         raise HTTPException(401, "unknown_user")
-    if not record["is_active"]:
-        raise HTTPException(403, "account_disabled")
+    status = normalize_account_status(
+        record.get("account_status"), is_active=bool(record.get("is_active"))
+    )
+    if status != ACCOUNT_ACTIVE:
+        raise HTTPException(403, account_auth_error(status))
 
     epoch = int(record.get("token_epoch") or 0)
     if epoch:

@@ -29,6 +29,40 @@ SUPERADMIN_ROLE = "superadmin"
 ADMIN_ROLES = ("admin", SUPERADMIN_ROLE)
 VALID_ROLES = ("user",) + ADMIN_ROLES
 
+ACCOUNT_PENDING_APPROVAL = "pending_approval"
+ACCOUNT_APPROVED = "approved"
+ACCOUNT_INVITED = "invited"
+ACCOUNT_ACTIVE = "active"
+ACCOUNT_SUSPENDED = "suspended"
+ACCOUNT_DISABLED = "disabled"
+ACCOUNT_REJECTED = "rejected"
+VALID_ACCOUNT_STATUSES = (
+    ACCOUNT_PENDING_APPROVAL,
+    ACCOUNT_APPROVED,
+    ACCOUNT_INVITED,
+    ACCOUNT_ACTIVE,
+    ACCOUNT_SUSPENDED,
+    ACCOUNT_DISABLED,
+    ACCOUNT_REJECTED,
+)
+
+
+def normalize_account_status(
+    status: Optional[str] = None, *, is_active: bool = True
+) -> str:
+    clean = (status or "").strip().lower()
+    if clean in VALID_ACCOUNT_STATUSES:
+        return clean
+    return ACCOUNT_ACTIVE if is_active else ACCOUNT_INVITED
+
+
+def account_auth_error(status: str) -> str:
+    if status == ACCOUNT_INVITED:
+        return "invite_not_activated"
+    if status in VALID_ACCOUNT_STATUSES and status != ACCOUNT_ACTIVE:
+        return f"account_{status}"
+    return "account_disabled"
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +141,14 @@ class UserStore:
             columns = table_columns(conn, "users")
             if "supabase_user_id" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN supabase_user_id TEXT")
+            if "account_status" not in columns:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'"
+                )
+                conn.execute(
+                    "UPDATE users SET account_status = CASE "
+                    "WHEN COALESCE(is_active, 1) = 1 THEN 'active' ELSE 'invited' END"
+                )
 
     def _ensure_legacy_billing_accounts(self) -> None:
         """One-shot insert for users that predate billing_accounts.
@@ -151,6 +193,11 @@ class UserStore:
             features = json.loads(row["features_json"] or "{}")
         except Exception:
             features = {}
+        is_active = bool(row["is_active"])
+        status = ""
+        if "account_status" in row.keys():
+            status = str(row["account_status"] or "")
+        account_status = normalize_account_status(status, is_active=is_active)
         return {
             "id": row["id"],
             "username": row["username"],
@@ -158,7 +205,8 @@ class UserStore:
             "role": row["role"],
             "token_limit": int(row["token_limit"]),
             "features": features,
-            "is_active": bool(row["is_active"]),
+            "is_active": is_active and account_status == ACCOUNT_ACTIVE,
+            "account_status": account_status,
             "token_epoch": int(row["token_epoch"]) if "token_epoch" in row.keys() else 0,
             "supabase_user_id": (
                 row["supabase_user_id"] if "supabase_user_id" in row.keys() else None
@@ -185,32 +233,62 @@ class UserStore:
         model_policy: str = "",
         provider_key_ref: str = "",
         is_active: bool = True,
+        account_status: Optional[str] = None,
     ) -> Dict[str, Any]:
         if role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role!r}")
+        if account_status is None:
+            status = ACCOUNT_ACTIVE if is_active else ACCOUNT_INVITED
+        else:
+            status = normalize_account_status(account_status, is_active=is_active)
+        active_flag = 1 if status == ACCOUNT_ACTIVE else 0
         now = datetime.utcnow().isoformat()
         features_json = json.dumps(features or {})
         with self._write_lock, self._connect() as conn:
             try:
-                conn.execute(
-                    """
-                    INSERT INTO users
-                        (username, display_name, password_hash, role,
-                         token_limit, features_json, is_active, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        username,
-                        display_name,
-                        self._hash_password(password),
-                        role,
-                        int(token_limit),
-                        features_json,
-                        1 if is_active else 0,
-                        now,
-                        now,
-                    ),
-                )
+                columns = table_columns(conn, "users")
+                if "account_status" in columns:
+                    conn.execute(
+                        """
+                        INSERT INTO users
+                            (username, display_name, password_hash, role,
+                             token_limit, features_json, is_active, account_status,
+                             created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            username,
+                            display_name,
+                            self._hash_password(password),
+                            role,
+                            int(token_limit),
+                            features_json,
+                            active_flag,
+                            status,
+                            now,
+                            now,
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO users
+                            (username, display_name, password_hash, role,
+                             token_limit, features_json, is_active, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            username,
+                            display_name,
+                            self._hash_password(password),
+                            role,
+                            int(token_limit),
+                            features_json,
+                            active_flag,
+                            now,
+                            now,
+                        ),
+                    )
                 conn.execute(
                     """
                     INSERT INTO user_usage
@@ -221,7 +299,7 @@ class UserStore:
                 )
             except DbIntegrityError as exc:
                 raise ValueError(f"username already exists: {username}") from exc
-        logger.info(f"[UserStore] Created user {username} (role={role})")
+        logger.info(f"[UserStore] Created user {username} (role={role}, status={status})")
         self.billing.provision_account(
             username,
             plan_type=plan_type,
@@ -299,6 +377,7 @@ class UserStore:
             "token_limit",
             "features",
             "is_active",
+            "account_status",
             "password",
         }
         invalid = set(fields) - allowed
@@ -310,9 +389,24 @@ class UserStore:
         # `user` checks are positive-only).
         if "role" in fields and fields["role"] not in VALID_ROLES:
             raise ValueError(f"invalid role: {fields['role']!r}")
+        if "account_status" in fields:
+            fields["account_status"] = normalize_account_status(
+                str(fields["account_status"]),
+                is_active=True,
+            )
+            fields["is_active"] = fields["account_status"] == ACCOUNT_ACTIVE
+        elif "is_active" in fields:
+            fields["account_status"] = (
+                ACCOUNT_ACTIVE if fields["is_active"] else ACCOUNT_SUSPENDED
+            )
         sets: List[str] = []
         params: List[Any] = []
+        columns = None
+        with self._connect() as conn:
+            columns = table_columns(conn, "users")
         for key, value in fields.items():
+            if key == "account_status" and columns and "account_status" not in columns:
+                continue
             if key == "features":
                 sets.append("features_json = ?")
                 params.append(json.dumps(value or {}))
@@ -322,6 +416,9 @@ class UserStore:
             elif key == "is_active":
                 sets.append("is_active = ?")
                 params.append(1 if value else 0)
+            elif key == "account_status":
+                sets.append("account_status = ?")
+                params.append(str(value))
             elif key == "token_limit":
                 sets.append("token_limit = ?")
                 params.append(int(value))

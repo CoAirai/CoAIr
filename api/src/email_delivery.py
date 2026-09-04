@@ -186,16 +186,21 @@ def build_email(
     amount_label: str = "",
     description: str = "",
     mfa_code: str = "",
+    invite_token: str = "",
 ) -> Dict[str, str]:
     recipient = (to or "").strip()
     display = (name or "").strip() or recipient.split("@")[0]
     company = (company_name or "").strip() or "your company"
     sign_in = f"{login_app_origin()}/auth/sign-in"
     accept_invite = f"{login_app_origin()}/auth/accept-invite"
+    params: list[tuple[str, str]] = []
     if recipient:
-        accept_invite = (
-            f"{accept_invite}?email={urllib.parse.quote(recipient)}"
-        )
+        params.append(("email", recipient))
+    token = (invite_token or "").strip()
+    if token:
+        params.append(("token", token))
+    if params:
+        accept_invite = f"{accept_invite}?{urllib.parse.urlencode(params)}"
     billing_url = f"{user_app_origin()}/company/billing"
     reset_base = f"{login_app_origin()}/auth/reset-password"
     reset_link = (
@@ -674,6 +679,7 @@ def send_coair_email(
     amount_label: str = "",
     description: str = "",
     mfa_code: str = "",
+    invite_token: str = "",
 ) -> Dict[str, Any]:
     if kind not in EMAIL_KINDS:
         raise ValueError(f"unsupported_email_kind:{kind}")
@@ -694,6 +700,7 @@ def send_coair_email(
         amount_label=amount_label,
         description=description,
         mfa_code=mfa_code,
+        invite_token=invite_token,
     )
 
     # Prefer Resend when configured so production login/reset mail is not blocked

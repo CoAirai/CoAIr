@@ -29,7 +29,14 @@ from src.supabase_auth import (
     take_mfa_session,
     use_supabase_auth,
 )
-from src.user_store import UserStore, get_user_store
+from src.user_store import (
+    ACCOUNT_ACTIVE,
+    ACCOUNT_INVITED,
+    UserStore,
+    account_auth_error,
+    get_user_store,
+    normalize_account_status,
+)
 
 
 router = APIRouter()
@@ -67,6 +74,7 @@ class EmailVerifyCodeRequest(BaseModel):
 class InviteActivateRequest(BaseModel):
     email: str = Field(min_length=3, max_length=160)
     password: str = Field(min_length=8, max_length=200)
+    token: str = Field(min_length=8, max_length=200)
     code: str = Field(default="", min_length=0, max_length=12)
     email_verification_token: str = Field(default="", min_length=0, max_length=200)
     challenge_id: str = Field(default="", min_length=0, max_length=200)
@@ -169,16 +177,29 @@ async def login(
             )
         if not record:
             raise HTTPException(401, "unknown_user")
-        if not record.get("is_active", True):
-            raise HTTPException(403, "invite_not_activated")
+        status = normalize_account_status(
+            record.get("account_status"), is_active=bool(record.get("is_active"))
+        )
+        if status != ACCOUNT_ACTIVE:
+            raise HTTPException(403, account_auth_error(status))
         _bind_supabase_id(store, record["username"], supabase_session)
     else:
         pending = store.find_user(username)
-        if pending and not pending.get("is_active", True):
-            raise HTTPException(403, "invite_not_activated")
+        if pending:
+            status = normalize_account_status(
+                pending.get("account_status"),
+                is_active=bool(pending.get("is_active")),
+            )
+            if status != ACCOUNT_ACTIVE:
+                raise HTTPException(403, account_auth_error(status))
         record = store.verify_password(username, req.password)
         if not record:
             raise HTTPException(401, "invalid_credentials")
+        status = normalize_account_status(
+            record.get("account_status"), is_active=bool(record.get("is_active"))
+        )
+        if status != ACCOUNT_ACTIVE:
+            raise HTTPException(403, account_auth_error(status))
     usage = store.get_billing_summary(record["username"])
     security = ops.get_security()
     timeout_minutes = int(security.get("session_timeout_minutes") or 30)
@@ -206,14 +227,22 @@ async def verify_mfa(
     ops: OpsStore = Depends(get_ops_store),
     orgs: OrgStore = Depends(get_org_store),
 ):
-    rate_limit(f"auth:mfa:{client_ip(request) or 'unknown'}", limit=20, window_seconds=60)
+    ip = client_ip(request) or "unknown"
+    rate_limit(f"auth:mfa:{ip}", limit=10, window_seconds=60)
+    rate_limit(f"auth:mfa-token:{req.mfa_token}", limit=10, window_seconds=60)
     try:
         username = ops.consume_mfa_challenge(req.mfa_token, req.code)
     except ValueError as exc:
         raise HTTPException(401, str(exc)) from exc
+    rate_limit(f"auth:mfa-user:{username.lower()}", limit=10, window_seconds=60)
     record = store.get_user(username)
     if not record:
         raise HTTPException(401, "unknown_user")
+    status = normalize_account_status(
+        record.get("account_status"), is_active=bool(record.get("is_active"))
+    )
+    if status != ACCOUNT_ACTIVE:
+        raise HTTPException(403, account_auth_error(status))
     usage = store.get_billing_summary(username)
     timeout_minutes = int(ops.get_security().get("session_timeout_minutes") or 30)
     pending = take_mfa_session(req.mfa_token)
@@ -281,24 +310,36 @@ async def resend_invite_code(
     rate_limit(f"auth:invite-resend:{ip}", limit=8, window_seconds=60)
     rate_limit(f"auth:invite-resend-addr:{email}", limit=5, window_seconds=600)
     record = store.get_user(email)
-    if not record or record.get("is_active", True):
+    status = (
+        normalize_account_status(
+            record.get("account_status"), is_active=bool(record.get("is_active"))
+        )
+        if record
+        else None
+    )
+    if not record or status != ACCOUNT_INVITED:
         # Do not leak whether the invite exists.
         return {"ok": True}
     membership = orgs.membership_for(email)
     company = ""
+    org_id = None
     if membership:
         org = orgs.get_org(membership["org_id"])
         company = (org or {}).get("name") or ""
+        org_id = membership["org_id"]
     kind = "owner_invite" if membership and membership.get("role") == "owner" else "team_invite"
     activation = issue_invite_activation_email(
         email=email,
         display_name=record.get("display_name") or email.split("@")[0],
         company_name=company or "your company",
         email_kind=kind,
+        org_id=org_id,
     )
     payload = {"ok": True, "challenge_id": activation.get("challenge_id")}
     if activation.get("debug_code"):
         payload["debug_code"] = activation["debug_code"]
+    if activation.get("debug_invite_token"):
+        payload["debug_invite_token"] = activation["debug_invite_token"]
     return payload
 
 
@@ -318,9 +359,15 @@ async def activate_invite(
     record = store.get_user(email)
     if not record:
         raise HTTPException(404, "invite_not_found")
-    if record.get("is_active", True):
+    status = normalize_account_status(
+        record.get("account_status"), is_active=bool(record.get("is_active"))
+    )
+    if status == ACCOUNT_ACTIVE:
         raise HTTPException(409, "invite_already_activated")
+    if status != ACCOUNT_INVITED:
+        raise HTTPException(403, account_auth_error(status))
     try:
+        ops.peek_invite_token(email, req.token, purpose="invite")
         token = (req.email_verification_token or "").strip()
         if not token:
             if req.challenge_id and req.code:
@@ -337,9 +384,12 @@ async def activate_invite(
             purpose="invite",
             verification_token=token,
         )
+        ops.consume_invite_token(email, req.token, purpose="invite")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    store.update_user(email, password=req.password, is_active=True)
+    store.update_user(
+        email, password=req.password, account_status=ACCOUNT_ACTIVE, is_active=True
+    )
     if use_supabase_auth():
         try:
             uid = ensure_auth_user(email, req.password)

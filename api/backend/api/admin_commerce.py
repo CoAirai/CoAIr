@@ -142,6 +142,8 @@ async def approve_access_request(
     password = secrets.token_urlsafe(12)
     storage_bytes = demo["default_storage_bytes"]
     credits = demo["default_credits"]
+    from src.user_store import ACCOUNT_INVITED
+
     users.create_user(
         username,
         password,
@@ -151,6 +153,7 @@ async def approve_access_request(
         initial_credits=credits,
         storage_limit_bytes=storage_bytes,
         is_active=False,
+        account_status=ACCOUNT_INVITED,
     )
     try:
         org = orgs.create_org(
@@ -184,6 +187,7 @@ async def approve_access_request(
         display_name=request["full_name"],
         company_name=request["company_name"],
         email_kind="owner_invite",
+        org_id=org.get("org_id") if isinstance(org, dict) else None,
     )
     mail = send_coair_email(
         "access_approved",

@@ -9,7 +9,7 @@ from src.commerce_store import resolve_user_provision_limits
 from src.email_delivery import send_coair_email
 from src.ops_store import OpsStore, get_ops_store
 from src.supabase_auth import invite_or_recover, use_supabase_auth
-from src.user_store import SUPERADMIN_ROLE, UserStore
+from src.user_store import ACCOUNT_ACTIVE, ACCOUNT_INVITED, SUPERADMIN_ROLE, UserStore
 
 EmailKind = Literal["owner_invite", "team_invite"]
 
@@ -33,9 +33,14 @@ def issue_invite_activation_email(
     company_name: str,
     email_kind: EmailKind,
     ops: OpsStore | None = None,
+    org_id: str | None = None,
+    created_by: str | None = None,
 ) -> Dict[str, Any]:
-    """Create an invite email-OTP challenge and send it inside the invite mail."""
+    """Create invite token + email-OTP and send them in the invite mail."""
     store = ops or get_ops_store()
+    invite = store.create_invite_token(
+        email, org_id=org_id, purpose="invite", created_by=created_by
+    )
     challenge = store.create_email_verification(
         email, purpose="invite", send_email=False
     )
@@ -46,6 +51,7 @@ def issue_invite_activation_email(
         name=display_name,
         company_name=company_name or "your company",
         mfa_code=code,
+        invite_token=invite["token"],
     )
     store.queue_email(
         kind=email_kind,
@@ -55,12 +61,18 @@ def issue_invite_activation_email(
         secret=code if not (result.get("ok") and result.get("mode") == "live") else None,
     )
     emailed = bool(result.get("ok") and result.get("mode") == "live")
-    return {
+    payload: Dict[str, Any] = {
         "challenge_id": challenge["challenge_id"],
         "emailed": emailed,
         "debug_code": challenge.get("debug_code"),
         "email_error": None if emailed else result.get("error"),
+        "invite_token_id": invite["token_id"],
     }
+    from backend.core.platform_guard import expose_security_debug
+
+    if expose_security_debug():
+        payload["debug_invite_token"] = invite["token"]
+    return payload
 
 
 def provision_invited_user(
@@ -79,6 +91,7 @@ def provision_invited_user(
     email_kind: EmailKind = "owner_invite",
     send_welcome_email: bool = True,
     require_email_activation: bool = True,
+    org_id: str | None = None,
 ) -> Dict[str, Any]:
     """Create a local row, sync Supabase auth, and require email OTP before login."""
     username = email.strip().lower()
@@ -106,13 +119,17 @@ def provision_invited_user(
             send_welcome_email
             and not operator
             and require_email_activation
-            and not existing.get("is_active", True)
+            and (
+                existing.get("account_status") == ACCOUNT_INVITED
+                or not existing.get("is_active", True)
+            )
         ):
             issue_invite_activation_email(
                 email=username,
                 display_name=existing.get("display_name") or username.split("@")[0],
                 company_name=company_name,
                 email_kind=email_kind,
+                org_id=org_id,
             )
         return existing
     chosen_password = password or secrets.token_urlsafe(18)
@@ -131,6 +148,7 @@ def provision_invited_user(
         storage_limit_bytes=0 if operator else storage,
         model_policy="" if operator else "demo-tiered-quality-v2",
         is_active=active,
+        account_status=ACCOUNT_ACTIVE if active else ACCOUNT_INVITED,
     )
     if use_supabase_auth():
         uid = invite_or_recover(username, username, password=chosen_password)
@@ -142,6 +160,7 @@ def provision_invited_user(
             display_name=record["display_name"],
             company_name=company_name or "your company",
             email_kind=email_kind,
+            org_id=org_id,
         )
     elif send_welcome_email and not operator:
         send_coair_email(
@@ -186,6 +205,7 @@ def maybe_bootstrap_superadmin(
         storage_limit_bytes=0,
         model_policy="",
         is_active=True,
+        account_status=ACCOUNT_ACTIVE,
     )
     if supabase_user_id:
         store.set_supabase_user_id(record["username"], supabase_user_id)
