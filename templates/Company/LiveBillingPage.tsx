@@ -69,6 +69,7 @@ type CheckoutState =
           planName: string;
           priceLabel: string;
           priceUsd: number;
+          action: "upgrade" | "downgrade" | "change";
       }
     | null;
 
@@ -201,13 +202,25 @@ const LiveCompanyBillingPage = () => {
     const storageGb = Math.max(0, Math.floor(Number(storageGbInput) || 0));
     const storagePriceUsd = storageGb * STORAGE_USD_PER_GB;
 
-    const upgradePlans = useMemo(
+    const changePlans = useMemo(
         () =>
             (plans.length ? plans : []).filter(
-                (entry) => PLAN_ORDER.indexOf(entry.id) > currentPlanIndex
+                (entry) =>
+                    entry.id !== "custom" &&
+                    entry.id !== planId &&
+                    PLAN_ORDER.includes(entry.id)
             ),
-        [plans, currentPlanIndex]
+        [plans, planId]
     );
+
+    const planAction = (targetId: PlanId): "upgrade" | "downgrade" | "change" => {
+        if (currentPlanIndex < 0) return "change";
+        const targetIndex = PLAN_ORDER.indexOf(targetId);
+        if (targetIndex < 0) return "change";
+        if (targetIndex > currentPlanIndex) return "upgrade";
+        if (targetIndex < currentPlanIndex) return "downgrade";
+        return "change";
+    };
 
     if (orgLoading || !billingReady) {
         return <CompanyContentSkeleton />;
@@ -235,11 +248,17 @@ const LiveCompanyBillingPage = () => {
                 });
                 if (result.redirected) return { ok: true };
             } else if (checkout.kind === "upgrade") {
+                const verb =
+                    checkout.action === "downgrade"
+                        ? "Downgrade"
+                        : checkout.action === "change"
+                          ? "Change"
+                          : "Upgrade";
                 const result = await createPurchase(token, {
                     kind: "upgrade",
                     amount_usd: checkout.priceUsd,
                     plan_id: checkout.planId,
-                    description: `Upgrade to ${checkout.planName}`,
+                    description: `${verb} to ${checkout.planName}`,
                     coupon_code: couponCode,
                 });
                 if (result.redirected) return { ok: true };
@@ -253,7 +272,13 @@ const LiveCompanyBillingPage = () => {
 
     const checkoutTitle =
         checkout?.kind === "upgrade"
-            ? `Upgrade to ${checkout.planName}`
+            ? `${
+                  checkout.action === "downgrade"
+                      ? "Downgrade"
+                      : checkout.action === "change"
+                        ? "Change"
+                        : "Upgrade"
+              } to ${checkout.planName}`
             : checkout?.kind === "tokens"
               ? "Buy extra tokens"
               : checkout?.kind === "storage"
@@ -262,7 +287,9 @@ const LiveCompanyBillingPage = () => {
 
     const checkoutSummary =
         checkout?.kind === "upgrade"
-            ? `Switch your plan to ${checkout.planName}. You will pay securely via Stripe.`
+            ? checkout.action === "downgrade" || checkout.priceUsd <= 0
+                ? `Switch to ${checkout.planName}. Unused tokens and storage transfer now; from the next renewal you get ${checkout.planName} limits only.`
+                : `Upgrade to ${checkout.planName}. Unused tokens and storage transfer now; from the next renewal you get ${checkout.planName} limits only. Pay securely via Stripe.`
             : checkout?.kind === "tokens"
               ? `Add ${checkout.label} to your company token pool.`
               : checkout?.kind === "storage"
@@ -298,7 +325,7 @@ const LiveCompanyBillingPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Billing"
-                description="Invoices, token and storage purchases, and auto-renewing plans. Token pool resets when the package renews."
+                description="Invoices, token and storage purchases, and package changes. Unused tokens and storage transfer when you change package; the next renewal uses clean package limits."
             />
             {cancelled ? (
                 <p className="text-label-sm text-amber-600">
@@ -589,44 +616,74 @@ const LiveCompanyBillingPage = () => {
             </div>
 
             <section className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">Upgrade plan</h2>
-                {upgradePlans.length === 0 ? (
+                <h2 className="text-label-lg text-strong-950">Change package</h2>
+                <p className="mt-2 text-label-sm text-sub-600">
+                    Remaining tokens and storage transfer to the package you
+                    select. From the next renewal, limits match that package
+                    only.
+                </p>
+                {changePlans.length === 0 ? (
                     <p className="mt-4 text-label-sm text-sub-600">
-                        You are on the highest available plan.
+                        No other packages are available to switch to.
                     </p>
                 ) : (
                     <div className="mt-4 space-y-3">
-                        {upgradePlans.map((target) => (
-                            <div
-                                key={target.id}
-                                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
-                            >
-                                <div>
-                                    <p className="text-label-sm text-strong-950">
-                                        {target.name}
-                                    </p>
-                                    <p className="text-label-xs text-sub-600">
-                                        {target.priceLabel} · {target.usersIncluded}{" "}
-                                        seats · ${target.apiCreditsUsd} credits
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setCheckout({
-                                            kind: "upgrade",
-                                            planId: target.id,
-                                            planName: target.name,
-                                            priceLabel: target.priceLabel,
-                                            priceUsd: target.apiCreditsUsd,
-                                        })
-                                    }
-                                    className="h-9 shrink-0 rounded-xl bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
+                        {changePlans.map((target) => {
+                            const action = planAction(target.id);
+                            const label =
+                                action === "upgrade"
+                                    ? "Upgrade"
+                                    : action === "downgrade"
+                                      ? "Downgrade"
+                                      : "Change";
+                            return (
+                                <div
+                                    key={target.id}
+                                    className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
                                 >
-                                    Upgrade
-                                </button>
-                            </div>
-                        ))}
+                                    <div>
+                                        <p className="text-label-sm text-strong-950">
+                                            {target.name}
+                                        </p>
+                                        <p className="text-label-xs text-sub-600">
+                                            {target.priceLabel} ·{" "}
+                                            {target.usersIncluded} seats · $
+                                            {target.apiCreditsUsd}/mo ·{" "}
+                                            {numberFormatter.format(
+                                                target.queryCap
+                                            )}{" "}
+                                            tokens · {target.storageLimitGb} GB
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setCheckout({
+                                                kind: "upgrade",
+                                                planId: target.id,
+                                                planName: target.name,
+                                                priceLabel:
+                                                    action === "downgrade"
+                                                        ? "Free (carry remaining)"
+                                                        : target.priceLabel,
+                                                priceUsd:
+                                                    action === "downgrade"
+                                                        ? 0
+                                                        : target.apiCreditsUsd,
+                                                action,
+                                            })
+                                        }
+                                        className={
+                                            action === "downgrade"
+                                                ? "h-9 shrink-0 rounded-xl border border-stroke-soft-200 bg-white-0 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                                : "h-9 shrink-0 rounded-xl bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
+                                        }
+                                    >
+                                        {label}
+                                    </button>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </section>

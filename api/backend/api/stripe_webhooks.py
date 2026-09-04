@@ -47,10 +47,16 @@ async def stripe_webhook(request: Request):
         if secret:
             event = stripe.Webhook.construct_event(payload, sig, secret)
         else:
-            # Dev fallback when webhook secret is unset.
+            from backend.core.platform_guard import require_signed_stripe_webhooks
+
+            if require_signed_stripe_webhooks():
+                raise HTTPException(503, "stripe_webhook_secret_required")
+            # Local/dev fallback when webhook secret is unset.
             import json
 
             event = json.loads(payload.decode("utf-8"))
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("stripe_webhook_invalid err=%s", exc)
         raise HTTPException(400, "invalid_webhook") from exc
@@ -100,6 +106,11 @@ async def stripe_webhook(request: Request):
                             exc,
                         )
                 try:
+                    carry_remaining = str(
+                        meta.get("carry_remaining") or ""
+                    ).strip() in ("1", "true", "yes") or str(
+                        meta.get("flow") or ""
+                    ) == "billing"
                     fulfill_plan(
                         org_id,
                         plan_id,
@@ -110,6 +121,7 @@ async def stripe_webhook(request: Request):
                         stripe_customer_id=customer_id,
                         stripe_subscription_id=sub_id,
                         current_period_end=period_end,
+                        carry_remaining=carry_remaining,
                     )
                 except Exception as exc:
                     logger.warning(

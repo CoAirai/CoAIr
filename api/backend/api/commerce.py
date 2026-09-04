@@ -56,10 +56,14 @@ def _pricing_http_error(exc: ValueError) -> HTTPException:
 
 @router.get("/packages")
 async def list_packages(
-    _user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(get_current_user),
     store: CommerceStore = Depends(get_commerce_store),
 ):
-    return {"plans": store.list_plans()}
+    plans = store.list_plans()
+    # Custom is Super-Admin–assigned only — hide from company self-serve catalogs.
+    if user.role not in ("admin", "superadmin"):
+        plans = [plan for plan in plans if plan.get("id") != "custom"]
+    return {"plans": plans}
 
 
 @router.get("/org/tax")

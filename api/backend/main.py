@@ -89,6 +89,14 @@ def create_app() -> FastAPI:
     # tiny JSON payloads.
     app.add_middleware(GZipMiddleware, minimum_size=500)
 
+    from backend.core.platform_guard import (
+        PlatformIpAllowlistMiddleware,
+        SecurityHeadersMiddleware,
+    )
+
+    app.add_middleware(PlatformIpAllowlistMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+
     # Hashed Vite assets are content-addressable, so we can mark them as
     # immutable for a year. Browsers skip the network entirely on revisits.
     class _AssetCacheHeaders(BaseHTTPMiddleware):

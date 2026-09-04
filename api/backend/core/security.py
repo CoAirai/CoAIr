@@ -142,11 +142,61 @@ def _bearer_token(authorization: Optional[str]) -> str:
     return authorization.split(" ", 1)[1].strip()
 
 
+def _session_timeout_minutes() -> int:
+    try:
+        from src.ops_store import get_ops_store
+
+        minutes = int(get_ops_store().get_security().get("session_timeout_minutes") or 0)
+        return minutes if minutes > 0 else 0
+    except Exception:
+        return 0
+
+
+def _enforce_session_timeout(payload: Dict[str, Any]) -> None:
+    minutes = _session_timeout_minutes()
+    if minutes <= 0:
+        return
+    issued = int(payload.get("iat") or 0)
+    if not issued:
+        return
+    age_seconds = int(datetime.now(timezone.utc).timestamp()) - issued
+    if age_seconds > minutes * 60:
+        raise HTTPException(401, "session_expired")
+
+
+def _user_from_api_key(raw_key: str, store: UserStore) -> UserContext:
+    from src.ops_store import get_ops_store
+
+    record = get_ops_store().verify_api_key(raw_key)
+    if not record:
+        raise HTTPException(401, "invalid_api_key")
+    # Platform API keys act as superadmin automation identities.
+    user = UserContext(
+        username=f"apikey:{record['id']}",
+        role=SUPERADMIN_ROLE,
+        display_name=f"API key ({record.get('label') or record['id']})",
+        features={},
+        token_limit=0,
+        impersonator=None,
+    )
+    current_user_var.set(user)
+    return user
+
+
 def get_current_user(
     authorization: Optional[str] = Header(default=None),
+    x_api_key: Optional[str] = Header(default=None, alias="X-Api-Key"),
     store: UserStore = Depends(get_user_store),
 ) -> UserContext:
-    """Resolve the active user from a Bearer JWT. Sets the contextvar as a side effect."""
+    """Resolve the active user from a Bearer JWT or platform API key."""
+    api_key = (x_api_key or "").strip()
+    if not api_key and authorization and authorization.lower().startswith("bearer "):
+        candidate = authorization.split(" ", 1)[1].strip()
+        if candidate.startswith("coair_"):
+            api_key = candidate
+    if api_key:
+        return _user_from_api_key(api_key, store)
+
     token = _bearer_token(authorization)
     try:
         payload = decode_token(token)
@@ -156,6 +206,8 @@ def get_current_user(
         raise HTTPException(401, "invalid_token") from exc
     except Exception as exc:
         raise HTTPException(401, "invalid_token") from exc
+
+    _enforce_session_timeout(payload)
 
     header = jwt.get_unverified_header(token)
     supabase_token = str(header.get("alg") or "") == "ES256"

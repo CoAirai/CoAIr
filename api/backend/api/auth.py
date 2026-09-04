@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from backend.core.platform_guard import (
+    client_ip,
+    expose_security_debug,
+    rate_limit,
+)
 from backend.core.security import (
     UserContext,
     create_access_token,
@@ -68,11 +74,13 @@ def _user_payload(record: Dict[str, Any], usage: Dict[str, Any]) -> Dict[str, An
     }
 
 
-def _issue_local_token(record: Dict[str, Any]) -> str:
+def _issue_local_token(record: Dict[str, Any], *, timeout_minutes: int = 0) -> str:
+    ttl = timedelta(minutes=timeout_minutes) if timeout_minutes > 0 else None
     return create_access_token(
         record["username"],
         record["role"],
         token_epoch=int(record.get("token_epoch") or 0),
+        ttl=ttl,
     )
 
 
@@ -113,11 +121,15 @@ def _record_after_login(
 @router.post("/auth/login")
 async def login(
     req: LoginRequest,
+    request: Request,
     store: UserStore = Depends(get_user_store),
     ops: OpsStore = Depends(get_ops_store),
     orgs: OrgStore = Depends(get_org_store),
 ):
+    ip = client_ip(request) or "unknown"
+    rate_limit(f"auth:login:{ip}", limit=20, window_seconds=60)
     username = req.username.strip()
+    rate_limit(f"auth:login-user:{username.lower()}", limit=10, window_seconds=60)
     supabase_session: Dict[str, Any] | None = None
     if use_supabase_auth():
         try:
@@ -142,6 +154,7 @@ async def login(
             raise HTTPException(401, "invalid_credentials")
     usage = store.get_billing_summary(record["username"])
     security = ops.get_security()
+    timeout_minutes = int(security.get("session_timeout_minutes") or 30)
     membership = orgs.membership_for(record["username"])
     if (
         security["mfa_required"]
@@ -152,16 +165,18 @@ async def login(
         challenge = ops.create_mfa_challenge(record["username"])
         if supabase_session:
             stash_mfa_session(challenge["mfa_token"], supabase_session)
-        return {
+        payload = {
             "mfa_required": True,
             "mfa_token": challenge["mfa_token"],
-            "debug_code": challenge["debug_code"],
             "user": _user_payload(record, usage),
         }
+        if "debug_code" in challenge:
+            payload["debug_code"] = challenge["debug_code"]
+        return payload
     token = (
         supabase_session["access_token"]
         if supabase_session
-        else _issue_local_token(record)
+        else _issue_local_token(record, timeout_minutes=timeout_minutes)
     )
     from src.auth_notify import notify_login
 
@@ -171,6 +186,7 @@ async def login(
         "refresh_token": (supabase_session or {}).get("refresh_token"),
         "token_type": "bearer",
         "mfa_required": False,
+        "session_timeout_minutes": timeout_minutes,
         "user": _user_payload(record, usage),
     }
 
@@ -178,10 +194,12 @@ async def login(
 @router.post("/auth/mfa/verify")
 async def verify_mfa(
     req: MfaVerifyRequest,
+    request: Request,
     store: UserStore = Depends(get_user_store),
     ops: OpsStore = Depends(get_ops_store),
     orgs: OrgStore = Depends(get_org_store),
 ):
+    rate_limit(f"auth:mfa:{client_ip(request) or 'unknown'}", limit=20, window_seconds=60)
     try:
         username = ops.consume_mfa_challenge(req.mfa_token, req.code)
     except ValueError as exc:
@@ -190,8 +208,13 @@ async def verify_mfa(
     if not record:
         raise HTTPException(401, "unknown_user")
     usage = store.get_billing_summary(username)
+    timeout_minutes = int(ops.get_security().get("session_timeout_minutes") or 30)
     pending = take_mfa_session(req.mfa_token)
-    token = pending["access_token"] if pending else _issue_local_token(record)
+    token = (
+        pending["access_token"]
+        if pending
+        else _issue_local_token(record, timeout_minutes=timeout_minutes)
+    )
     from src.auth_notify import notify_login
 
     notify_login(username, record=record, orgs=orgs)
@@ -199,6 +222,7 @@ async def verify_mfa(
         "access_token": token,
         "refresh_token": (pending or {}).get("refresh_token"),
         "token_type": "bearer",
+        "session_timeout_minutes": timeout_minutes,
         "user": _user_payload(record, usage),
     }
 
@@ -206,24 +230,38 @@ async def verify_mfa(
 @router.post("/auth/forgot-password")
 async def forgot_password(
     req: ForgotPasswordRequest,
+    request: Request,
     store: UserStore = Depends(get_user_store),
     ops: OpsStore = Depends(get_ops_store),
 ):
+    rate_limit(
+        f"auth:forgot:{client_ip(request) or 'unknown'}",
+        limit=5,
+        window_seconds=60,
+    )
     username = req.username.strip()
     record = store.find_user(username)
     token = None
     if record:
         token = ops.create_password_reset(record["username"])
-    expose_token = token if record and not use_supabase_auth() else None
+    expose_token = (
+        token if record and not use_supabase_auth() and expose_security_debug() else None
+    )
     return {"ok": True, "reset_token": expose_token}
 
 
 @router.post("/auth/reset-password")
 async def reset_password(
     req: ResetPasswordRequest,
+    request: Request,
     store: UserStore = Depends(get_user_store),
     ops: OpsStore = Depends(get_ops_store),
 ):
+    rate_limit(
+        f"auth:reset:{client_ip(request) or 'unknown'}",
+        limit=10,
+        window_seconds=60,
+    )
     try:
         username = ops.consume_password_reset(req.token)
     except ValueError as exc:
@@ -244,7 +282,23 @@ async def me(
     user: UserContext = Depends(get_current_user),
     store: UserStore = Depends(get_user_store),
     orgs: OrgStore = Depends(get_org_store),
+    ops: OpsStore = Depends(get_ops_store),
 ):
+    if user.username.startswith("apikey:"):
+        timeout = int(ops.get_security().get("session_timeout_minutes") or 30)
+        return {
+            "user": {
+                "username": user.username,
+                "display_name": user.display_name,
+                "role": user.role,
+                "features": user.features,
+                "token_limit": 0,
+                "used_tokens": 0,
+                "percent_remaining": 100.0,
+            },
+            "session_timeout_minutes": timeout,
+            "auth_via": "api_key",
+        }
     record = store.get_user(user.username)
     if not record:
         raise HTTPException(401, "unknown_user")
@@ -261,7 +315,11 @@ async def me(
     except Exception:
         pass
     usage = store.get_billing_summary(user.username)
-    return {"user": _user_payload(record, usage)}
+    timeout = int(ops.get_security().get("session_timeout_minutes") or 30)
+    return {
+        "user": _user_payload(record, usage),
+        "session_timeout_minutes": timeout,
+    }
 
 
 @router.post("/auth/login-notify")

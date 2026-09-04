@@ -178,6 +178,25 @@ export async function readAdminOrg(token: string, orgId: string) {
     );
 }
 
+export async function assignAdminOrgPlan(
+    token: string,
+    orgId: string,
+    input: {
+        plan_id: "demo" | "foundation" | "pro" | "enterprise" | "custom";
+        record_invoice?: boolean;
+    }
+) {
+    return coairFetch<{
+        subscription?: CoairOrgSubscription;
+        plan?: { id: string; name: string };
+        invoice?: { id: string };
+    }>(`/admin/orgs/${encodeURIComponent(orgId)}/assign-plan`, {
+        method: "POST",
+        token,
+        body: input,
+    });
+}
+
 export async function listAdminSubscriptions(token: string) {
     return coairFetch<{ subscriptions: CoairOrgSubscription[] }>(
         "/admin/subscriptions",

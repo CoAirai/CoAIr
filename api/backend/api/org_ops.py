@@ -133,6 +133,40 @@ async def create_purchase(
     users: UserStore = Depends(get_user_store),
 ):
     base_amount, description = _purchase_amount_and_label(req, commerce)
+    carry_remaining = False
+    if req.kind == "upgrade":
+        if not req.plan_id:
+            raise HTTPException(400, "plan_id_required")
+        if req.plan_id == "custom":
+            raise HTTPException(400, "custom_plan_requires_admin")
+        current_sub = commerce.get_subscription(org.org_id) or {}
+        current_plan_id = str(current_sub.get("plan_id") or "")
+        if current_plan_id == req.plan_id:
+            raise HTTPException(400, "already_on_plan")
+        new_plan = commerce.get_plan(req.plan_id)
+        if not new_plan:
+            raise HTTPException(404, "plan_not_found")
+        # Mid-cycle change: transfer leftover tokens/storage into the new package.
+        carry_remaining = bool(current_plan_id)
+        old_plan = (
+            commerce.get_plan(current_plan_id) if current_plan_id else None
+        )
+        old_price = float((old_plan or {}).get("api_credits_usd") or 0)
+        new_price = float(new_plan.get("api_credits_usd") or 0)
+        if new_price <= old_price:
+            # Downgrade / lateral: apply immediately, no charge.
+            base_amount = 0.0
+            description = (
+                req.description.strip()
+                or f"Change to {new_plan['name']}"
+            )
+        else:
+            base_amount = base_amount or new_price
+            description = (
+                req.description.strip()
+                or f"Upgrade to {new_plan['name']}"
+            )
+
     amount, description, priced = _apply_purchase_pricing(
         ops, base_amount, description, req.coupon_code
     )
@@ -146,6 +180,7 @@ async def create_purchase(
                     user.username,
                     amount_usd=0,
                     invoice_description=description,
+                    carry_remaining=carry_remaining,
                     commerce=commerce,
                     orgs=orgs,
                     users=users,
@@ -173,6 +208,7 @@ async def create_purchase(
                 "tax_usd": str(priced["tax_usd"]),
                 "tax_percent": str(priced["tax_percent"]),
                 "coupon_code": priced["coupon_code"] or "",
+                "carry_remaining": "1" if carry_remaining else "0",
             }
             if req.kind == "upgrade":
                 if not req.plan_id:
@@ -220,6 +256,7 @@ async def create_purchase(
             user.username,
             amount_usd=amount,
             invoice_description=description,
+            carry_remaining=carry_remaining,
             commerce=commerce,
             orgs=orgs,
             users=users,
@@ -285,6 +322,11 @@ async def confirm_purchase(
                 charged = float(session["amount_total"]) / 100.0
             elif meta.get("amount_usd"):
                 charged = float(meta["amount_usd"])
+            carry_remaining = str(meta.get("carry_remaining") or "").strip() in (
+                "1",
+                "true",
+                "yes",
+            ) or str(meta.get("flow") or "") == "billing"
             return fulfill_plan(
                 org.org_id,
                 plan_id,
@@ -295,6 +337,7 @@ async def confirm_purchase(
                 current_period_end=period_end,
                 amount_usd=charged,
                 invoice_description=meta.get("description") or None,
+                carry_remaining=carry_remaining,
                 commerce=commerce,
                 orgs=orgs,
                 users=users,

@@ -248,30 +248,50 @@ def list_token_requests(
     }
 
 
-@router.patch("/admin/orgs/{org_id}")
-async def update_org(
+class OrgAssignPlan(BaseModel):
+    plan_id: Literal["demo", "foundation", "pro", "enterprise", "custom"]
+    # When true, create a paid invoice for the package price (no Stripe session).
+    record_invoice: bool = True
+
+
+@router.post("/admin/orgs/{org_id}/assign-plan")
+def assign_org_plan(
     org_id: str,
-    req: OrgUpdate,
-    _admin: UserContext = Depends(require_admin),
+    req: OrgAssignPlan,
+    admin: UserContext = Depends(require_admin),
     store: OrgStore = Depends(get_org_store),
 ):
+    """Assign a catalog package (including Custom) to a company.
+
+    Used when a company asks for something outside self-serve packages —
+    Super Admin configures Custom limits, then assigns it here.
+    """
     if not store.get_org(org_id):
         raise HTTPException(404, "organization_not_found")
-    payload = {k: v for k, v in req.model_dump().items()
-               if v is not None and k != "archived"}
-    if payload:
-        try:
-            store.update_org(org_id, **payload)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-    if req.archived is True:
-        store.archive_org(org_id)
-    elif req.archived is False:
-        store.unarchive_org(org_id)
-    org = store.get_org(org_id)
-    if not org:
-        raise HTTPException(404, "organization_not_found")
-    return _with_counts(org, store.summaries())
+    commerce = get_commerce_store()
+    plan = commerce.get_plan(req.plan_id)
+    if not plan:
+        raise HTTPException(404, "plan_not_found")
+    from src.ops_store import get_ops_store
+    from src.stripe_billing import fulfill_plan
+
+    amount = float(plan.get("api_credits_usd") or 0) if req.record_invoice else 0.0
+    description = f"{plan['name']} package (assigned by {admin.username})"
+    try:
+        result = fulfill_plan(
+            org_id,
+            req.plan_id,
+            admin.username,
+            amount_usd=amount,
+            invoice_description=description,
+            commerce=commerce,
+            orgs=store,
+            users=get_user_store(),
+            ops=get_ops_store(),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return result
 
 
 @router.post("/admin/orgs/{org_id}/members", status_code=201)

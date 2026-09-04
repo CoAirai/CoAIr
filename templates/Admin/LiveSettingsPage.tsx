@@ -37,7 +37,7 @@ const LiveSettingsPage = () => {
     const sections = [
         {
             title: "Security",
-            description: "Live values from /admin/security. Change them on the Security page.",
+            description: "Enforced MFA, session timeout, IP allowlist, and API keys.",
             href: "/admin/security",
             fields: [
                 {

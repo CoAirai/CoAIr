@@ -22,6 +22,7 @@ EMAIL_KINDS = {
     "password_reset",
     "password_reset_alert",
     "login_alert",
+    "mfa_code",
     "invoice_issued",
     "invoice_paid",
     "invoice_refunded",
@@ -182,6 +183,7 @@ def build_email(
     invoice_id: str = "",
     amount_label: str = "",
     description: str = "",
+    mfa_code: str = "",
 ) -> Dict[str, str]:
     recipient = (to or "").strip()
     display = (name or "").strip() or recipient.split("@")[0]
@@ -195,6 +197,7 @@ def build_email(
     inv = (invoice_id or "").strip() or "invoice"
     amount = (amount_label or "").strip() or "—"
     detail = (description or "").strip() or "Your COAir billing update"
+    code = (mfa_code or "").strip()
 
     if kind == "team_invite":
         subject = (
@@ -357,6 +360,28 @@ def build_email(
             "Password reset alert",
             body,
             preheader=f"Password reset requested for {company}",
+        )
+        return {"subject": subject, "text": text, "html": html}
+
+    if kind == "mfa_code":
+        subject = "Your COAir sign-in code"
+        text = (
+            f"Hi {display},\n\nYour COAir verification code is: {code}\n\n"
+            f"It expires in a few minutes. If you did not try to sign in, ignore this email.\n"
+        )
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">"
+            f"Use this code to finish signing in to COAir:</p>"
+            f"<p style=\"margin:0 0 16px;font-size:28px;letter-spacing:6px;font-weight:700;"
+            f"color:#0E121B;font-family:ui-monospace,Menlo,Consolas,monospace\">{escape(code)}</p>"
+            f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">"
+            f"This code expires shortly. If you did not try to sign in, you can ignore this email.</p>"
+        )
+        html = _wrap_html(
+            "Sign-in code",
+            body,
+            preheader="Your COAir verification code",
         )
         return {"subject": subject, "text": text, "html": html}
 
@@ -586,6 +611,7 @@ def send_coair_email(
     invoice_id: str = "",
     amount_label: str = "",
     description: str = "",
+    mfa_code: str = "",
 ) -> Dict[str, Any]:
     if kind not in EMAIL_KINDS:
         raise ValueError(f"unsupported_email_kind:{kind}")
@@ -605,6 +631,7 @@ def send_coair_email(
         invoice_id=invoice_id,
         amount_label=amount_label,
         description=description,
+        mfa_code=mfa_code,
     )
 
     # Prefer Resend when configured so production login/reset mail is not blocked

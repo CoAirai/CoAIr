@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from src.commerce_store import CommerceStore, get_commerce_store
@@ -21,8 +21,15 @@ class AccessRequestCreate(BaseModel):
 @router.post("/access-requests", status_code=201)
 async def create_access_request(
     req: AccessRequestCreate,
+    request: Request,
     store: CommerceStore = Depends(get_commerce_store),
 ):
+    from backend.core.platform_guard import client_ip, rate_limit
+
+    ip = client_ip(request) or "unknown"
+    email = req.email.strip().lower()
+    rate_limit(f"access:{ip}", limit=5, window_seconds=60)
+    rate_limit(f"access:email:{email}", limit=3, window_seconds=3600)
     try:
         created = store.create_access_request(
             full_name=req.full_name,
@@ -35,7 +42,7 @@ async def create_access_request(
         raise HTTPException(status, code) from exc
     send_coair_email(
         "access_request_received",
-        req.email.strip().lower(),
+        email,
         name=req.full_name,
         company_name=req.company_name,
     )

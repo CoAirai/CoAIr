@@ -43,7 +43,9 @@ class FileService:
 
         safe_name = Path(file.filename or "upload.bin").name
         ext = Path(safe_name).suffix.lower()
-        file_type = EXTENSION_MAP.get(ext, ("unknown", DOCUMENTS_DIR))[0]
+        if ext not in EXTENSION_MAP:
+            raise ValueError(f"unsupported_file_type:{ext or 'none'}")
+        file_type = EXTENSION_MAP[ext][0]
         target_dir = self._target_dir(project_id, file_type)
         target_dir.mkdir(parents=True, exist_ok=True)
 

@@ -25,6 +25,7 @@ import type { SupportTicket } from "@/lib/admin/wave2Types";
 import {
     addAdminOrgMember,
     adjustAdminCredits,
+    assignAdminOrgPlan,
     createAdminUser,
     deleteAdminUser,
     forceLogoutAdminUser,
@@ -42,9 +43,10 @@ import {
 import { CoairApiError } from "@/lib/coair/client";
 import { startLiveImpersonation } from "@/lib/coair/impersonate";
 import { portalPush } from "@/lib/auth/portalNav";
-import { listAdminTickets } from "@/lib/coair/commerce";
+import { listAdminTickets, listPackages } from "@/lib/coair/commerce";
 import { listAdminInvoices, getAdminInvoice } from "@/lib/coair/ops";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
+import type { Plan, PlanId } from "@/lib/admin/types";
 
 type Props = {
     id: string;
@@ -102,6 +104,10 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     const [ledger, setLedger] = useState<CoairLedgerEntry[]>([]);
     const [newUsername, setNewUsername] = useState("");
     const [memberUsername, setMemberUsername] = useState("");
+    const [catalogPlans, setCatalogPlans] = useState<Plan[]>([]);
+    const [assignPlanId, setAssignPlanId] = useState<PlanId>("custom");
+    const [assignBusy, setAssignBusy] = useState(false);
+    const [assignMessage, setAssignMessage] = useState<string | null>(null);
 
     const requestedTab = searchParams.get("tab");
     const activeTab: TabId = TABS.some((tab) => tab.id === requestedTab)
@@ -161,6 +167,43 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     useEffect(() => {
         void load();
     }, [load]);
+
+    useEffect(() => {
+        if (!token) return;
+        void listPackages(token)
+            .then((rows) => {
+                setCatalogPlans(rows);
+                if (!rows.some((plan) => plan.id === assignPlanId) && rows[0]) {
+                    setAssignPlanId(rows[0].id);
+                }
+            })
+            .catch(() => setCatalogPlans([]));
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- seed assign once from catalog
+    }, [token]);
+
+    const onAssignPlan = async () => {
+        if (!token || !org) return;
+        setAssignBusy(true);
+        setAssignMessage(null);
+        setActionError(null);
+        try {
+            const result = await assignAdminOrgPlan(token, org.org_id, {
+                plan_id: assignPlanId,
+                record_invoice: true,
+            });
+            setAssignMessage(
+                `Assigned ${result.plan?.name ?? assignPlanId} to ${org.name}`
+            );
+            await load();
+            await refreshAdmin();
+        } catch (err) {
+            setActionError(
+                err instanceof Error ? err.message : "Unable to assign plan"
+            );
+        } finally {
+            setAssignBusy(false);
+        }
+    };
 
     const orgUsers = useMemo(() => {
         const byName = new Map(
@@ -476,6 +519,54 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                 </dd>
                             </div>
                         </dl>
+                    </section>
+                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                        <h2 className="text-label-lg text-strong-950">
+                            Assign package
+                        </h2>
+                        <p className="mt-1 text-label-xs text-sub-600">
+                            Use this for Custom (or any package) when a company
+                            asks for something outside self-serve onboarding.
+                            Applies storage and token limits immediately and
+                            records an invoice for the package price.
+                        </p>
+                        <div className="mt-4 flex flex-wrap items-end gap-3">
+                            <label className="block min-w-[12rem] text-label-xs text-sub-600">
+                                Package
+                                <select
+                                    className="mt-1 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                    value={assignPlanId}
+                                    onChange={(event) =>
+                                        setAssignPlanId(
+                                            event.target.value as PlanId
+                                        )
+                                    }
+                                >
+                                    {catalogPlans.map((plan) => (
+                                        <option key={plan.id} value={plan.id}>
+                                            {plan.name}
+                                            {plan.id === "custom"
+                                                ? " (assign-only)"
+                                                : ""}{" "}
+                                            · ${plan.apiCreditsUsd}/mo
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <button
+                                type="button"
+                                disabled={assignBusy || catalogPlans.length === 0}
+                                onClick={() => void onAssignPlan()}
+                                className="h-10 rounded-xl bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90 disabled:opacity-50"
+                            >
+                                {assignBusy ? "Assigning…" : "Assign package"}
+                            </button>
+                        </div>
+                        {assignMessage ? (
+                            <p className="mt-3 text-label-sm text-green-600">
+                                {assignMessage}
+                            </p>
+                        ) : null}
                     </section>
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                         <h2 className="text-label-lg text-strong-950">Quotas</h2>

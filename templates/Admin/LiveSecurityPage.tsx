@@ -108,8 +108,8 @@ const LiveSecurityPage = () => {
             <div>
                 <h1 className="text-label-xl text-strong-950">Security</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
-                    Manage MFA, session policy, IP allowlist, and platform API
-                    keys.
+                    Enforced MFA, session timeout, Super Admin IP allowlist, and
+                    platform API keys for automation.
                 </p>
             </div>
             {error ? (
@@ -123,8 +123,9 @@ const LiveSecurityPage = () => {
                             Multi-factor authentication
                         </h2>
                         <p className="mt-1 text-label-xs text-sub-600">
-                            Require an extra verification step when company
-                            admins sign in.
+                            Require an emailed one-time code when company admins
+                            sign in. Codes are emailed; debug codes are never
+                            returned in production.
                         </p>
                     </div>
                     <Switch
@@ -141,8 +142,8 @@ const LiveSecurityPage = () => {
                     Session timeout
                 </h2>
                 <p className="mt-1 text-label-xs text-sub-600">
-                    Stored for operators. Sign-out enforcement stays in the
-                    browser session for now.
+                    Local JWT sessions expire after this period. API requests
+                    with older tokens are rejected.
                 </p>
                 <label className="mt-4 block max-w-xs">
                     <span className="mb-2 block text-label-xs text-sub-600">
@@ -172,7 +173,8 @@ const LiveSecurityPage = () => {
                         IP allowlist
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        Stored for operators. Leave empty to allow all addresses.
+                        When set, only listed IPs or CIDR ranges can call Super
+                        Admin APIs. Leave empty to allow all addresses.
                     </p>
                 </div>
                 <form
@@ -220,7 +222,12 @@ const LiveSecurityPage = () => {
                 <div className="border-b border-stroke-soft-200 p-5">
                     <h2 className="text-label-lg text-strong-950">API keys</h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        Each key is shown in full only once at creation.
+                        Platform automation keys. Use as{" "}
+                        <code className="text-label-xs">Authorization: Bearer
+                        coair_…</code>{" "}
+                        or{" "}
+                        <code className="text-label-xs">X-Api-Key</code> on
+                        admin APIs. Shown in full only once at creation.
                     </p>
                 </div>
                 {revealedKey ? (

@@ -250,9 +250,12 @@ async def upload_file(
     user: UserContext = Depends(get_current_user),
     project: ProjectContext = Depends(require_project_editor),
 ):
-    saved_path, file_id, is_duplicate = await _file_service.save(
-        file, project.project_id, username=user.username,
-    )
+    try:
+        saved_path, file_id, is_duplicate = await _file_service.save(
+            file, project.project_id, username=user.username,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if is_duplicate:
         return UploadResult(
             file_id=file_id,

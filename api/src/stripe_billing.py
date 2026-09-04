@@ -254,6 +254,27 @@ def _save_fulfillment(
         )
 
 
+def _org_usage_totals(
+    org_id: str,
+    *,
+    orgs: OrgStore,
+    users: UserStore,
+) -> Dict[str, int]:
+    total_used = 0
+    storage_used = 0
+    for member in orgs.list_members(org_id):
+        username = str(member.get("username") or "")
+        if not username:
+            continue
+        total_used += int(users.get_usage(username).get("used_tokens") or 0)
+        try:
+            snap = users.billing.summary(username)
+            storage_used += int(snap.get("storage_used_bytes") or 0)
+        except Exception:
+            pass
+    return {"used_tokens": total_used, "storage_used_bytes": storage_used}
+
+
 def fulfill_plan(
     org_id: str,
     plan_id: str,
@@ -265,11 +286,19 @@ def fulfill_plan(
     current_period_end: Optional[str] = None,
     amount_usd: Optional[float] = None,
     invoice_description: Optional[str] = None,
+    carry_remaining: bool = False,
     commerce: Optional[CommerceStore] = None,
     orgs: Optional[OrgStore] = None,
     users: Optional[UserStore] = None,
     ops: Optional[OpsStore] = None,
 ) -> Dict[str, Any]:
+    """Apply a catalog package to an org.
+
+    ``carry_remaining=True`` (mid-cycle change/downgrade/upgrade): keep unused
+    tokens and storage and add them on top of the new plan caps; do not reset
+    usage. On the next renewal, ``renew_package_period`` clears carryover and
+    applies clean catalog limits.
+    """
     commerce = commerce or get_commerce_store()
     orgs = orgs or get_org_store()
     users = users or get_user_store()
@@ -284,7 +313,7 @@ def fulfill_plan(
     if not plan:
         raise ValueError("plan_not_found")
 
-    previous = commerce.get_subscription(org_id)
+    previous = commerce.get_subscription(org_id) or {}
     old_sub_id = (previous.get("stripe_subscription_id") or "").strip()
     if (
         stripe_subscription_id
@@ -302,31 +331,70 @@ def fulfill_plan(
                 exc,
             )
 
-    storage_bytes = gb_to_bytes(int(plan["storage_limit_gb"]))
+    from src.org_quota import resolve_org_token_limit, sync_org_member_quotas
+
+    base_storage = gb_to_bytes(int(plan["storage_limit_gb"]))
+    base_tokens = int(plan.get("query_cap") or 0)
     credits = float(plan["api_credits_usd"])
-    token_limit = int(plan.get("query_cap") or 0)
+
+    remaining_tokens = 0
+    remaining_storage = 0
+    if carry_remaining:
+        usage = _org_usage_totals(org_id, orgs=orgs, users=users)
+        old_pool = resolve_org_token_limit(
+            org_id, orgs=orgs, commerce=commerce
+        )
+        remaining_tokens = max(0, old_pool - int(usage["used_tokens"]))
+        old_storage = int(
+            (orgs.get_org(org_id) or {}).get("default_storage_bytes") or 0
+        )
+        remaining_storage = max(
+            0, old_storage - int(usage["storage_used_bytes"])
+        )
+        # Never set storage below what is already used.
+        token_limit = max(
+            base_tokens + remaining_tokens, int(usage["used_tokens"])
+        )
+        storage_bytes = max(
+            base_storage + remaining_storage, int(usage["storage_used_bytes"])
+        )
+    else:
+        token_limit = base_tokens
+        storage_bytes = base_storage
+
     orgs.update_org(
         org_id,
         default_credits=credits,
         default_storage_bytes=storage_bytes,
         default_token_limit=token_limit,
     )
-    period_end = current_period_end or _period_end_iso()
+
+    if current_period_end:
+        period_end = current_period_end
+    elif carry_remaining and previous.get("current_period_end"):
+        period_end = str(previous["current_period_end"])
+    else:
+        period_end = _period_end_iso()
+
+    next_customer = stripe_customer_id or previous.get("stripe_customer_id") or None
+    next_subscription = (
+        stripe_subscription_id
+        if stripe_subscription_id
+        else previous.get("stripe_subscription_id")
+    ) or None
     subscription = commerce.set_subscription(
         org_id,
         plan_id=plan_id,
         needs_checkout=False,
-        stripe_customer_id=stripe_customer_id or None,
-        stripe_subscription_id=stripe_subscription_id or None,
+        stripe_customer_id=next_customer,
+        stripe_subscription_id=next_subscription,
         status="active",
         cancel_at_period_end=False,
         current_period_end=period_end,
         auto_renew=True,
     )
     record = orgs.get_org(org_id) or {}
-    from src.org_quota import sync_org_member_quotas
 
-    # New package period: equal-split full pool and reset usage.
     sync_org_member_quotas(
         org_id,
         token_limit=token_limit,
@@ -334,10 +402,21 @@ def fulfill_plan(
         orgs=orgs,
         users=users,
         commerce=commerce,
-        reset_usage=True,
+        reset_usage=not carry_remaining,
     )
-    charged = float(amount_usd) if amount_usd is not None else credits
-    description = invoice_description or f"{plan['name']} package"
+    charged = float(amount_usd) if amount_usd is not None else (
+        0.0 if carry_remaining else credits
+    )
+    description = invoice_description or (
+        f"{plan['name']} package change"
+        if carry_remaining
+        else f"{plan['name']} package"
+    )
+    if carry_remaining and (remaining_tokens or remaining_storage):
+        description = (
+            f"{description} (carried {remaining_tokens} tokens, "
+            f"{remaining_storage} storage bytes)"
+        )
     invoice = ops.create_invoice(
         org_id,
         amount_usd=charged,
@@ -350,8 +429,17 @@ def fulfill_plan(
         target_type="company",
         target_id=org_id,
         target_label=record.get("name") or org_id,
-        detail=f"Checked out {plan['name']}"
-        + (f" (stripe:{stripe_session_id})" if stripe_session_id else ""),
+        detail=(
+            ("Changed" if carry_remaining else "Checked out")
+            + f" {plan['name']}"
+            + (
+                f" carry_tokens={remaining_tokens}"
+                f" carry_storage={remaining_storage}"
+                if carry_remaining
+                else ""
+            )
+            + (f" (stripe:{stripe_session_id})" if stripe_session_id else "")
+        ),
     )
     result = {
         "org": {key: record.get(key) for key in
@@ -367,6 +455,15 @@ def fulfill_plan(
         "subscription": subscription,
         "plan": plan,
         "invoice": invoice,
+        "carryover": {
+            "enabled": carry_remaining,
+            "remaining_tokens": remaining_tokens,
+            "remaining_storage_bytes": remaining_storage,
+            "token_limit": token_limit,
+            "storage_limit_bytes": storage_bytes,
+            "base_token_limit": base_tokens,
+            "base_storage_bytes": base_storage,
+        },
     }
     if stripe_session_id:
         _save_fulfillment(
@@ -391,7 +488,7 @@ def renew_package_period(
     users: Optional[UserStore] = None,
     ops: Optional[OpsStore] = None,
 ) -> Dict[str, Any]:
-    """On package renewal: reset usage and equal-split the company pool again."""
+    """On package renewal: clear carryover and apply clean catalog plan limits."""
     commerce = commerce or get_commerce_store()
     orgs = orgs or get_org_store()
     users = users or get_user_store()
@@ -400,14 +497,22 @@ def renew_package_period(
     sub = commerce.get_subscription(org_id)
     plan_id = str(sub.get("plan_id") or "demo")
     plan = commerce.get_plan(plan_id) or {}
-    from src.org_quota import resolve_org_token_limit, sync_org_member_quotas
+    from src.org_quota import sync_org_member_quotas
 
-    token_limit = resolve_org_token_limit(
-        org_id, orgs=orgs, commerce=commerce
+    # Always use catalog caps — do not keep mid-cycle carryover into the next period.
+    token_limit = int(plan.get("query_cap") or 0)
+    storage_bytes = gb_to_bytes(int(plan.get("storage_limit_gb") or 0))
+    credits = float(plan.get("api_credits_usd") or 0)
+    orgs.update_org(
+        org_id,
+        default_credits=credits,
+        default_storage_bytes=storage_bytes,
+        default_token_limit=token_limit,
     )
     sync_org_member_quotas(
         org_id,
         token_limit=token_limit,
+        storage_limit_bytes=storage_bytes,
         orgs=orgs,
         users=users,
         commerce=commerce,
@@ -440,7 +545,7 @@ def renew_package_period(
         target_type="company",
         target_id=org_id,
         target_label=org_id,
-        detail=f"Renewed {plan_id}; token pool reset",
+        detail=f"Renewed {plan_id}; catalog limits applied, usage reset",
     )
     logger.info(
         "org_package_renewed org=%s plan=%s period_end=%s",
@@ -453,6 +558,7 @@ def renew_package_period(
         "subscription": subscription,
         "invoice": invoice,
         "token_limit": token_limit,
+        "storage_limit_bytes": storage_bytes,
     }
 
 
@@ -663,26 +769,21 @@ def fulfill_purchase(
         if not plan:
             raise ValueError("plan_not_found")
         amount = amount or float(plan["api_credits_usd"])
-        storage_bytes = gb_to_bytes(int(plan["storage_limit_gb"]))
-        token_limit = int(plan.get("query_cap") or 0)
-        orgs.update_org(
+        description = description or f"Change to {plan['name']}"
+        result = fulfill_plan(
             org_id,
-            default_credits=float(plan["api_credits_usd"]),
-            default_storage_bytes=storage_bytes,
-            default_token_limit=token_limit,
-        )
-        commerce.set_subscription(org_id, plan_id=plan_id, needs_checkout=False)
-        from src.org_quota import sync_org_member_quotas
-
-        sync_org_member_quotas(
-            org_id,
-            token_limit=token_limit,
-            storage_limit_bytes=storage_bytes,
+            plan_id,
+            actor,
+            amount_usd=amount,
+            invoice_description=description,
+            carry_remaining=True,
+            stripe_session_id=stripe_session_id,
+            commerce=commerce,
             orgs=orgs,
             users=users,
-            commerce=commerce,
+            ops=ops,
         )
-        description = description or f"Upgrade to {plan['name']}"
+        return result.get("invoice") or result
     elif kind == "storage":
         if not gb:
             raise ValueError("gb_required")

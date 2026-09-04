@@ -76,8 +76,12 @@ const LivePackagesPage = () => {
             <div>
                 <h1 className="text-label-xl text-strong-950">Packages</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
-                    Edit the five COAir packages. Changes apply to workspace
-                    access and new plan assignments.
+                    Edit COAir packages.{" "}
+                    <span className="text-strong-950">
+                        Package price (USD / month)
+                    </span>{" "}
+                    is what Stripe charges at checkout. Price label is display
+                    text only. Custom stays Super-Admin–assign only.
                 </p>
             </div>
             {error ? <p className="text-label-sm text-red-500">{error}</p> : null}
@@ -105,7 +109,7 @@ const LivePackagesPage = () => {
                         </div>
                         <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
                             <Field
-                                label="Price label"
+                                label="Price label (display)"
                                 value={plan.priceLabel}
                                 onChange={(value) =>
                                     patch(plan, { priceLabel: value })
@@ -126,20 +130,28 @@ const LivePackagesPage = () => {
                                 }
                             />
                             <NumberField
-                                label="API credits (USD)"
+                                label="Package price (USD / month)"
                                 value={plan.apiCreditsUsd}
                                 onChange={(value) =>
                                     patch(plan, { apiCreditsUsd: value })
                                 }
                             />
                             <NumberField
-                                label="Query cap"
+                                label="Token / query cap"
                                 value={plan.queryCap}
                                 onChange={(value) =>
                                     patch(plan, { queryCap: value })
                                 }
                             />
                         </div>
+                        {plan.id === "custom" ? (
+                            <p className="mt-3 text-label-xs text-sub-600">
+                                Custom is not shown in company onboarding or
+                                self-serve upgrades. Super Admin assigns it to a
+                                company from that company&apos;s detail page when
+                                they need a non-standard package.
+                            </p>
+                        ) : null}
                         <div className="mt-5 grid gap-3 md:grid-cols-3">
                             {MODULES.map((module) => {
                                 const rule = plan.modules[module.id];

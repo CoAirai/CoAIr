@@ -681,6 +681,18 @@ class OpsStore:
             )
         return self.get_api_key(key_id) or current
 
+    def verify_api_key(self, raw_key: str) -> Optional[Dict[str, Any]]:
+        raw = (raw_key or "").strip()
+        if not raw.startswith("coair_"):
+            return None
+        hashed = _hash(raw)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM api_keys WHERE key_hash=? AND revoked_at IS NULL",
+                [hashed],
+            ).fetchone()
+        return self._key_row(row) if row else None
+
     @staticmethod
     def _key_row(row: DbRow) -> Dict[str, Any]:
         return {
@@ -767,7 +779,7 @@ class OpsStore:
 
     def create_mfa_challenge(self, username: str) -> Dict[str, str]:
         challenge_id = secrets.token_urlsafe(18)
-        code = f"{secrets.randbelow(10000):04d}"
+        code = f"{secrets.randbelow(1000000):06d}"
         expires = (_now() + timedelta(minutes=MFA_TTL_MINUTES)).isoformat()
         with self._write_lock, self._connect() as conn:
             conn.execute(
@@ -775,14 +787,27 @@ class OpsStore:
                 "expires_at) VALUES (?,?,?,?)",
                 [challenge_id, username, _hash(code), expires],
             )
+        from .email_delivery import recipient_address, send_coair_email
+        from backend.core.platform_guard import expose_security_debug
+
+        recipient = recipient_address(username)
+        result = send_coair_email(
+            "mfa_code",
+            recipient,
+            name=username.split("@")[0],
+            mfa_code=code,
+        )
         self.queue_email(
             kind="mfa_code",
-            recipient=username,
+            recipient=recipient,
             subject="Your COAir sign-in code",
-            body=f"Your code is {code}",
+            body=f"MFA code queued ({result.get('mode', 'unknown')})",
             secret=code,
         )
-        return {"mfa_token": challenge_id, "debug_code": code}
+        payload = {"mfa_token": challenge_id}
+        if expose_security_debug():
+            payload["debug_code"] = code
+        return payload
 
     def consume_mfa_challenge(self, challenge_id: str, code: str) -> str:
         with self._connect() as conn:

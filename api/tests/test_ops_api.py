@@ -236,9 +236,18 @@ def test_mfa_challenge_for_company_owner(client, acme, stores):
     assert login.status_code == 200
     assert body["mfa_required"] is True
     assert "access_token" not in body
+    code = body.get("debug_code")
+    if not code:
+        from src.email_delivery import recipient_address
+        from src.ops_store import get_ops_store
+
+        code = get_ops_store().latest_secret(
+            "mfa_code", recipient_address("acme-admin")
+        )
+    assert code
     verified = client.post("/api/auth/mfa/verify", json={
         "mfa_token": body["mfa_token"],
-        "code": body["debug_code"],
+        "code": code,
     })
     assert "access_token" in verified.json()
 
