@@ -143,22 +143,41 @@ export function buildInvoiceHtml(
 </html>`;
 }
 
-/**
- * Opens a branded invoice (with COAir logo) and triggers the browser print dialog
- * so the customer can save a PDF.
- */
-export function downloadInvoicePdf(
+/** HTML print fallback when Takumi/pdfcn render fails or is blocked. */
+function downloadInvoiceHtmlFallback(
     invoice: Invoice,
     companyName?: string
 ) {
     const html = buildInvoiceHtml(invoice, companyName);
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const popup = window.open(url, "_blank", "noopener,noreferrer,width=900,height=1000");
+    const popup = window.open(
+        url,
+        "_blank",
+        "noopener,noreferrer,width=900,height=1000"
+    );
     if (!popup) {
-        // Popup blocked — fall back to same-tab navigation.
         window.location.assign(url);
         return;
     }
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
+ * Downloads a real PDF via pdfcn/Takumi. Falls back to branded HTML print
+ * if WASM render fails (offline fonts, blocked CDN, etc.).
+ */
+export async function downloadInvoicePdf(
+    invoice: Invoice,
+    companyName?: string
+): Promise<void> {
+    try {
+        const { renderAndDownloadInvoicePdf } = await import(
+            "@/lib/admin/invoicePdf"
+        );
+        await renderAndDownloadInvoicePdf(invoice, companyName);
+    } catch (error) {
+        console.warn("Invoice PDF render failed; using HTML print fallback.", error);
+        downloadInvoiceHtmlFallback(invoice, companyName);
+    }
 }

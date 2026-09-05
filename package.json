@@ -17,7 +17,9 @@
     "@headlessui/react": "^2.2.8",
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.112.3",
+    "@takumi-rs/helpers": "^2.13.5",
     "boneyard-js": "^1.10.0",
+    "clsx": "^2.1.1",
     "framer-motion": "^12.23.22",
     "millify": "^6.1.0",
     "monaco-editor": "^0.53.0",
@@ -32,7 +34,9 @@
     "recharts": "^3.2.1",
     "resend": "^6.18.1",
     "swiper": "^12.0.2",
-    "tailwind-scrollbar": "^4.0.2"
+    "tailwind-merge": "^3.6.0",
+    "tailwind-scrollbar": "^4.0.2",
+    "takumi-pdf": "^0.14.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

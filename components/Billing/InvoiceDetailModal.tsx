@@ -95,7 +95,7 @@ const InvoiceDetailModal = ({ invoice, companyName, onClose }: Props) => {
                         }
                         className="h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600"
                     >
-                        Download / print PDF
+                        Download PDF
                     </button>
                     <button
                         type="button"
