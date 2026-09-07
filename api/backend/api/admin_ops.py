@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.core.security import UserContext, require_admin
+from src.commerce_store import CommerceStore, get_commerce_store
 from src.ops_store import OpsStore, get_ops_store
 from src.org_store import OrgStore, get_org_store
 from src.user_store import UserStore, get_user_store
@@ -714,3 +715,103 @@ async def deny_topup(
         detail=f"Denied {updated['tokens_requested']} tokens for {updated['company_id']}",
     )
     return updated
+
+
+@router.get("/admin/package-change-requests")
+async def list_admin_package_change_requests(
+    status: str = "pending",
+    _admin: UserContext = Depends(require_admin),
+    ops: OpsStore = Depends(get_ops_store),
+    orgs: OrgStore = Depends(get_org_store),
+):
+    filter_status = None if status in ("", "all") else status
+    rows = ops.list_package_change_requests(status=filter_status)
+    names = {
+        org["org_id"]: org["name"]
+        for org in orgs.list_orgs(include_archived=True)
+    }
+    return {
+        "requests": [
+            {**row, "org_name": names.get(str(row.get("org_id") or ""))}
+            for row in rows
+        ]
+    }
+
+
+@router.post("/admin/package-change-requests/{request_id}/approve")
+async def approve_package_change_request(
+    request_id: str,
+    admin: UserContext = Depends(require_admin),
+    ops: OpsStore = Depends(get_ops_store),
+    commerce: CommerceStore = Depends(get_commerce_store),
+    orgs: OrgStore = Depends(get_org_store),
+    users: UserStore = Depends(get_user_store),
+):
+    current = ops.get_package_change_request(request_id)
+    if not current:
+        raise HTTPException(404, "package_change_not_found")
+    if current["status"] != "pending":
+        raise HTTPException(409, "package_change_already_resolved")
+    to_plan_id = str(current["to_plan_id"])
+    if to_plan_id in ("demo", "custom"):
+        raise HTTPException(400, "invalid_target_plan")
+    plan = commerce.get_plan(to_plan_id)
+    if not plan:
+        raise HTTPException(404, "plan_not_found")
+    from src.stripe_billing import fulfill_plan
+
+    try:
+        result = fulfill_plan(
+            current["org_id"],
+            to_plan_id,
+            admin.username,
+            amount_usd=0,
+            invoice_description=(
+                f"Package change approved: {current['from_plan_id']} → "
+                f"{to_plan_id} (by {admin.username})"
+            ),
+            carry_remaining=True,
+            commerce=commerce,
+            orgs=orgs,
+            users=users,
+            ops=ops,
+        )
+        updated = ops.resolve_package_change_request(
+            request_id, "approved", admin.username
+        )
+    except ValueError as exc:
+        raise _http(exc) from exc
+    ops.record_audit(
+        actor=admin.username,
+        action="company.package_change_approve",
+        target_type="package_change_request",
+        target_id=updated["id"],
+        target_label=current["org_id"],
+        detail=f"Approved {current['from_plan_id']} → {to_plan_id}",
+    )
+    return {"request": updated, "result": result}
+
+
+@router.post("/admin/package-change-requests/{request_id}/deny")
+async def deny_package_change_request(
+    request_id: str,
+    admin: UserContext = Depends(require_admin),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    try:
+        updated = ops.resolve_package_change_request(
+            request_id, "denied", admin.username
+        )
+    except ValueError as exc:
+        raise _http(exc) from exc
+    ops.record_audit(
+        actor=admin.username,
+        action="company.package_change_deny",
+        target_type="package_change_request",
+        target_id=updated["id"],
+        target_label=updated["org_id"],
+        detail=(
+            f"Denied {updated['from_plan_id']} → {updated['to_plan_id']}"
+        ),
+    )
+    return {"request": updated}

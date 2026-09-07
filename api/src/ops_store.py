@@ -228,6 +228,23 @@ CREATE TABLE IF NOT EXISTS member_token_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_member_token_requests_org
     ON member_token_requests(org_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS package_change_requests (
+    request_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    from_plan_id TEXT NOT NULL,
+    to_plan_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_package_change_requests_org
+    ON package_change_requests(org_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_package_change_requests_status
+    ON package_change_requests(status, created_at);
 """
 
 
@@ -291,6 +308,34 @@ class OpsStore:
                     """
                     CREATE INDEX IF NOT EXISTS idx_member_token_requests_org
                         ON member_token_requests(org_id, status, created_at)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS package_change_requests (
+                        request_id TEXT PRIMARY KEY,
+                        org_id TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        from_plan_id TEXT NOT NULL,
+                        to_plan_id TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        resolved_by TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_package_change_requests_org
+                        ON package_change_requests(org_id, status, created_at)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_package_change_requests_status
+                        ON package_change_requests(status, created_at)
                     """
                 )
                 conn.execute(
@@ -1627,6 +1672,132 @@ class OpsStore:
                 ],
             )
         return self.get_member_token_request(request_id) or current
+
+    # ── Package change requests (company downgrade queue) ───
+
+    @staticmethod
+    def _package_change_request_row(row: DbRow) -> Dict[str, Any]:
+        return {
+            "id": row["request_id"],
+            "org_id": row["org_id"],
+            "username": row["username"],
+            "from_plan_id": row["from_plan_id"],
+            "to_plan_id": row["to_plan_id"],
+            "reason": row["reason"] or "",
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "resolved_at": row["resolved_at"],
+            "resolved_by": row["resolved_by"],
+        }
+
+    def list_package_change_requests(
+        self,
+        *,
+        org_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM package_change_requests"
+        params: List[Any] = []
+        clauses: List[str] = []
+        if org_id:
+            clauses.append("org_id=?")
+            params.append(org_id)
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._package_change_request_row(row) for row in rows]
+
+    def get_package_change_request(
+        self, request_id: str
+    ) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM package_change_requests WHERE request_id=?",
+                [request_id],
+            ).fetchone()
+        return self._package_change_request_row(row) if row else None
+
+    def create_package_change_request(
+        self,
+        *,
+        org_id: str,
+        username: str,
+        from_plan_id: str,
+        to_plan_id: str,
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        from_plan_id = (from_plan_id or "").strip()
+        to_plan_id = (to_plan_id or "").strip()
+        if not from_plan_id or not to_plan_id:
+            raise ValueError("plan_id_required")
+        if from_plan_id == to_plan_id:
+            raise ValueError("already_on_plan")
+        pending = self.list_package_change_requests(
+            org_id=org_id, status="pending", limit=50
+        )
+        for row in pending:
+            if row["to_plan_id"] == to_plan_id:
+                raise ValueError("package_change_already_pending")
+        request_id = f"pcr-{uuid.uuid4().hex[:12]}"
+        created = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO package_change_requests "
+                "(request_id, org_id, username, from_plan_id, to_plan_id, "
+                "reason, status, created_at, resolved_at, resolved_by) "
+                "VALUES (?,?,?,?,?,?,?, ?,NULL,NULL)",
+                [
+                    request_id,
+                    org_id,
+                    username,
+                    from_plan_id,
+                    to_plan_id,
+                    (reason or "").strip()[:2000],
+                    "pending",
+                    created,
+                ],
+            )
+        return self.get_package_change_request(request_id) or {
+            "id": request_id,
+            "org_id": org_id,
+            "username": username,
+            "from_plan_id": from_plan_id,
+            "to_plan_id": to_plan_id,
+            "reason": (reason or "").strip()[:2000],
+            "status": "pending",
+            "created_at": created,
+            "resolved_at": None,
+            "resolved_by": None,
+        }
+
+    def resolve_package_change_request(
+        self,
+        request_id: str,
+        status: str,
+        resolved_by: str,
+    ) -> Dict[str, Any]:
+        if status not in ("approved", "denied"):
+            raise ValueError("invalid_package_change_status")
+        current = self.get_package_change_request(request_id)
+        if not current:
+            raise ValueError("package_change_not_found")
+        if current["status"] != "pending":
+            raise ValueError("package_change_already_resolved")
+        resolved_at = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE package_change_requests SET status=?, resolved_at=?, "
+                "resolved_by=? WHERE request_id=?",
+                [status, resolved_at, resolved_by, request_id],
+            )
+        return self.get_package_change_request(request_id) or current
 
 
 def get_ops_store() -> OpsStore:

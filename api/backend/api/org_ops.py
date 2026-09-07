@@ -153,24 +153,23 @@ async def create_purchase(
             raise HTTPException(404, "plan_not_found")
         # Mid-cycle change: transfer leftover tokens/storage into the new package.
         carry_remaining = bool(current_plan_id)
-        old_plan = (
-            commerce.get_plan(current_plan_id) if current_plan_id else None
-        )
+        assigned = current_sub.get("assigned_plan")
+        if isinstance(assigned, dict) and assigned.get("id") == current_plan_id:
+            old_plan = assigned
+        else:
+            old_plan = (
+                commerce.get_plan(current_plan_id) if current_plan_id else None
+            )
         old_price = float((old_plan or {}).get("api_credits_usd") or 0)
         new_price = float(new_plan.get("api_credits_usd") or 0)
         if new_price <= old_price:
-            # Downgrade / lateral: apply immediately, no charge.
-            base_amount = 0.0
-            description = (
-                req.description.strip()
-                or f"Change to {new_plan['name']}"
-            )
-        else:
-            base_amount = base_amount or new_price
-            description = (
-                req.description.strip()
-                or f"Upgrade to {new_plan['name']}"
-            )
+            # Downgrade / lateral: company must request Super Admin approval.
+            raise HTTPException(400, "downgrade_requires_admin")
+        base_amount = base_amount or new_price
+        description = (
+            req.description.strip()
+            or f"Upgrade to {new_plan['name']}"
+        )
 
     amount, description, priced = _apply_purchase_pricing(
         ops, base_amount, description, req.coupon_code
@@ -843,3 +842,69 @@ async def deny_member_token_request(
     except Exception:
         pass
     return updated
+
+
+class PackageChangeRequestBody(BaseModel):
+    plan_id: Literal["foundation", "pro", "enterprise"]
+    reason: str = Field(default="", max_length=2000)
+
+
+@router.get("/org/package-change-requests")
+async def list_org_package_change_requests(
+    org: OrgContext = Depends(require_org_owner),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    return {
+        "requests": ops.list_package_change_requests(org_id=org.org_id),
+    }
+
+
+@router.post("/org/package-change-requests", status_code=201)
+async def create_org_package_change_request(
+    req: PackageChangeRequestBody,
+    org: OrgContext = Depends(require_org_owner),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+    commerce: CommerceStore = Depends(get_commerce_store),
+):
+    """Company owners request a downgrade; Super Admin must approve."""
+    if req.plan_id in ("demo", "custom"):
+        raise HTTPException(400, "demo_plan_requires_admin")
+    sub = commerce.get_subscription(org.org_id) or {}
+    from_plan_id = str(sub.get("plan_id") or "")
+    if not from_plan_id:
+        raise HTTPException(400, "no_current_plan")
+    if from_plan_id == req.plan_id:
+        raise HTTPException(400, "already_on_plan")
+    new_plan = commerce.get_plan(req.plan_id)
+    if not new_plan:
+        raise HTTPException(404, "plan_not_found")
+    assigned = sub.get("assigned_plan")
+    if isinstance(assigned, dict) and assigned.get("id") == from_plan_id:
+        old_plan = assigned
+    else:
+        old_plan = commerce.get_plan(from_plan_id) or {}
+    old_price = float((old_plan or {}).get("api_credits_usd") or 0)
+    new_price = float(new_plan.get("api_credits_usd") or 0)
+    if new_price > old_price:
+        raise HTTPException(400, "use_upgrade_checkout")
+    try:
+        request = ops.create_package_change_request(
+            org_id=org.org_id,
+            username=user.username,
+            from_plan_id=from_plan_id,
+            to_plan_id=req.plan_id,
+            reason=req.reason.strip()
+            or f"Request change from {from_plan_id} to {req.plan_id}",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    ops.record_audit(
+        actor=user.username,
+        action="company.package_change_request",
+        target_type="package_change_request",
+        target_id=request["id"],
+        target_label=org.name,
+        detail=f"Requested {from_plan_id} → {req.plan_id}",
+    )
+    return {"request": request}

@@ -12,6 +12,7 @@ import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
 import { CompanyContentSkeleton } from "@/components/Skeleton/portals";
 import { useAuth } from "@/context/AuthContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
+import { planLabel } from "@/lib/admin/liveHelpers";
 import type { Plan, PlanId } from "@/lib/admin/types";
 import type { Invoice } from "@/lib/admin/billingTypes";
 import { chargeUsdForCa, formatCa, microsToCa } from "@/lib/billing/tokenEconomics";
@@ -26,10 +27,13 @@ import {
 } from "@/lib/coair/commerce";
 import {
     confirmPurchase,
+    createOrgPackageChangeRequest,
     createPurchase,
     getOrgInvoice,
     listOrgInvoices,
+    listOrgPackageChangeRequests,
     mapInvoice,
+    type PackageChangeRequest,
 } from "@/lib/coair/ops";
 import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
@@ -84,6 +88,11 @@ const LiveCompanyBillingPage = () => {
     const [tokenAmountInput, setTokenAmountInput] = useState("5000");
     const [storageGbInput, setStorageGbInput] = useState("50");
     const [plans, setPlans] = useState<Plan[]>([]);
+    const [packageRequests, setPackageRequests] = useState<
+        PackageChangeRequest[]
+    >([]);
+    const [requestBusy, setRequestBusy] = useState<string | null>(null);
+    const [requestMessage, setRequestMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [billingReady, setBillingReady] = useState(false);
     const [checkout, setCheckout] = useState<CheckoutState>(null);
@@ -140,10 +149,34 @@ const LiveCompanyBillingPage = () => {
         void listPackages(token)
             .then(setPlans)
             .catch((err) => setError(apiErrorMessage(err)));
+        void listOrgPackageChangeRequests(token)
+            .then(setPackageRequests)
+            .catch(() => setPackageRequests([]));
         void readOrgTax(token)
             .then((tax) => setTaxPercent(Number(tax.percent) || 0))
             .catch(() => setTaxPercent(0));
     }, [token]);
+
+    const requestDowngrade = async (target: Plan) => {
+        if (!token) return;
+        setRequestBusy(target.id);
+        setRequestMessage(null);
+        setError(null);
+        try {
+            const result = await createOrgPackageChangeRequest(token, {
+                plan_id: target.id as "foundation" | "pro" | "enterprise",
+                reason: `Request downgrade to ${target.name}`,
+            });
+            setPackageRequests((prev) => [result.request, ...prev]);
+            setRequestMessage(
+                `Downgrade to ${target.name} requested. Super Admin will review it.`
+            );
+        } catch (err) {
+            setError(apiErrorMessage(err));
+        } finally {
+            setRequestBusy(null);
+        }
+    };
 
     useEffect(() => {
         if (!checkout || !token) {
@@ -249,17 +282,17 @@ const LiveCompanyBillingPage = () => {
                 });
                 if (result.redirected) return { ok: true };
             } else if (checkout.kind === "upgrade") {
-                const verb =
-                    checkout.action === "downgrade"
-                        ? "Downgrade"
-                        : checkout.action === "change"
-                          ? "Change"
-                          : "Upgrade";
+                if (checkout.action === "downgrade" || checkout.action === "change") {
+                    return {
+                        ok: false,
+                        error: "Downgrades require Super Admin approval. Use Request downgrade.",
+                    };
+                }
                 const result = await createPurchase(token, {
                     kind: "upgrade",
                     amount_usd: checkout.priceUsd,
                     plan_id: checkout.planId,
-                    description: `${verb} to ${checkout.planName}`,
+                    description: `Upgrade to ${checkout.planName}`,
                     coupon_code: couponCode,
                 });
                 if (result.redirected) return { ok: true };
@@ -619,10 +652,27 @@ const LiveCompanyBillingPage = () => {
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">Change package</h2>
                 <p className="mt-2 text-label-sm text-sub-600">
-                    Remaining tokens and storage transfer to the package you
-                    select. From the next renewal, limits match that package
-                    only.
+                    Upgrades can be paid here. Downgrades need Super Admin
+                    approval — request below and wait for review. Demo is not
+                    available for self-serve.
                 </p>
+                {requestMessage ? (
+                    <p className="mt-3 text-label-sm text-green-600">
+                        {requestMessage}
+                    </p>
+                ) : null}
+                {packageRequests.some((row) => row.status === "pending") ? (
+                    <ul className="mt-3 space-y-1 text-label-xs text-sub-600">
+                        {packageRequests
+                            .filter((row) => row.status === "pending")
+                            .map((row) => (
+                                <li key={row.id}>
+                                    Pending: {planLabel(row.from_plan_id)} →{" "}
+                                    {planLabel(row.to_plan_id)}
+                                </li>
+                            ))}
+                    </ul>
+                ) : null}
                 {changePlans.length === 0 ? (
                     <p className="mt-4 text-label-sm text-sub-600">
                         No other packages are available to switch to.
@@ -631,12 +681,51 @@ const LiveCompanyBillingPage = () => {
                     <div className="mt-4 space-y-3">
                         {changePlans.map((target) => {
                             const action = planAction(target.id);
-                            const label =
-                                action === "upgrade"
-                                    ? "Upgrade"
-                                    : action === "downgrade"
-                                      ? "Downgrade"
-                                      : "Change";
+                            const pending = packageRequests.some(
+                                (row) =>
+                                    row.status === "pending" &&
+                                    row.to_plan_id === target.id
+                            );
+                            if (action === "downgrade" || action === "change") {
+                                return (
+                                    <div
+                                        key={target.id}
+                                        className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-stroke-soft-200 px-4 py-3"
+                                    >
+                                        <div>
+                                            <p className="text-label-sm text-strong-950">
+                                                {target.name}
+                                            </p>
+                                            <p className="text-label-xs text-sub-600">
+                                                {target.priceLabel} ·{" "}
+                                                {target.usersIncluded} seats · $
+                                                {target.apiCreditsUsd}/mo ·{" "}
+                                                {numberFormatter.format(
+                                                    target.queryCap
+                                                )}{" "}
+                                                CA · {target.storageLimitGb} GB
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            disabled={
+                                                pending ||
+                                                requestBusy === target.id
+                                            }
+                                            onClick={() =>
+                                                void requestDowngrade(target)
+                                            }
+                                            className="h-9 shrink-0 rounded-xl border border-stroke-soft-200 bg-white-0 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
+                                        >
+                                            {pending
+                                                ? "Request pending"
+                                                : requestBusy === target.id
+                                                  ? "Requesting…"
+                                                  : "Request downgrade"}
+                                        </button>
+                                    </div>
+                                );
+                            }
                             return (
                                 <div
                                     key={target.id}
@@ -653,7 +742,7 @@ const LiveCompanyBillingPage = () => {
                                             {numberFormatter.format(
                                                 target.queryCap
                                             )}{" "}
-                                            tokens · {target.storageLimitGb} GB
+                                            CA · {target.storageLimitGb} GB
                                         </p>
                                     </div>
                                     <button
@@ -663,24 +752,14 @@ const LiveCompanyBillingPage = () => {
                                                 kind: "upgrade",
                                                 planId: target.id,
                                                 planName: target.name,
-                                                priceLabel:
-                                                    action === "downgrade"
-                                                        ? "Free (carry remaining)"
-                                                        : target.priceLabel,
-                                                priceUsd:
-                                                    action === "downgrade"
-                                                        ? 0
-                                                        : target.apiCreditsUsd,
-                                                action,
+                                                priceLabel: target.priceLabel,
+                                                priceUsd: target.apiCreditsUsd,
+                                                action: "upgrade",
                                             })
                                         }
-                                        className={
-                                            action === "downgrade"
-                                                ? "h-9 shrink-0 rounded-xl border border-stroke-soft-200 bg-white-0 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
-                                                : "h-9 shrink-0 rounded-xl bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
-                                        }
+                                        className="h-9 shrink-0 rounded-xl bg-strong-950 px-4 text-label-sm text-white-0 hover:opacity-90"
                                     >
-                                        {label}
+                                        Upgrade
                                     </button>
                                 </div>
                             );

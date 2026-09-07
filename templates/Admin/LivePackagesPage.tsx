@@ -4,8 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AdminPackagesSkeleton } from "@/components/Skeleton/sections";
 import { useAuth } from "@/context/AuthContext";
+import { planLabel } from "@/lib/admin/liveHelpers";
 import type { ModuleAccess, ModuleId, Plan } from "@/lib/admin/types";
 import { apiErrorMessage, listPackages, patchPackage } from "@/lib/coair/commerce";
+import {
+    approveAdminPackageChangeRequest,
+    denyAdminPackageChangeRequest,
+    listAdminPackageChangeRequests,
+    type PackageChangeRequest,
+} from "@/lib/coair/ops";
 
 const MODULES: { id: ModuleId; label: string }[] = [
     { id: "chatbot", label: "Module 1 · Chatbot" },
@@ -19,6 +26,24 @@ const LivePackagesPage = () => {
     const [plans, setPlans] = useState<Plan[]>([]);
     const [plansReady, setPlansReady] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [changeRequests, setChangeRequests] = useState<
+        PackageChangeRequest[]
+    >([]);
+    const [resolveBusy, setResolveBusy] = useState<string | null>(null);
+    const [resolveMessage, setResolveMessage] = useState<string | null>(null);
+
+    const loadRequests = useCallback(async () => {
+        if (!token) {
+            setChangeRequests([]);
+            return;
+        }
+        try {
+            const rows = await listAdminPackageChangeRequests(token, "pending");
+            setChangeRequests(rows);
+        } catch {
+            setChangeRequests([]);
+        }
+    }, [token]);
 
     useEffect(() => {
         if (!token) {
@@ -30,7 +55,31 @@ const LivePackagesPage = () => {
             .then((rows) => setPlans(rows))
             .catch((err) => setError(apiErrorMessage(err)))
             .finally(() => setPlansReady(true));
-    }, [token]);
+        void loadRequests();
+    }, [token, loadRequests]);
+
+    const resolveRequest = async (
+        id: string,
+        action: "approved" | "denied"
+    ) => {
+        setResolveBusy(id);
+        setResolveMessage(null);
+        setError(null);
+        try {
+            if (action === "approved") {
+                await approveAdminPackageChangeRequest(token, id);
+                setResolveMessage("Package change approved and applied.");
+            } else {
+                await denyAdminPackageChangeRequest(token, id);
+                setResolveMessage("Package change denied.");
+            }
+            await loadRequests();
+        } catch (err) {
+            setError(apiErrorMessage(err));
+        } finally {
+            setResolveBusy(null);
+        }
+    };
 
     const save = useCallback(
         async (next: Plan) => {
@@ -86,6 +135,71 @@ const LivePackagesPage = () => {
                 </p>
             </div>
             {error ? <p className="text-label-sm text-red-500">{error}</p> : null}
+            {resolveMessage ? (
+                <p className="text-label-sm text-green-600">{resolveMessage}</p>
+            ) : null}
+
+            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                <h2 className="text-label-lg text-strong-950">
+                    Downgrade requests
+                </h2>
+                <p className="mt-1 text-label-xs text-sub-600">
+                    Company admins cannot auto-downgrade. Approve to apply the
+                    new package (carry remaining), or deny.
+                </p>
+                {changeRequests.length === 0 ? (
+                    <p className="mt-4 text-label-sm text-sub-600">
+                        No pending package change requests.
+                    </p>
+                ) : (
+                    <ul className="mt-4 divide-y divide-stroke-soft-200">
+                        {changeRequests.map((row) => (
+                            <li
+                                key={row.id}
+                                className="flex flex-wrap items-center justify-between gap-3 py-3"
+                            >
+                                <div>
+                                    <p className="text-label-sm text-strong-950">
+                                        {row.org_name || row.org_id}
+                                    </p>
+                                    <p className="text-label-xs text-sub-600">
+                                        {planLabel(row.from_plan_id)} →{" "}
+                                        {planLabel(row.to_plan_id)} ·{" "}
+                                        {row.username}
+                                        {row.reason ? ` · ${row.reason}` : ""}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={resolveBusy === row.id}
+                                        onClick={() =>
+                                            void resolveRequest(
+                                                row.id,
+                                                "approved"
+                                            )
+                                        }
+                                        className="h-9 rounded-xl bg-strong-950 px-3 text-label-sm text-white-0 hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        Approve
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={resolveBusy === row.id}
+                                        onClick={() =>
+                                            void resolveRequest(row.id, "denied")
+                                        }
+                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
+                                    >
+                                        Deny
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
+
             <AdminPackagesSkeleton loading={!plansReady && plans.length === 0}>
                 <div className="space-y-4">
                     {plansReady && plans.length === 0 ? (

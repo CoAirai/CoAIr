@@ -579,6 +579,74 @@ export async function denyAdminTopup(token: string, id: string) {
     return mapTopUpRequest(payload);
 }
 
+export type PackageChangeRequest = {
+    id: string;
+    org_id: string;
+    org_name?: string | null;
+    username: string;
+    from_plan_id: string;
+    to_plan_id: string;
+    reason: string;
+    status: string;
+    created_at: string;
+    resolved_at?: string | null;
+    resolved_by?: string | null;
+};
+
+export async function listOrgPackageChangeRequests(token: string) {
+    const payload = await coairFetch<{ requests: PackageChangeRequest[] }>(
+        "/org/package-change-requests",
+        { token }
+    );
+    return payload.requests ?? [];
+}
+
+export async function createOrgPackageChangeRequest(
+    token: string,
+    input: { plan_id: "foundation" | "pro" | "enterprise"; reason?: string }
+) {
+    return coairFetch<{ request: PackageChangeRequest }>(
+        "/org/package-change-requests",
+        {
+            method: "POST",
+            token,
+            body: {
+                plan_id: input.plan_id,
+                reason: input.reason?.trim() || undefined,
+            },
+        }
+    );
+}
+
+export async function listAdminPackageChangeRequests(
+    token: string,
+    status: string = "pending"
+) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const payload = await coairFetch<{ requests: PackageChangeRequest[] }>(
+        `/admin/package-change-requests${query}`,
+        { token }
+    );
+    return payload.requests ?? [];
+}
+
+export async function approveAdminPackageChangeRequest(
+    token: string,
+    id: string
+) {
+    return coairFetch<{ request: PackageChangeRequest }>(
+        `/admin/package-change-requests/${encodeURIComponent(id)}/approve`,
+        { method: "POST", token }
+    );
+}
+
+export async function denyAdminPackageChangeRequest(token: string, id: string) {
+    return coairFetch<{ request: PackageChangeRequest }>(
+        `/admin/package-change-requests/${encodeURIComponent(id)}/deny`,
+        { method: "POST", token }
+    );
+}
+
 export async function listOrgTopups(token: string): Promise<TopUpRequest[]> {
     const payload = await coairFetch<{
         requests: Parameters<typeof mapTopUpRequest>[0][];
