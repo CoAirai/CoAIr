@@ -233,6 +233,7 @@ const KnowledgeBase = () => {
                             used={tokenMeter.used}
                             allocation={tokenMeter.allocation}
                             remainingPercent={tokenMeter.remainingPercent}
+                            showGemini={session?.role === "company_admin"}
                         />
                     )}
                 </button>

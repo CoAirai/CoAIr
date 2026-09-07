@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { formatCa } from "@/lib/billing/tokenEconomics";
+import { formatGeminiFromCaMicros } from "@/lib/chat/tokenMeter";
 import {
     createMemberTokenRequest,
     listMemberTokenRequests,
@@ -16,9 +18,10 @@ const Tokens = () => {
     const { session } = useAuth();
     const token = session?.accessToken ?? "";
     const live = session?.source === "live" && Boolean(token);
+    const isCompanyAdmin = session?.role === "company_admin";
     const [used, setUsed] = useState(0);
     const [limit, setLimit] = useState(0);
-    const [tokens, setTokens] = useState("1000");
+    const [tokens, setTokens] = useState("10");
     const [reason, setReason] = useState("");
     const [requests, setRequests] = useState<CoairMemberTokenRequest[]>([]);
     const [message, setMessage] = useState<string | null>(null);
@@ -54,7 +57,7 @@ const Tokens = () => {
         }
         const amount = Number(tokens);
         if (!Number.isFinite(amount) || amount < 1) {
-            setMessage("Enter a positive token amount.");
+            setMessage("Enter a positive CA amount.");
             return;
         }
         setBusy(true);
@@ -77,35 +80,52 @@ const Tokens = () => {
     return (
         <div>
             <p className="mb-4 text-label-sm text-sub-600">
-                Your share of the company token pool. Request more when you need
-                headroom; your company admin can transfer unused tokens or buy
-                more.
+                Your share of the company CA credit pool. Request more when you
+                need headroom; your company admin can transfer unused credits or
+                buy more.
             </p>
             <div className="mb-6 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-stroke-soft-200 p-3">
-                    <div className="text-label-xs text-sub-600">Used</div>
+                    <div className="text-label-xs text-sub-600">Used (CA)</div>
                     <div className="mt-1 text-label-lg tabular-nums">
-                        {fmt.format(used)}
+                        {formatCa(used)}
                     </div>
+                    {isCompanyAdmin ? (
+                        <div className="mt-1 text-label-xs text-soft-400 tabular-nums">
+                            ≈ {formatGeminiFromCaMicros(used)} Gemini
+                        </div>
+                    ) : null}
                 </div>
                 <div className="rounded-xl border border-stroke-soft-200 p-3">
-                    <div className="text-label-xs text-sub-600">Limit</div>
+                    <div className="text-label-xs text-sub-600">Limit (CA)</div>
                     <div className="mt-1 text-label-lg tabular-nums">
-                        {fmt.format(limit)}
+                        {formatCa(limit)}
                     </div>
+                    {isCompanyAdmin ? (
+                        <div className="mt-1 text-label-xs text-soft-400 tabular-nums">
+                            ≈ {formatGeminiFromCaMicros(limit)} Gemini
+                        </div>
+                    ) : null}
                 </div>
                 <div className="rounded-xl border border-stroke-soft-200 p-3">
-                    <div className="text-label-xs text-sub-600">Remaining</div>
-                    <div className="mt-1 text-label-lg tabular-nums">
-                        {fmt.format(remaining)}
+                    <div className="text-label-xs text-sub-600">
+                        Remaining (CA)
                     </div>
+                    <div className="mt-1 text-label-lg tabular-nums">
+                        {formatCa(remaining)}
+                    </div>
+                    {isCompanyAdmin ? (
+                        <div className="mt-1 text-label-xs text-soft-400 tabular-nums">
+                            ≈ {formatGeminiFromCaMicros(remaining)} Gemini
+                        </div>
+                    ) : null}
                 </div>
             </div>
 
             <form onSubmit={(event) => void onSubmit(event)} className="space-y-3">
                 <div>
                     <label className="text-label-sm text-strong-950">
-                        Request more tokens
+                        Request more CA credits
                     </label>
                     <input
                         type="number"
@@ -125,7 +145,7 @@ const Tokens = () => {
                         rows={3}
                         maxLength={400}
                         className="mt-1 w-full rounded-xl border border-stroke-soft-200 px-3 py-2 text-label-sm"
-                        placeholder="What do you need the tokens for?"
+                        placeholder="What do you need the credits for?"
                     />
                 </div>
                 <button
@@ -153,7 +173,7 @@ const Tokens = () => {
                                 className="flex items-center justify-between gap-3 px-3 py-2 text-label-xs"
                             >
                                 <span className="text-strong-950 tabular-nums">
-                                    {fmt.format(req.tokens)} tokens
+                                    {fmt.format(req.tokens)} CA
                                 </span>
                                 <span className="text-sub-600 capitalize">
                                     {req.status}

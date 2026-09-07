@@ -1,4 +1,8 @@
 import {
+    formatCa,
+    microsToCa,
+} from "@/lib/billing/tokenEconomics";
+import {
     userAllocation,
     userRemainingInSlice,
 } from "@/lib/company/tokenMath";
@@ -35,12 +39,33 @@ export function getTokenMeter(input: {
     return { used, allocation, remaining, remainingPercent };
 }
 
+/** Compact CA credit label from CA micros (1 CA = 1e6 micros). */
+export function formatCaCount(micros: number): string {
+    const ca = microsToCa(micros);
+    if (ca >= 1_000) {
+        return `${(ca / 1_000).toFixed(ca >= 10_000 ? 0 : 1)}K`;
+    }
+    if (ca >= 100) {
+        return ca.toFixed(0);
+    }
+    if (ca >= 10) {
+        return ca.toFixed(1);
+    }
+    return formatCa(micros);
+}
+
+/** Legacy Gemini-scale display of the same micros balance (1 CA ≈ 1M Gemini units). */
+export function formatGeminiFromCaMicros(micros: number): string {
+    if (micros >= 1_000_000) {
+        return `${(micros / 1_000_000).toFixed(1)}M`;
+    }
+    if (micros >= 10_000) {
+        return `${(micros / 1_000).toFixed(1)}K`;
+    }
+    return new Intl.NumberFormat("en-US").format(Math.round(micros));
+}
+
+/** @deprecated use formatCaCount — kept for older call sites */
 export function formatTokenCount(value: number): string {
-    if (value >= 1_000_000) {
-        return `${(value / 1_000_000).toFixed(1)}M`;
-    }
-    if (value >= 10_000) {
-        return `${(value / 1_000).toFixed(1)}K`;
-    }
-    return new Intl.NumberFormat("en-US").format(value);
+    return formatGeminiFromCaMicros(value);
 }

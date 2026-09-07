@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatTokenCount, getTokenMeter } from "./tokenMeter";
+import {
+    formatCaCount,
+    formatGeminiFromCaMicros,
+    formatTokenCount,
+    getTokenMeter,
+} from "./tokenMeter";
 
 describe("getTokenMeter", () => {
     it("shows remaining percent for an Acme slice", () => {
@@ -17,9 +22,17 @@ describe("getTokenMeter", () => {
     });
 });
 
-describe("formatTokenCount", () => {
-    it("compacts millions like the product chrome", () => {
-        expect(formatTokenCount(3_700_000)).toBe("3.7M");
-        expect(formatTokenCount(100_000_000)).toBe("100.0M");
+describe("formatCaCount", () => {
+    it("formats CA micros as CA credits", () => {
+        expect(formatCaCount(83_500_000)).toBe("83.5");
+        expect(formatCaCount(0)).toBe("0");
+    });
+});
+
+describe("formatGeminiFromCaMicros", () => {
+    it("compacts millions like the old chrome", () => {
+        expect(formatGeminiFromCaMicros(3_700_000)).toBe("3.7M");
+        expect(formatGeminiFromCaMicros(100_000_000)).toBe("100.0M");
+        expect(formatTokenCount(83_500_000)).toBe("83.5M");
     });
 });
