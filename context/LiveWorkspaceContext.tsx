@@ -17,7 +17,7 @@ import {
     ensureSelfInWorkspaceUsers,
     mapLiveOrgUsersToWorkspaceUsers,
 } from "@/lib/coair/mapWorkspaceUsers";
-import { listOrgUsers, readMe, type CoairOrgUser } from "@/lib/coair/org";
+import { listOrgUsers, readAuthMe, type CoairOrgUser } from "@/lib/coair/org";
 import type { CoairProject } from "@/lib/coair/types";
 import {
     deleteProjectFile,
@@ -81,7 +81,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             setProjects(listed.projects ?? []);
             setAccountUsage(listed.account_usage ?? null);
             try {
-                const me = await readMe(session.accessToken);
+                const me = await readAuthMe(session.accessToken);
                 if (me.user?.features) {
                     updateSession({ features: me.user.features });
                 }
