@@ -395,21 +395,21 @@ def sync_document_registry_from_gcs():
 
 
 # ── Uploaded source files sync ──────────────────────────
+# Keys mirror local DATA_DIR, e.g.:
+#   uploads/companies/{company-slug}/{project-slug}/documents/file.pdf
 
 _UPLOADS_PREFIX = "uploads/"
 
 
 def sync_uploaded_file_to_gcs(file_path: str):
-    """Upload a single source file (email/doc/table) to GCS after upload."""
+    """Upload a single source file (email/doc/table) to S3/GCS after upload."""
     if not is_enabled():
         return
-    p = Path(file_path)
-    from .config import DATA_DIR
-    try:
-        rel = p.relative_to(DATA_DIR)
-        upload_file(file_path, f"{_UPLOADS_PREFIX}{rel.as_posix()}")
-    except ValueError:
-        pass
+    from .tenant_paths import s3_upload_key_for_local
+
+    key = s3_upload_key_for_local(file_path)
+    if key:
+        upload_file(file_path, key)
 
 
 def sync_all_uploads_from_gcs():
@@ -431,16 +431,14 @@ def sync_all_uploads_from_gcs():
 
 
 def delete_uploaded_file_from_gcs(file_path: str):
-    """Delete a source file from GCS when user deletes it."""
+    """Delete a source file from S3/GCS when user deletes it."""
     if not is_enabled():
         return
-    p = Path(file_path)
-    from .config import DATA_DIR
-    try:
-        rel = p.relative_to(DATA_DIR)
-        delete_blob(f"{_UPLOADS_PREFIX}{rel.as_posix()}")
-    except ValueError:
-        pass
+    from .tenant_paths import s3_upload_key_for_local
+
+    key = s3_upload_key_for_local(file_path)
+    if key:
+        delete_blob(key)
 
 
 def clear_gcs_tables():

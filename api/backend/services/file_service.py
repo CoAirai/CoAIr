@@ -8,7 +8,8 @@ from typing import List
 
 from fastapi import UploadFile
 
-from src.config import BASE_DIR, DOCUMENTS_DIR, TABLES_DIR, EMAILS_DIR
+from src.config import DOCUMENTS_DIR, TABLES_DIR, EMAILS_DIR
+from src.tenant_paths import project_type_dir, project_type_dirs_for_read
 
 EXTENSION_MAP = {
     ".pdf": ("document", DOCUMENTS_DIR),
@@ -27,13 +28,8 @@ class FileService:
 
     @staticmethod
     def _target_dir(project_id: str, file_type: str) -> Path:
-        if not project_id:
-            return Path({"document": DOCUMENTS_DIR, "email": EMAILS_DIR,
-                         "data": TABLES_DIR}.get(file_type, DOCUMENTS_DIR))
-        leaf = {"document": "documents", "email": "emails", "data": "tables"}.get(
-            file_type, "documents"
-        )
-        return Path(BASE_DIR) / "data" / "projects" / project_id / leaf
+        """Company/project slug folders → S3 uploads/companies/{co}/{proj}/…"""
+        return project_type_dir(project_id, file_type)
 
     async def save(self, file: UploadFile, project_id: str = "",
                    username: str = "") -> tuple[str, str, bool]:
@@ -256,9 +252,15 @@ class FileService:
                 return True
         except Exception:
             pass
-        # Search through directories
-        dirs = ([self._target_dir(project_id, t) for t in ("document", "data", "email")]
-                if project_id else [Path(DOCUMENTS_DIR), Path(TABLES_DIR), Path(EMAILS_DIR)])
+        # Search modern company/project dirs, then legacy data/projects/{id}/…
+        if project_id:
+            dirs = [
+                d
+                for t in ("document", "data", "email")
+                for d in project_type_dirs_for_read(project_id, t)
+            ]
+        else:
+            dirs = [Path(DOCUMENTS_DIR), Path(TABLES_DIR), Path(EMAILS_DIR)]
         for dir_path in dirs:
             d = Path(dir_path)
             if not d.exists():
