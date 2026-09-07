@@ -51,15 +51,28 @@ const LivePackagesPage = () => {
             return;
         }
         try {
-            const [changes, unlocks] = await Promise.all([
-                listAdminPackageChangeRequests(token, "pending"),
-                listAdminModuleUnlockRequests(token, "pending"),
-            ]);
+            const changes = await listAdminPackageChangeRequests(
+                token,
+                "pending"
+            );
             setChangeRequests(changes);
-            setUnlockRequests(unlocks);
-        } catch {
+        } catch (err) {
             setChangeRequests([]);
+            setError(apiErrorMessage(err));
+        }
+        try {
+            const unlocks = await listAdminModuleUnlockRequests(
+                token,
+                "pending"
+            );
+            setUnlockRequests(unlocks);
+        } catch (err) {
             setUnlockRequests([]);
+            setError(
+                (prev) =>
+                    prev ||
+                    `Module unlock requests: ${apiErrorMessage(err)}`
+            );
         }
     }, [token]);
 
@@ -184,6 +197,74 @@ const LivePackagesPage = () => {
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                 <h2 className="text-label-lg text-strong-950">
+                    Module unlock requests
+                    {unlockRequests.length > 0
+                        ? ` (${unlockRequests.length})`
+                        : ""}
+                </h2>
+                <p className="mt-1 text-label-xs text-sub-600">
+                    Company admins request Chronology or Forensic company-wide.
+                    Approve unlocks the module for that company so they can
+                    grant teammates. Look here first — not on the company Users
+                    rights grid.
+                </p>
+                {unlockRequests.length === 0 ? (
+                    <p className="mt-4 text-label-sm text-sub-600">
+                        No pending module unlock requests.
+                    </p>
+                ) : (
+                    <ul className="mt-4 divide-y divide-stroke-soft-200">
+                        {unlockRequests.map((row) => (
+                            <li
+                                key={row.id}
+                                className="flex flex-wrap items-center justify-between gap-3 py-3"
+                            >
+                                <div>
+                                    <p className="text-label-sm text-strong-950">
+                                        {row.org_name || row.org_id}
+                                    </p>
+                                    <p className="text-label-xs text-sub-600">
+                                        {MODULE_UNLOCK_LABEL[row.module] ||
+                                            row.module}{" "}
+                                        · {row.username}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={resolveBusy === row.id}
+                                        onClick={() =>
+                                            void resolveUnlockRequest(
+                                                row.id,
+                                                "approved"
+                                            )
+                                        }
+                                        className="h-9 rounded-xl bg-strong-950 px-3 text-label-sm text-white-0 hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        Approve
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={resolveBusy === row.id}
+                                        onClick={() =>
+                                            void resolveUnlockRequest(
+                                                row.id,
+                                                "denied"
+                                            )
+                                        }
+                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
+                                    >
+                                        Deny
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
+
+            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                <h2 className="text-label-lg text-strong-950">
                     Downgrade requests
                 </h2>
                 <p className="mt-1 text-label-xs text-sub-600">
@@ -231,70 +312,6 @@ const LivePackagesPage = () => {
                                         disabled={resolveBusy === row.id}
                                         onClick={() =>
                                             void resolveRequest(row.id, "denied")
-                                        }
-                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
-                                    >
-                                        Deny
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </section>
-
-            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
-                <h2 className="text-label-lg text-strong-950">
-                    Module unlock requests
-                </h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    Company admins request Chronology or Forensic company-wide.
-                    Approve unlocks the module for that company so they can
-                    grant teammates.
-                </p>
-                {unlockRequests.length === 0 ? (
-                    <p className="mt-4 text-label-sm text-sub-600">
-                        No pending module unlock requests.
-                    </p>
-                ) : (
-                    <ul className="mt-4 divide-y divide-stroke-soft-200">
-                        {unlockRequests.map((row) => (
-                            <li
-                                key={row.id}
-                                className="flex flex-wrap items-center justify-between gap-3 py-3"
-                            >
-                                <div>
-                                    <p className="text-label-sm text-strong-950">
-                                        {row.org_name || row.org_id}
-                                    </p>
-                                    <p className="text-label-xs text-sub-600">
-                                        {MODULE_UNLOCK_LABEL[row.module] ||
-                                            row.module}{" "}
-                                        · {row.username}
-                                    </p>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        disabled={resolveBusy === row.id}
-                                        onClick={() =>
-                                            void resolveUnlockRequest(
-                                                row.id,
-                                                "approved"
-                                            )
-                                        }
-                                        className="h-9 rounded-xl bg-strong-950 px-3 text-label-sm text-white-0 hover:opacity-90 disabled:opacity-50"
-                                    >
-                                        Approve
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={resolveBusy === row.id}
-                                        onClick={() =>
-                                            void resolveUnlockRequest(
-                                                row.id,
-                                                "denied"
-                                            )
                                         }
                                         className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
                                     >

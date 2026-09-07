@@ -322,26 +322,46 @@ _OWNER_RIGHT_DEFAULTS = {
 
 
 def user_has_right(user: UserContext, right: str) -> bool:
-    """Match frontend rightsFromFeatures: explicit flags win; else role defaults."""
+    """Match frontend rightsFromFeatures: explicit flags win; else role defaults.
+
+    Chronology/Forensic also require the company module grant (Super Admin unlock).
+    """
     if is_admin(user.role):
         return True
     features = user.features or {}
     has_explicit = any(key in features for key in _USER_RIGHT_KEYS)
-    if has_explicit:
-        return bool(features.get(right, False))
     org_role = "member"
+    org_id: Optional[str] = None
     try:
         from src.org_store import get_org_store
 
         membership = get_org_store().membership_for(user.username)
-        if membership and membership.get("role") == "owner":
-            org_role = "owner"
+        if membership:
+            org_id = str(membership.get("org_id") or "") or None
+            if membership.get("role") == "owner":
+                org_role = "owner"
     except Exception:
         org_role = "member"
-    defaults = (
-        _OWNER_RIGHT_DEFAULTS if org_role == "owner" else _MEMBER_RIGHT_DEFAULTS
-    )
-    return bool(defaults.get(right, False))
+    if has_explicit:
+        allowed = bool(features.get(right, False))
+    else:
+        defaults = (
+            _OWNER_RIGHT_DEFAULTS if org_role == "owner" else _MEMBER_RIGHT_DEFAULTS
+        )
+        allowed = bool(defaults.get(right, False))
+    if not allowed:
+        return False
+    if right in ("chronology", "forensic"):
+        if not org_id:
+            return False
+        try:
+            from src.ops_store import get_ops_store
+
+            if not get_ops_store().org_module_unlocked(org_id, right):
+                return False
+        except Exception:
+            return False
+    return True
 
 
 def require_user_right(right: str) -> Callable[[UserContext], UserContext]:

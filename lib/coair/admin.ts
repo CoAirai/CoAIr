@@ -66,6 +66,12 @@ export type CoairAdminOrgDetail = CoairAdminOrg & {
     members?: CoairOrgMember[];
     projects?: CoairOrgProject[];
     token_pool?: CoairTokenPool;
+    module_grants?: {
+        org_id?: string;
+        chronology?: boolean;
+        forensic?: boolean;
+        updated_at?: string | null;
+    };
 };
 
 export type CoairAdminUser = {

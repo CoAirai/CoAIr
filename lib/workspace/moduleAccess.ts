@@ -84,6 +84,17 @@ export function getModuleGate(
     moduleId: ModuleId,
     user?: ModuleGateUser
 ): ModuleGate {
+    // Chronology/Forensic: company unlock (addOns) before per-user rights.
+    if (moduleId === "chronology" || moduleId === "forensic") {
+        if (!company.addOns.includes(moduleId)) {
+            return { state: "locked", reason: "addon" };
+        }
+        if (user && !userMayAccessModule(moduleId, user.features, user.role)) {
+            return { state: "locked", reason: "user_denied" };
+        }
+        return { state: "open", kind: "addon" };
+    }
+
     if (user && !userMayAccessModule(moduleId, user.features, user.role)) {
         return { state: "locked", reason: "user_denied" };
     }

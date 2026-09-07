@@ -117,20 +117,31 @@ export const ROLE_DEFINITIONS: Array<{
 
 export function rightsFromFeatures(
     features: Record<string, unknown> | null | undefined,
-    role: string
+    role: string,
+    moduleGrants?: { chronology?: boolean; forensic?: boolean } | null
 ): Record<RightKey, boolean> {
     const defaults = rightsForRole(role);
     const source = features ?? {};
     const hasExplicit = RIGHT_COLUMNS.some((column) => column.key in source);
-    if (!hasExplicit) return defaults;
-    return {
-        projectAccess: Boolean(source.projectAccess ?? defaults.projectAccess),
-        chronology: Boolean(source.chronology ?? defaults.chronology),
-        forensic: Boolean(source.forensic ?? defaults.forensic),
-        upload: Boolean(source.upload ?? defaults.upload),
-        download: Boolean(source.download ?? defaults.download),
-        reports: Boolean(source.reports ?? defaults.reports),
-    };
+    const rights = hasExplicit
+        ? {
+              projectAccess: Boolean(
+                  source.projectAccess ?? defaults.projectAccess
+              ),
+              chronology: Boolean(source.chronology ?? defaults.chronology),
+              forensic: Boolean(source.forensic ?? defaults.forensic),
+              upload: Boolean(source.upload ?? defaults.upload),
+              download: Boolean(source.download ?? defaults.download),
+              reports: Boolean(source.reports ?? defaults.reports),
+          }
+        : { ...defaults };
+    // Company-wide unlock gates Chronology/Forensic — role defaults alone
+    // must not show those modules as granted before Super Admin unlocks them.
+    if (moduleGrants) {
+        if (!moduleGrants.chronology) rights.chronology = false;
+        if (!moduleGrants.forensic) rights.forensic = false;
+    }
+    return rights;
 }
 
 export function mergeRightFeatures(

@@ -679,7 +679,8 @@ const LiveTeamPage = () => {
                                             <RightsToggleCells
                                                 rights={rightsFromFeatures(
                                                     user.features,
-                                                    user.org_role || "member"
+                                                    user.org_role || "member",
+                                                    moduleGrants
                                                 )}
                                                 lockedKeys={lockedRightKeys}
                                                 onToggle={(key, enabled) =>

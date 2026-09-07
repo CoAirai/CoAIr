@@ -876,7 +876,8 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                                 user.features,
                                                 user.org_role ||
                                                     user.role ||
-                                                    "member"
+                                                    "member",
+                                                org?.module_grants
                                             )}
                                             onToggle={(
                                                 key: RightKey,

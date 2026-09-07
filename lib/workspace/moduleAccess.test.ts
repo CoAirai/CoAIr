@@ -16,44 +16,29 @@ describe("getModuleGate", () => {
         expect(moduleStatusLabel(gate)).toBe("Live");
     });
 
-    it("allows demo trial reports then locks", () => {
-        const open = getModuleGate(
-            demo,
-            { addOns: [], trialUsage: {} },
-            "chronology"
-        );
-        expect(open.state).toBe("open");
-        if (open.state === "open") {
-            expect(open.kind).toBe("trial");
-            expect(open.trialRemaining).toBe(1);
-        }
-
-        const locked = getModuleGate(
-            demo,
-            { addOns: [], trialUsage: { chronology: 1 } },
-            "chronology"
-        );
-        expect(locked).toEqual({ state: "locked", reason: "trial_exhausted" });
-    });
-
-    it("locks paid add-ons until enabled", () => {
+    it("locks chronology/forensic until the company module is unlocked", () => {
+        expect(
+            getModuleGate(demo, { addOns: [], trialUsage: {} }, "chronology")
+        ).toEqual({ state: "locked", reason: "addon" });
         expect(
             getModuleGate(pro, { addOns: [], trialUsage: {} }, "forensic")
         ).toEqual({ state: "locked", reason: "addon" });
+    });
 
+    it("opens chronology when the company grant is on", () => {
         const unlocked = getModuleGate(
             pro,
-            { addOns: ["forensic"], trialUsage: {} },
-            "forensic"
+            { addOns: ["chronology"], trialUsage: {} },
+            "chronology"
         );
         expect(unlocked).toEqual({ state: "open", kind: "addon" });
         expect(moduleStatusLabel(unlocked)).toBe("Live");
     });
 
-    it("locks chronology when the user right is off", () => {
+    it("locks chronology when the user right is off after company unlock", () => {
         const gate = getModuleGate(
             demo,
-            { addOns: [], trialUsage: {} },
+            { addOns: ["chronology"], trialUsage: {} },
             "chronology",
             {
                 features: {
