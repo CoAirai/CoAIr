@@ -51,7 +51,7 @@ const LiveStoragePage = () => {
     const top = [...rows].sort((a, b) => b.usedGb - a.usedGb).slice(0, 5);
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Storage</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -62,7 +62,7 @@ const LiveStoragePage = () => {
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
             <AdminStorageSkeleton loading={loading && rows.length === 0}>
-                <>
+                <div className="flex flex-col gap-8">
                     <div className="grid gap-6 sm:grid-cols-3">
                         <StatCard
                             label="Total used"
@@ -170,7 +170,7 @@ const LiveStoragePage = () => {
                             </div>
                         </section>
                     </div>
-                </>
+                </div>
             </AdminStorageSkeleton>
         </div>
     );

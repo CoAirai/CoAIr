@@ -137,8 +137,13 @@ async def create_purchase(
     if req.kind == "upgrade":
         if not req.plan_id:
             raise HTTPException(400, "plan_id_required")
-        if req.plan_id == "custom":
-            raise HTTPException(400, "custom_plan_requires_admin")
+        if req.plan_id in ("custom", "demo"):
+            raise HTTPException(
+                400,
+                "demo_plan_requires_admin"
+                if req.plan_id == "demo"
+                else "custom_plan_requires_admin",
+            )
         current_sub = commerce.get_subscription(org.org_id) or {}
         current_plan_id = str(current_sub.get("plan_id") or "")
         if current_plan_id == req.plan_id:

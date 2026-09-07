@@ -11,7 +11,14 @@ type Props = {
     className?: string;
 };
 
-/** In-page boneyard wrapper for data-fetch loading (tables, charts, lists). */
+/**
+ * In-page boneyard wrapper for data-fetch loading (tables, charts, lists).
+ *
+ * Children are wrapped in a stacked column so sibling panels keep vertical
+ * rhythm. Boneyard's Skeleton applies `className` to an outer shell whose
+ * direct child is a content wrapper — so gap on that shell never spaces
+ * the page sections themselves.
+ */
 export default function DataSkeleton({
     name,
     loading,
@@ -30,7 +37,7 @@ export default function DataSkeleton({
             fixture={fixture}
             fallback={fixture}
         >
-            {children}
+            <div className="flex w-full flex-col gap-8">{children}</div>
         </Skeleton>
     );
 }

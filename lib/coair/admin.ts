@@ -15,6 +15,16 @@ export type CoairOrgSubscription = {
     auto_renew?: boolean;
     org_id?: string;
     org_name?: string | null;
+    /** Frozen package limits for this company (renewals use this, not the catalog). */
+    assigned_plan?: {
+        id?: string;
+        name?: string;
+        users_included?: number;
+        storage_limit_gb?: number;
+        api_credits_usd?: number;
+        query_cap?: number;
+        modules?: Record<string, unknown>;
+    } | null;
 };
 
 export type CoairAdminOrg = {
@@ -184,6 +194,10 @@ export async function assignAdminOrgPlan(
     input: {
         plan_id: "demo" | "foundation" | "pro" | "enterprise" | "custom";
         record_invoice?: boolean;
+        api_credits_usd?: number;
+        query_cap?: number;
+        storage_limit_gb?: number;
+        users_included?: number;
     }
 ) {
     return coairFetch<{

@@ -29,10 +29,12 @@ def resolve_org_token_limit(
 
     plan_cap = 0
     try:
+        from src.commerce_store import resolve_subscription_plan
+
         sub = commerce.get_subscription(org_id) or {}
         plan_id = str(sub.get("plan_id") or "")
-        if plan_id:
-            plan = commerce.get_plan(plan_id) or {}
+        if plan_id or sub.get("assigned_plan"):
+            plan = resolve_subscription_plan(commerce, org_id, plan_id=plan_id or None)
             # query_cap is whole CA tokens; pool limits are CA micros.
             plan_cap = ca_to_micros(int(plan.get("query_cap") or 0))
     except Exception:

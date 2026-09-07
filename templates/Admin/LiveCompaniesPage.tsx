@@ -103,7 +103,7 @@ const LiveCompaniesPage = () => {
     });
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
             <PageHeader
                 title="Companies"
                 description="Create a company and invite its owner. They set a password from the email, then invite their own team."

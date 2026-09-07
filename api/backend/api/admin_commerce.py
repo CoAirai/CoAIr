@@ -172,8 +172,14 @@ async def approve_access_request(
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     resolved = commerce.resolve_access_request(request_id, "approved", plan_id="demo")
+    from src.commerce_store import snapshot_plan
+
+    demo_plan = snapshot_plan(commerce.get_plan("demo") or {})
     subscription = commerce.set_subscription(
-        org["org_id"], plan_id="demo", needs_checkout=True,
+        org["org_id"],
+        plan_id="demo",
+        needs_checkout=True,
+        assigned_plan=demo_plan,
     )
     invited = False
     emailed = False

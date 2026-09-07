@@ -48,7 +48,7 @@ const LiveOnboardingPage = () => {
     );
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
             <PageHeader
                 title="Onboarding"
                 description="Approve public access requests. The owner then signs in, chooses a package, and pays with Stripe Checkout."

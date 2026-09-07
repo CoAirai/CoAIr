@@ -17,7 +17,7 @@ const LiveRolesPage = () => {
     }));
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
             <PageHeader
                 title="Roles & Rights"
                 description="What each role can do by default. Assign people on Users or a company page — this screen is the capability matrix only."

@@ -73,7 +73,7 @@ const LivePackagesPage = () => {
     };
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Packages</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -146,10 +146,18 @@ const LivePackagesPage = () => {
                             </div>
                             {plan.id === "custom" ? (
                                 <p className="mt-3 text-label-xs text-sub-600">
-                                    Custom is not shown in company onboarding or
-                                    self-serve upgrades. Super Admin assigns it to a
-                                    company from that company&apos;s detail page when
-                                    they need a non-standard package.
+                                    Custom is a template only. Super Admin sets
+                                    company-specific limits when assigning — those
+                                    freeze on the company. Editing this template
+                                    does not change companies already on Custom.
+                                </p>
+                            ) : null}
+                            {plan.id === "demo" ? (
+                                <p className="mt-3 text-label-xs text-sub-600">
+                                    Demo is Super Admin assign-only (not for sale).
+                                    Companies get $20 of CA credits at no charge.
+                                    Customers only see Foundation, Pro, and
+                                    Enterprise.
                                 </p>
                             ) : null}
                             <div className="mt-5 grid gap-3 md:grid-cols-3">

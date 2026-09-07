@@ -35,7 +35,7 @@ const LiveModelsPage = () => {
     };
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Models</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -52,7 +52,7 @@ const LiveModelsPage = () => {
                 <p className="text-label-sm text-green-600">{message}</p>
             ) : null}
             <AdminModelsSkeleton loading={loading && users.length === 0}>
-                <>
+                <div className="flex flex-col gap-8">
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                         <h2 className="text-label-lg text-strong-950">
                             Models in use
@@ -128,7 +128,7 @@ const LiveModelsPage = () => {
                             </table>
                         </div>
                     </section>
-                </>
+                </div>
             </AdminModelsSkeleton>
         </div>
     );

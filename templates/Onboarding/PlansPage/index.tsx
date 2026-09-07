@@ -17,7 +17,9 @@ const PlansPage = () => {
     const live = session?.source === "live";
     const company = companies.find((entry) => entry.id === session?.companyId);
     const catalog = live ? livePlans : plans;
-    const selectable = catalog.filter((plan) => plan.id !== "custom");
+    const selectable = catalog.filter(
+        (plan) => plan.id !== "custom" && plan.id !== "demo"
+    );
 
     useEffect(() => {
         if (!live || !session?.accessToken) return;

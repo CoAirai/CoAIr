@@ -107,6 +107,10 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     const [memberUsername, setMemberUsername] = useState("");
     const [catalogPlans, setCatalogPlans] = useState<Plan[]>([]);
     const [assignPlanId, setAssignPlanId] = useState<PlanId>("custom");
+    const [assignCredits, setAssignCredits] = useState("400");
+    const [assignCa, setAssignCa] = useState("333");
+    const [assignStorageGb, setAssignStorageGb] = useState("300");
+    const [assignUsers, setAssignUsers] = useState("25");
     const [assignBusy, setAssignBusy] = useState(false);
     const [assignMessage, setAssignMessage] = useState<string | null>(null);
 
@@ -174,13 +178,31 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
         void listPackages(token)
             .then((rows) => {
                 setCatalogPlans(rows);
-                if (!rows.some((plan) => plan.id === assignPlanId) && rows[0]) {
-                    setAssignPlanId(rows[0].id);
+                const selected =
+                    rows.find((plan) => plan.id === assignPlanId) ?? rows[0];
+                if (selected) {
+                    if (!rows.some((plan) => plan.id === assignPlanId)) {
+                        setAssignPlanId(selected.id);
+                    }
+                    setAssignCredits(String(selected.apiCreditsUsd));
+                    setAssignCa(String(selected.queryCap));
+                    setAssignStorageGb(String(selected.storageLimitGb));
+                    setAssignUsers(String(selected.usersIncluded));
                 }
             })
             .catch(() => setCatalogPlans([]));
         // eslint-disable-next-line react-hooks/exhaustive-deps -- seed assign once from catalog
     }, [token]);
+
+    const applyAssignTemplate = (planId: PlanId) => {
+        setAssignPlanId(planId);
+        const selected = catalogPlans.find((plan) => plan.id === planId);
+        if (!selected) return;
+        setAssignCredits(String(selected.apiCreditsUsd));
+        setAssignCa(String(selected.queryCap));
+        setAssignStorageGb(String(selected.storageLimitGb));
+        setAssignUsers(String(selected.usersIncluded));
+    };
 
     const onAssignPlan = async () => {
         if (!token || !org) return;
@@ -188,12 +210,23 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
         setAssignMessage(null);
         setActionError(null);
         try {
+            const credits = Math.max(0, Number(assignCredits) || 0);
+            const ca = Math.max(0, Math.floor(Number(assignCa) || 0));
+            const storageGb = Math.max(0, Math.floor(Number(assignStorageGb) || 0));
+            const usersIncluded = Math.max(0, Math.floor(Number(assignUsers) || 0));
             const result = await assignAdminOrgPlan(token, org.org_id, {
                 plan_id: assignPlanId,
-                record_invoice: true,
+                record_invoice: assignPlanId !== "demo",
+                api_credits_usd: credits,
+                query_cap: ca,
+                storage_limit_gb: storageGb,
+                users_included: usersIncluded,
             });
             setAssignMessage(
-                `Assigned ${result.plan?.name ?? assignPlanId} to ${org.name}`
+                `Assigned ${result.plan?.name ?? assignPlanId} to ${org.name}` +
+                    (assignPlanId === "demo"
+                        ? " (free — $0 invoice)"
+                        : ` · $${credits}/mo · ${ca} CA · ${storageGb} GB`)
             );
             await load();
             await refreshAdmin();
@@ -243,19 +276,26 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
         [orgUsers]
     );
 
+    const assigned = org?.subscription?.assigned_plan;
     const plan = getPlanById(
-        org?.subscription?.plan_id || org?.default_plan_type || ""
+        assigned?.id ||
+            org?.subscription?.plan_id ||
+            org?.default_plan_type ||
+            ""
     );
     const tokenLimit =
         org?.default_token_limit ||
         tokenTotals.limit ||
-        plan?.queryCap ||
+        (assigned?.query_cap
+            ? assigned.query_cap * 1_000_000
+            : plan?.queryCap) ||
         0;
     const storageUsed = bytesToGb(tokenTotals.storageUsed);
     const storageLimit = bytesToGb(
         companyStorageLimitBytes({
             defaultStorageBytes: org?.default_storage_bytes,
-            planStorageGb: plan?.storageLimitGb,
+            planStorageGb:
+                assigned?.storage_limit_gb ?? plan?.storageLimitGb,
             memberLimits: orgUsers.map((user) => user.storage_limit_bytes),
         })
     );
@@ -384,7 +424,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     }
 
     return (
-        <div className="space-y-8">
+        <div className="flex flex-col gap-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <Link
@@ -450,7 +490,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             </div>
 
             {activeTab === "overview" ? (
-                <div className="space-y-8">
+                <div className="flex flex-col gap-8">
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                         <h2 className="text-label-lg text-strong-950">
                             Company details
@@ -528,11 +568,27 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                             Assign package
                         </h2>
                         <p className="mt-1 text-label-xs text-sub-600">
-                            Use this for Custom (or any package) when a company
-                            asks for something outside self-serve onboarding.
-                            Applies storage and token limits immediately and
-                            records an invoice for the package price.
+                            Demo and Custom are assign-only. Limits you set here
+                            freeze on this company — editing the global Packages
+                            template later will not change their renewals.
+                            Demo is always free ($20 CA credits, $0 invoice).
                         </p>
+                        {org.subscription?.assigned_plan ? (
+                            <p className="mt-2 text-label-xs text-sub-600">
+                                Current snapshot:{" "}
+                                {org.subscription.assigned_plan.name ||
+                                    org.subscription.plan_id}{" "}
+                                · $
+                                {org.subscription.assigned_plan.api_credits_usd ??
+                                    "—"}
+                                /mo ·{" "}
+                                {org.subscription.assigned_plan.query_cap ?? "—"}{" "}
+                                CA ·{" "}
+                                {org.subscription.assigned_plan
+                                    .storage_limit_gb ?? "—"}{" "}
+                                GB
+                            </p>
+                        ) : null}
                         <div className="mt-4 flex flex-wrap items-end gap-3">
                             <label className="block min-w-[12rem] text-label-xs text-sub-600">
                                 Package
@@ -540,7 +596,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                     className="mt-1 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
                                     value={assignPlanId}
                                     onChange={(event) =>
-                                        setAssignPlanId(
+                                        applyAssignTemplate(
                                             event.target.value as PlanId
                                         )
                                     }
@@ -548,13 +604,66 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                     {catalogPlans.map((plan) => (
                                         <option key={plan.id} value={plan.id}>
                                             {plan.name}
-                                            {plan.id === "custom"
+                                            {plan.id === "custom" ||
+                                            plan.id === "demo"
                                                 ? " (assign-only)"
                                                 : ""}{" "}
                                             · ${plan.apiCreditsUsd}/mo
                                         </option>
                                     ))}
                                 </select>
+                            </label>
+                            <label className="block min-w-[8rem] text-label-xs text-sub-600">
+                                Price USD / mo
+                                <input
+                                    type="number"
+                                    min={0}
+                                    step="1"
+                                    value={assignCredits}
+                                    onChange={(event) =>
+                                        setAssignCredits(event.target.value)
+                                    }
+                                    className="mt-1 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                />
+                            </label>
+                            <label className="block min-w-[8rem] text-label-xs text-sub-600">
+                                CA tokens
+                                <input
+                                    type="number"
+                                    min={0}
+                                    step="1"
+                                    value={assignCa}
+                                    onChange={(event) =>
+                                        setAssignCa(event.target.value)
+                                    }
+                                    className="mt-1 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                />
+                            </label>
+                            <label className="block min-w-[8rem] text-label-xs text-sub-600">
+                                Storage GB
+                                <input
+                                    type="number"
+                                    min={0}
+                                    step="1"
+                                    value={assignStorageGb}
+                                    onChange={(event) =>
+                                        setAssignStorageGb(event.target.value)
+                                    }
+                                    className="mt-1 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                />
+                            </label>
+                            <label className="block min-w-[7rem] text-label-xs text-sub-600">
+                                Users
+                                <input
+                                    type="number"
+                                    min={0}
+                                    step="1"
+                                    value={assignUsers}
+                                    onChange={(event) =>
+                                        setAssignUsers(event.target.value)
+                                    }
+                                    className="mt-1 h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                                />
                             </label>
                             <button
                                 type="button"
@@ -607,7 +716,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             ) : null}
 
             {activeTab === "users" ? (
-                <div className="space-y-8">
+                <div className="flex flex-col gap-8">
                     <form
                         onSubmit={async (event: FormEvent) => {
                             event.preventDefault();
@@ -908,7 +1017,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             ) : null}
 
             {activeTab === "tokens" ? (
-                <div className="space-y-8">
+                <div className="flex flex-col gap-8">
                 <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                     <h2 className="text-label-lg text-strong-950">
                         Company token pool
@@ -1136,7 +1245,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             ) : null}
 
             {activeTab === "billing" ? (
-                <div className="space-y-8">
+                <div className="flex flex-col gap-8">
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
                         <div className="border-b border-stroke-soft-200 px-5 py-4">
                             <h2 className="text-label-lg text-strong-950">

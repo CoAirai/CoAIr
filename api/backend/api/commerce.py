@@ -60,9 +60,13 @@ async def list_packages(
     store: CommerceStore = Depends(get_commerce_store),
 ):
     plans = store.list_plans()
-    # Custom is Super-Admin–assigned only — hide from company self-serve catalogs.
+    # Demo + Custom are Super-Admin–assigned only — hide from company catalogs.
     if user.role not in ("admin", "superadmin"):
-        plans = [plan for plan in plans if plan.get("id") != "custom"]
+        plans = [
+            plan
+            for plan in plans
+            if plan.get("id") not in ("custom", "demo")
+        ]
     return {"plans": plans}
 
 
@@ -106,6 +110,13 @@ async def checkout_plan(
     plan = commerce.get_plan(req.plan_id)
     if not plan:
         raise HTTPException(404, "plan_not_found")
+    if req.plan_id in ("custom", "demo"):
+        raise HTTPException(
+            400,
+            "demo_plan_requires_admin"
+            if req.plan_id == "demo"
+            else "custom_plan_requires_admin",
+        )
 
     base = float(plan["api_credits_usd"])
     try:

@@ -287,17 +287,21 @@ def fulfill_plan(
     amount_usd: Optional[float] = None,
     invoice_description: Optional[str] = None,
     carry_remaining: bool = False,
+    plan_overrides: Optional[Dict[str, Any]] = None,
     commerce: Optional[CommerceStore] = None,
     orgs: Optional[OrgStore] = None,
     users: Optional[UserStore] = None,
     ops: Optional[OpsStore] = None,
 ) -> Dict[str, Any]:
-    """Apply a catalog package to an org.
+    """Apply a package to an org and freeze those limits on the subscription.
 
     ``carry_remaining=True`` (mid-cycle change/downgrade/upgrade): keep unused
     tokens and storage and add them on top of the new plan caps; do not reset
     usage. On the next renewal, ``renew_package_period`` clears carryover and
-    applies clean catalog limits.
+    reapplies the org's assigned snapshot (not the live catalog template).
+
+    ``plan_overrides`` lets Super Admin assign a per-company Custom (or any)
+    package without mutating the global catalog row.
     """
     commerce = commerce or get_commerce_store()
     orgs = orgs or get_org_store()
@@ -309,9 +313,12 @@ def fulfill_plan(
         if existing:
             return existing
 
-    plan = commerce.get_plan(plan_id)
-    if not plan:
+    from src.commerce_store import merge_plan_overrides, snapshot_plan
+
+    catalog = commerce.get_plan(plan_id)
+    if not catalog:
         raise ValueError("plan_not_found")
+    plan = snapshot_plan(merge_plan_overrides(catalog, plan_overrides))
 
     previous = commerce.get_subscription(org_id) or {}
     old_sub_id = (previous.get("stripe_subscription_id") or "").strip()
@@ -383,6 +390,9 @@ def fulfill_plan(
         if stripe_subscription_id
         else previous.get("stripe_subscription_id")
     ) or None
+    # Demo is free — never charge unless caller passes an explicit amount.
+    if amount_usd is None and plan_id == "demo":
+        amount_usd = 0.0
     subscription = commerce.set_subscription(
         org_id,
         plan_id=plan_id,
@@ -393,6 +403,7 @@ def fulfill_plan(
         cancel_at_period_end=False,
         current_period_end=period_end,
         auto_renew=True,
+        assigned_plan=plan,
     )
     record = orgs.get_org(org_id) or {}
 
@@ -489,19 +500,21 @@ def renew_package_period(
     users: Optional[UserStore] = None,
     ops: Optional[OpsStore] = None,
 ) -> Dict[str, Any]:
-    """On package renewal: clear carryover and apply clean catalog plan limits."""
+    """On package renewal: clear carryover and reapply the assigned snapshot."""
     commerce = commerce or get_commerce_store()
     orgs = orgs or get_org_store()
     users = users or get_user_store()
     ops = ops or get_ops_store()
 
+    from src.commerce_store import resolve_subscription_plan, snapshot_plan
+
     sub = commerce.get_subscription(org_id)
     plan_id = str(sub.get("plan_id") or "demo")
-    plan = commerce.get_plan(plan_id) or {}
+    plan = snapshot_plan(resolve_subscription_plan(commerce, org_id, plan_id=plan_id))
     from src.org_quota import sync_org_member_quotas
     from src.ca_tokens import ca_to_micros
 
-    # Always use catalog caps — do not keep mid-cycle carryover into the next period.
+    # Always use the assigned snapshot — not the live global catalog template.
     token_limit = ca_to_micros(int(plan.get("query_cap") or 0))
     storage_bytes = gb_to_bytes(int(plan.get("storage_limit_gb") or 0))
     credits = float(plan.get("api_credits_usd") or 0)
@@ -529,6 +542,7 @@ def renew_package_period(
         cancel_at_period_end=False,
         current_period_end=next_end,
         auto_renew=True,
+        assigned_plan=plan,
     )
     amount = float(
         amount_usd
@@ -547,7 +561,7 @@ def renew_package_period(
         target_type="company",
         target_id=org_id,
         target_label=org_id,
-        detail=f"Renewed {plan_id}; catalog limits applied, usage reset",
+        detail=f"Renewed {plan_id}; assigned snapshot limits applied, usage reset",
     )
     logger.info(
         "org_package_renewed org=%s plan=%s period_end=%s",
@@ -588,6 +602,9 @@ def cancel_package_subscription(
             stripe.Subscription.modify(stripe_sub, cancel_at_period_end=True)
 
     if immediate:
+        from src.commerce_store import snapshot_plan
+
+        demo_plan = snapshot_plan(commerce.get_plan("demo") or {})
         subscription = commerce.set_subscription(
             org_id,
             plan_id="demo",
@@ -596,9 +613,10 @@ def cancel_package_subscription(
             cancel_at_period_end=False,
             auto_renew=False,
             stripe_subscription_id="",
+            assigned_plan=demo_plan,
         )
         # Clear paid pool to demo defaults.
-        plan = commerce.get_plan("demo") or {}
+        plan = demo_plan
         from src.ca_tokens import ca_to_micros
 
         token_limit = ca_to_micros(int(plan.get("query_cap") or 0))

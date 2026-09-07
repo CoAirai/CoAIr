@@ -145,7 +145,7 @@ const LiveDashboardPage = () => {
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
             <AdminDashboardSkeleton loading={loading}>
-                <>
+                <div className="flex flex-col gap-8">
                     <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                         <StatCard
                             label="Companies"
@@ -364,7 +364,7 @@ const LiveDashboardPage = () => {
                             />
                         </div>
                     </section>
-                </>
+                </div>
             </AdminDashboardSkeleton>
         </PageEnter>
     );

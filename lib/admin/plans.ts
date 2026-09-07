@@ -26,7 +26,7 @@ export const PLANS: Plan[] = [
         usersIncluded: 3,
         storageLimitGb: 20,
         apiCreditsUsd: 20,
-        queryCap: 17,
+        queryCap: 20,
         modules: {
             chatbot: CHATBOT_INCLUDED,
             chronology: TRIAL_ONE,

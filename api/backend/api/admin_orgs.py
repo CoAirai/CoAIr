@@ -152,8 +152,14 @@ def create_org(
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     if req.default_plan_type == "demo":
-        get_commerce_store().set_subscription(
-            org["org_id"], plan_id="demo", needs_checkout=True,
+        commerce = get_commerce_store()
+        from src.commerce_store import snapshot_plan
+
+        commerce.set_subscription(
+            org["org_id"],
+            plan_id="demo",
+            needs_checkout=True,
+            assigned_plan=snapshot_plan(commerce.get_plan("demo") or {}),
         )
     return _with_counts(org, store.summaries())
 
@@ -251,7 +257,13 @@ def list_token_requests(
 class OrgAssignPlan(BaseModel):
     plan_id: Literal["demo", "foundation", "pro", "enterprise", "custom"]
     # When true, create a paid invoice for the package price (no Stripe session).
+    # Demo is always free — invoice amount is forced to $0.
     record_invoice: bool = True
+    # Per-company snapshot overrides (does not mutate the global catalog).
+    api_credits_usd: Optional[float] = None
+    query_cap: Optional[int] = None
+    storage_limit_gb: Optional[int] = None
+    users_included: Optional[int] = None
 
 
 @router.post("/admin/orgs/{org_id}/assign-plan")
@@ -261,10 +273,11 @@ def assign_org_plan(
     admin: UserContext = Depends(require_admin),
     store: OrgStore = Depends(get_org_store),
 ):
-    """Assign a catalog package (including Custom) to a company.
+    """Assign a package to a company, freezing a per-company snapshot.
 
-    Used when a company asks for something outside self-serve packages —
-    Super Admin configures Custom limits, then assigns it here.
+    Demo and Custom are assign-only. Custom (and optional overrides on any plan)
+    are stored on the subscription so later catalog edits do not change this
+    company's renewals.
     """
     if not store.get_org(org_id):
         raise HTTPException(404, "organization_not_found")
@@ -275,15 +288,36 @@ def assign_org_plan(
     from src.ops_store import get_ops_store
     from src.stripe_billing import fulfill_plan
 
-    amount = float(plan.get("api_credits_usd") or 0) if req.record_invoice else 0.0
+    overrides = {
+        key: value
+        for key, value in {
+            "api_credits_usd": req.api_credits_usd,
+            "query_cap": req.query_cap,
+            "storage_limit_gb": req.storage_limit_gb,
+            "users_included": req.users_included,
+        }.items()
+        if value is not None
+    }
+    # Effective price for invoice comes from overrides when provided.
+    effective_price = float(
+        overrides.get("api_credits_usd", plan.get("api_credits_usd") or 0)
+    )
+    charge = (
+        0.0
+        if req.plan_id == "demo" or not req.record_invoice
+        else effective_price
+    )
     description = f"{plan['name']} package (assigned by {admin.username})"
+    if overrides:
+        description = f"{description} [company-specific limits]"
     try:
         result = fulfill_plan(
             org_id,
             req.plan_id,
             admin.username,
-            amount_usd=amount,
+            amount_usd=charge,
             invoice_description=description,
+            plan_overrides=overrides or None,
             commerce=commerce,
             orgs=store,
             users=get_user_store(),

@@ -38,6 +38,7 @@ def stores(tmp_path, monkeypatch):
 
 
 def test_fulfill_plan_sets_storage_and_query_cap(stores):
+    from src.ca_tokens import ca_to_micros
     from src.stripe_billing import fulfill_plan
 
     users, orgs, commerce, ops = stores
@@ -53,20 +54,22 @@ def test_fulfill_plan_sets_storage_and_query_cap(stores):
     )
     plan = commerce.get_plan("foundation")
     assert plan
+    expected = ca_to_micros(plan["query_cap"])
 
     result = fulfill_plan(org["org_id"], "foundation", "owner@example.com")
     assert result["subscription"]["needs_checkout"] is False
     assert result["subscription"]["plan_id"] == "foundation"
-    assert result["policy"]["default_token_limit"] == plan["query_cap"]
+    assert result["policy"]["default_token_limit"] == expected
     assert result["policy"]["default_storage_bytes"] == plan["storage_limit_gb"] * 1024 ** 3
 
     owner = users.get_user("owner@example.com")
-    assert owner["token_limit"] == plan["query_cap"]
+    assert owner["token_limit"] == expected
     billing = users.billing.summary("owner@example.com")
     assert billing["storage_limit_bytes"] == plan["storage_limit_gb"] * 1024 ** 3
 
 
 def test_fulfill_plan_carry_remaining_then_renew_clears(stores):
+    from src.ca_tokens import ca_to_micros
     from src.stripe_billing import fulfill_plan, renew_package_period
 
     users, orgs, commerce, ops = stores
@@ -84,10 +87,12 @@ def test_fulfill_plan_carry_remaining_then_renew_clears(stores):
     pro = commerce.get_plan("pro")
     foundation = commerce.get_plan("foundation")
     assert pro and foundation
+    pro_micros = ca_to_micros(pro["query_cap"])
+    foundation_micros = ca_to_micros(foundation["query_cap"])
 
     fulfill_plan(org_id, "pro", "owner@example.com")
     # Simulate mid-cycle usage against the Pro pool.
-    users.update_user("owner@example.com", token_limit=pro["query_cap"])
+    users.update_user("owner@example.com", token_limit=pro_micros)
     users.increment_usage("owner@example.com", 200, 100)
     users.billing.update_account(
         "owner@example.com",
@@ -101,7 +106,7 @@ def test_fulfill_plan_carry_remaining_then_renew_clears(stores):
         size_bytes=5 * 1024 ** 3,
     )
 
-    remaining_tokens = pro["query_cap"] - 300
+    remaining_tokens = pro_micros - 300
     remaining_storage = (pro["storage_limit_gb"] - 5) * 1024 ** 3
 
     changed = fulfill_plan(
@@ -114,7 +119,7 @@ def test_fulfill_plan_carry_remaining_then_renew_clears(stores):
     assert changed["subscription"]["plan_id"] == "foundation"
     assert changed["carryover"]["remaining_tokens"] == remaining_tokens
     assert changed["policy"]["default_token_limit"] == (
-        foundation["query_cap"] + remaining_tokens
+        foundation_micros + remaining_tokens
     )
     assert changed["policy"]["default_storage_bytes"] == (
         foundation["storage_limit_gb"] * 1024 ** 3 + remaining_storage
@@ -124,16 +129,69 @@ def test_fulfill_plan_carry_remaining_then_renew_clears(stores):
     assert usage["used_tokens"] == 300
 
     renewed = renew_package_period(org_id, actor="test")
-    assert renewed["token_limit"] == foundation["query_cap"]
+    assert renewed["token_limit"] == foundation_micros
     refreshed = orgs.get_org(org_id)
-    assert refreshed["default_token_limit"] == foundation["query_cap"]
+    assert refreshed["default_token_limit"] == foundation_micros
     assert refreshed["default_storage_bytes"] == (
         foundation["storage_limit_gb"] * 1024 ** 3
     )
     assert users.get_usage("owner@example.com")["used_tokens"] == 0
 
 
+def test_custom_assign_snapshot_survives_catalog_edit(stores):
+    """Per-company Custom overrides must not change when the global template edits."""
+    from src.ca_tokens import ca_to_micros
+    from src.stripe_billing import fulfill_plan, renew_package_period
+
+    users, orgs, commerce, _ops = stores
+    users.create_user(
+        username="owner@example.com",
+        password="password123",
+        display_name="Owner",
+        role="user",
+    )
+    org = orgs.create_org(
+        "Acme", created_by="owner@example.com", owner="owner@example.com",
+    )
+    org_id = org["org_id"]
+
+    fulfill_plan(
+        org_id,
+        "custom",
+        "admin",
+        amount_usd=400,
+        plan_overrides={
+            "api_credits_usd": 400,
+            "query_cap": 400,
+            "storage_limit_gb": 200,
+            "users_included": 10,
+        },
+    )
+    sub = commerce.get_subscription(org_id)
+    assert sub["assigned_plan"]["query_cap"] == 400
+    assert sub["assigned_plan"]["storage_limit_gb"] == 200
+
+    # Global Custom template changes for a later company — must not affect Acme.
+    commerce.update_plan(
+        "custom",
+        {
+            "api_credits_usd": 800,
+            "query_cap": 800,
+            "storage_limit_gb": 500,
+            "users_included": 40,
+        },
+    )
+    catalog = commerce.get_plan("custom")
+    assert catalog["query_cap"] == 800
+
+    renewed = renew_package_period(org_id, actor="test")
+    assert renewed["token_limit"] == ca_to_micros(400)
+    assert renewed["storage_limit_bytes"] == 200 * 1024 ** 3
+    assert commerce.get_subscription(org_id)["assigned_plan"]["query_cap"] == 400
+
+
 def test_fulfill_purchase_tokens_increments_limit(stores):
+    from src.ca_tokens import ca_to_micros
     from src.org_quota import resolve_org_token_limit
     from src.stripe_billing import fulfill_purchase
 
@@ -163,6 +221,6 @@ def test_fulfill_purchase_tokens_increments_limit(stores):
     after = resolve_org_token_limit(
         org["org_id"], orgs=orgs, commerce=commerce
     )
-    assert after == before + 1000
+    assert after == before + ca_to_micros(1000)
     owner = users.get_user("owner@example.com")
     assert int(owner["token_limit"]) == after

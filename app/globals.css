@@ -394,7 +394,7 @@
         @apply text-label-sm transition-colors hover:bg-weak-50/80;
     }
     .page-stack {
-        @apply space-y-8;
+        @apply flex flex-col gap-8 space-y-0;
     }
     .text-h3 {
         @apply font-inter-display;

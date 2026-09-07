@@ -207,6 +207,7 @@ const LiveCompanyBillingPage = () => {
             (plans.length ? plans : []).filter(
                 (entry) =>
                     entry.id !== "custom" &&
+                    entry.id !== "demo" &&
                     entry.id !== planId &&
                     PLAN_ORDER.includes(entry.id)
             ),

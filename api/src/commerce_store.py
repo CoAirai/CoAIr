@@ -37,7 +37,8 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
         "users_included": 3,
         "storage_limit_gb": 20,
         "api_credits_usd": 20,
-        "query_cap": 17,
+        # Free assign-only: $20 worth of CA at $1 cost = 20 CA (no customer payment).
+        "query_cap": 20,
         "modules": {
             "chatbot": dict(_CHATBOT),
             "chronology": dict(_TRIAL),
@@ -96,12 +97,15 @@ DEFAULT_TOKEN_ECONOMICS = {
 
 # Old Gemini-token package caps → CA whole-token caps (one-shot seed repair).
 _LEGACY_QUERY_CAP_TO_CA = {
-    376: 17,
+    376: 20,
     939: 42,
     1878: 83,
     3756: 167,
     7512: 333,
 }
+
+# Sentinel: omit assigned_plan on set_subscription to keep the existing snapshot.
+_UNSET = object()
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tickets (
@@ -155,7 +159,8 @@ CREATE TABLE IF NOT EXISTS org_subscriptions (
     status TEXT,
     cancel_at_period_end INTEGER,
     current_period_end TEXT,
-    auto_renew INTEGER
+    auto_renew INTEGER,
+    assigned_plan_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS stripe_fulfillments (
@@ -201,6 +206,81 @@ def plan_org_defaults(plan_id: str) -> Dict[str, Any]:
         "default_credits": float(plan.get("api_credits_usd") or 0),
         "default_storage_bytes": gb_to_bytes(storage_gb),
     }
+
+
+def merge_plan_overrides(
+    plan: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Return a plan copy with optional per-company limit overrides."""
+    merged = dict(plan or {})
+    if not overrides:
+        return merged
+    if overrides.get("name") is not None:
+        merged["name"] = str(overrides["name"]).strip() or merged.get("name")
+    if overrides.get("api_credits_usd") is not None:
+        merged["api_credits_usd"] = float(overrides["api_credits_usd"])
+    if overrides.get("query_cap") is not None:
+        merged["query_cap"] = int(overrides["query_cap"])
+    if overrides.get("storage_limit_gb") is not None:
+        merged["storage_limit_gb"] = int(overrides["storage_limit_gb"])
+    if overrides.get("users_included") is not None:
+        merged["users_included"] = int(overrides["users_included"])
+    if overrides.get("modules") is not None and isinstance(
+        overrides["modules"], dict
+    ):
+        merged["modules"] = _merge_modules(
+            merged.get("modules") or {}, overrides["modules"]
+        )
+    return merged
+
+
+def snapshot_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize a plan blob stored on the subscription for renewals."""
+    modules = plan.get("modules") or {}
+    return {
+        "id": plan.get("id"),
+        "name": plan.get("name"),
+        "price_label": plan.get("price_label") or plan.get("name"),
+        "users_included": int(plan.get("users_included") or 0),
+        "storage_limit_gb": int(plan.get("storage_limit_gb") or 0),
+        "api_credits_usd": float(plan.get("api_credits_usd") or 0),
+        "query_cap": int(plan.get("query_cap") or 0),
+        "modules": {
+            key: dict(value)
+            for key, value in modules.items()
+            if key in MODULE_IDS and isinstance(value, dict)
+        },
+    }
+
+
+def resolve_subscription_plan(
+    commerce: "CommerceStore",
+    org_id: str,
+    *,
+    plan_id: Optional[str] = None,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Prefer the org's assigned snapshot; fall back to the live catalog."""
+    sub = commerce.get_subscription(org_id) or {}
+    assigned = sub.get("assigned_plan")
+    if (
+        isinstance(assigned, dict)
+        and assigned.get("id")
+        and (plan_id is None or assigned.get("id") == plan_id)
+        and overrides is None
+    ):
+        return dict(assigned)
+    pid = (plan_id or "").strip()
+    if not pid:
+        pid = str(sub.get("plan_id") or "").strip()
+    if not pid and isinstance(assigned, dict):
+        pid = str(assigned.get("id") or "").strip()
+    if not pid:
+        pid = "demo"
+    catalog = commerce.get_plan(pid) or _plan_seed(pid)
+    if not catalog:
+        raise ValueError("plan_not_found")
+    return merge_plan_overrides(catalog, overrides)
 
 
 def org_type_catalog_plan(org_plan_type: str) -> Optional[str]:
@@ -307,6 +387,7 @@ class CommerceStore:
             ("cancel_at_period_end", "INTEGER"),
             ("current_period_end", "TEXT"),
             ("auto_renew", "INTEGER"),
+            ("assigned_plan_json", "TEXT"),
         ]
         for name, col_type in alterations:
             if name not in cols:
@@ -363,6 +444,13 @@ class CommerceStore:
             old_cap = int(payload.get("query_cap") or 0)
             if old_cap in _LEGACY_QUERY_CAP_TO_CA:
                 payload["query_cap"] = _LEGACY_QUERY_CAP_TO_CA[old_cap]
+                conn.execute(
+                    "UPDATE packages SET payload_json=?, updated_at=? WHERE plan_id=?",
+                    [_json(payload), now, plan["id"]],
+                )
+            # Demo moved from sell-rate 17 CA → $20 cost-value 20 CA.
+            elif plan["id"] == "demo" and old_cap == 17:
+                payload["query_cap"] = 20
                 conn.execute(
                     "UPDATE packages SET payload_json=?, updated_at=? WHERE plan_id=?",
                     [_json(payload), now, plan["id"]],
@@ -644,6 +732,7 @@ class CommerceStore:
                 "cancel_at_period_end": False,
                 "current_period_end": None,
                 "auto_renew": False,
+                "assigned_plan": None,
             }
         cancel_at = bool(row["cancel_at_period_end"] or 0)
         auto_renew = row["auto_renew"]
@@ -654,6 +743,19 @@ class CommerceStore:
         status = (row["status"] or "").strip() or (
             "active" if not bool(row["needs_checkout"]) else "incomplete"
         )
+        assigned_raw = None
+        try:
+            assigned_raw = row["assigned_plan_json"]
+        except (KeyError, IndexError, TypeError):
+            assigned_raw = None
+        assigned_plan = None
+        if assigned_raw:
+            try:
+                parsed = json.loads(assigned_raw)
+                if isinstance(parsed, dict):
+                    assigned_plan = parsed
+            except Exception:
+                assigned_plan = None
         return {
             "plan_id": row["plan_id"],
             "needs_checkout": bool(row["needs_checkout"]),
@@ -664,6 +766,7 @@ class CommerceStore:
             "cancel_at_period_end": cancel_at,
             "current_period_end": row["current_period_end"],
             "auto_renew": auto_renew,
+            "assigned_plan": assigned_plan,
         }
 
     def set_subscription(
@@ -679,6 +782,7 @@ class CommerceStore:
         cancel_at_period_end: Optional[bool] = None,
         current_period_end: Optional[str] = None,
         auto_renew: Optional[bool] = None,
+        assigned_plan: Any = _UNSET,
     ) -> Dict[str, Any]:
         if plan_id not in PLAN_IDS:
             raise ValueError("plan_not_found")
@@ -710,13 +814,23 @@ class CommerceStore:
             if current_period_end is None
             else current_period_end
         )
+        if assigned_plan is _UNSET:
+            next_assigned = current.get("assigned_plan")
+        elif assigned_plan is None:
+            next_assigned = None
+        elif isinstance(assigned_plan, dict):
+            next_assigned = snapshot_plan(assigned_plan)
+        else:
+            raise ValueError("invalid_assigned_plan")
+        assigned_json = _json(next_assigned) if next_assigned else None
         with self._write_lock, self._connect() as conn:
             conn.execute(
                 "INSERT INTO org_subscriptions ("
                 "org_id, plan_id, needs_checkout, sell_tokens_per_usd_override, "
                 "updated_at, stripe_customer_id, stripe_subscription_id, status, "
-                "cancel_at_period_end, current_period_end, auto_renew"
-                ") VALUES (?,?,?,?,?,?,?,?,?,?,?) "
+                "cancel_at_period_end, current_period_end, auto_renew, "
+                "assigned_plan_json"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(org_id) DO UPDATE SET "
                 "plan_id=excluded.plan_id, "
                 "needs_checkout=excluded.needs_checkout, "
@@ -727,7 +841,8 @@ class CommerceStore:
                 "status=excluded.status, "
                 "cancel_at_period_end=excluded.cancel_at_period_end, "
                 "current_period_end=excluded.current_period_end, "
-                "auto_renew=excluded.auto_renew",
+                "auto_renew=excluded.auto_renew, "
+                "assigned_plan_json=excluded.assigned_plan_json",
                 [
                     org_id,
                     plan_id,
@@ -744,6 +859,7 @@ class CommerceStore:
                     1 if next_cancel else 0,
                     next_period_end,
                     1 if next_auto else 0,
+                    assigned_json,
                 ],
             )
         return self.get_subscription(org_id)
