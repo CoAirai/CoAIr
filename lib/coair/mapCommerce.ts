@@ -45,6 +45,8 @@ export type CoairAccessRequestPayload = {
 };
 
 export type CoairTokenEconomicsPayload = {
+    usd_per_ca_cost?: number;
+    usd_per_ca_sell?: number;
     provider_tokens_per_usd: number;
     sell_tokens_per_usd: number;
     updated_at: string;
@@ -108,9 +110,15 @@ export function mapAccessRequest(
 export function mapTokenEconomics(
     payload: CoairTokenEconomicsPayload
 ): TokenEconomics {
+    const cost =
+        payload.usd_per_ca_cost ?? payload.provider_tokens_per_usd ?? 1;
+    const sell =
+        payload.usd_per_ca_sell ?? payload.sell_tokens_per_usd ?? 1.2;
     return {
-        providerTokensPerUsd: payload.provider_tokens_per_usd,
-        sellTokensPerUsd: payload.sell_tokens_per_usd,
+        usdPerCaCost: cost,
+        usdPerCaSell: sell,
+        providerTokensPerUsd: cost,
+        sellTokensPerUsd: sell,
         updatedAt: payload.updated_at,
         updatedBy: payload.updated_by,
     };

@@ -90,7 +90,7 @@ export async function readTokenEconomics(token: string) {
 
 export async function writeTokenEconomics(
     token: string,
-    input: { providerTokensPerUsd: number; sellTokensPerUsd: number }
+    input: { usdPerCaCost: number; usdPerCaSell: number }
 ) {
     const payload = await coairFetch<CoairTokenEconomicsPayload>(
         "/admin/token-economics",
@@ -98,8 +98,8 @@ export async function writeTokenEconomics(
             method: "PUT",
             token,
             body: {
-                provider_tokens_per_usd: input.providerTokensPerUsd,
-                sell_tokens_per_usd: input.sellTokensPerUsd,
+                usd_per_ca_cost: input.usdPerCaCost,
+                usd_per_ca_sell: input.usdPerCaSell,
             },
         }
     );

@@ -10,7 +10,8 @@ from src.org_store import OrgStore, get_org_store
 from src.user_store import UserStore, get_user_store
 
 # Historical create_user / create_org fallback — not a real package cap.
-LEGACY_DEFAULT_TOKEN_LIMIT = 1_000_000
+# (Previously 1_000_000 Gemini tokens; CA balances use micros so 1e6 == 1 CA.)
+LEGACY_DEFAULT_TOKEN_LIMIT = 0
 
 
 def resolve_org_token_limit(
@@ -19,6 +20,8 @@ def resolve_org_token_limit(
     orgs: Optional[OrgStore] = None,
     commerce: Optional[CommerceStore] = None,
 ) -> int:
+    from src.ca_tokens import ca_to_micros
+
     orgs = orgs or get_org_store()
     commerce = commerce or get_commerce_store()
     org = orgs.get_org(org_id) or {}
@@ -30,17 +33,16 @@ def resolve_org_token_limit(
         plan_id = str(sub.get("plan_id") or "")
         if plan_id:
             plan = commerce.get_plan(plan_id) or {}
-            plan_cap = int(plan.get("query_cap") or 0)
+            # query_cap is whole CA tokens; pool limits are CA micros.
+            plan_cap = ca_to_micros(int(plan.get("query_cap") or 0))
     except Exception:
         plan_cap = 0
 
-    if plan_cap > 0 and (
-        org_limit <= 0 or org_limit == LEGACY_DEFAULT_TOKEN_LIMIT
-    ):
+    if plan_cap > 0 and org_limit <= 0:
         return plan_cap
     if org_limit > 0:
         return org_limit
-    return plan_cap or LEGACY_DEFAULT_TOKEN_LIMIT
+    return plan_cap
 
 
 def sync_org_member_quotas(

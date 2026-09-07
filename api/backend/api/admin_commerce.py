@@ -35,8 +35,11 @@ class PackagePatch(BaseModel):
 
 
 class TokenEconomicsUpdate(BaseModel):
-    provider_tokens_per_usd: float = Field(gt=0)
-    sell_tokens_per_usd: float = Field(gt=0)
+    usd_per_ca_cost: Optional[float] = Field(default=None, gt=0)
+    usd_per_ca_sell: Optional[float] = Field(default=None, gt=0)
+    # Legacy field names accepted during transition.
+    provider_tokens_per_usd: Optional[float] = Field(default=None, gt=0)
+    sell_tokens_per_usd: Optional[float] = Field(default=None, gt=0)
 
 
 @router.get("/admin/tickets")
@@ -106,6 +109,8 @@ async def write_token_economics(
 ):
     try:
         return store.update_token_economics(
+            usd_per_ca_cost=req.usd_per_ca_cost,
+            usd_per_ca_sell=req.usd_per_ca_sell,
             provider_tokens_per_usd=req.provider_tokens_per_usd,
             sell_tokens_per_usd=req.sell_tokens_per_usd,
             updated_by=admin.username,

@@ -14,7 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
 import type { Plan, PlanId } from "@/lib/admin/types";
 import type { Invoice } from "@/lib/admin/billingTypes";
-import { chargeUsdForTokens } from "@/lib/billing/tokenEconomics";
+import { chargeUsdForCa, formatCa, microsToCa } from "@/lib/billing/tokenEconomics";
 import {
     apiErrorMessage,
     cancelOrgSubscription,
@@ -191,14 +191,14 @@ const LiveCompanyBillingPage = () => {
         org?.subscription?.sell_tokens_per_usd_override &&
         org.subscription.sell_tokens_per_usd_override > 0
             ? org.subscription.sell_tokens_per_usd_override
-            : 80;
+            : 1.2;
     const tokenLimit = me?.token_limit ?? 0;
     const tokensUsed = me?.used_tokens ?? 0;
     const storageLimitGb = bytesToGb(me?.storage_limit_bytes);
     const storageUsedGb = bytesToGb(me?.storage_used_bytes);
 
     const tokenAmount = Math.max(0, Math.floor(Number(tokenAmountInput) || 0));
-    const tokenPriceUsd = chargeUsdForTokens(tokenAmount, sellRate);
+    const tokenPriceUsd = chargeUsdForCa(tokenAmount, sellRate);
     const storageGb = Math.max(0, Math.floor(Number(storageGbInput) || 0));
     const storagePriceUsd = storageGb * STORAGE_USD_PER_GB;
 
@@ -280,7 +280,7 @@ const LiveCompanyBillingPage = () => {
                         : "Upgrade"
               } to ${checkout.planName}`
             : checkout?.kind === "tokens"
-              ? "Buy extra tokens"
+              ? "Buy extra CA tokens"
               : checkout?.kind === "storage"
                 ? "Buy extra storage"
                 : "";
@@ -347,9 +347,9 @@ const LiveCompanyBillingPage = () => {
                         hint={plan?.priceLabel ?? "—"}
                     />
                     <StatCard
-                        label="Token limit"
-                        value={numberFormatter.format(tokenLimit)}
-                        hint={`${numberFormatter.format(tokensUsed)} used`}
+                        label="CA token limit"
+                        value={formatCa(tokenLimit)}
+                        hint={`${formatCa(tokensUsed)} used`}
                     />
                     <StatCard
                         label="Storage limit"
@@ -376,9 +376,9 @@ const LiveCompanyBillingPage = () => {
                 </div>
                 <div className="mt-5 grid gap-5 lg:grid-cols-2">
                     <QuotaBar
-                        label="Tokens"
-                        used={tokensUsed}
-                        limit={tokenLimit || 1}
+                        label="CA tokens"
+                        used={microsToCa(tokensUsed)}
+                        limit={microsToCa(tokenLimit) || 1}
                     />
                     <QuotaBar
                         label="Storage"
@@ -522,15 +522,15 @@ const LiveCompanyBillingPage = () => {
             <div className="grid gap-6 xl:grid-cols-2">
                 <section className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">
-                        Extra tokens
+                        Extra CA tokens
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
-                        Enter the tokens you need. Priced at {sellRate} tokens
-                        per $1.
+                        Enter the CA tokens you need. Priced at $
+                        {sellRate} per CA.
                     </p>
                     <label className="mt-4 block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
-                            Tokens needed
+                            CA tokens needed
                         </span>
                         <input
                             type="number"
@@ -541,7 +541,7 @@ const LiveCompanyBillingPage = () => {
                                 setTokenAmountInput(event.target.value)
                             }
                             className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                            placeholder="e.g. 8000"
+                            placeholder="e.g. 50"
                         />
                     </label>
                     <p className="mt-3 text-label-sm text-strong-950">
@@ -558,7 +558,7 @@ const LiveCompanyBillingPage = () => {
                                 kind: "tokens",
                                 amount: tokenAmount,
                                 priceUsd: tokenPriceUsd,
-                                label: `${numberFormatter.format(tokenAmount)} tokens`,
+                                label: `${numberFormatter.format(tokenAmount)} CA tokens`,
                             })
                         }
                         className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"

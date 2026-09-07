@@ -137,7 +137,7 @@ const LivePackagesPage = () => {
                                     }
                                 />
                                 <NumberField
-                                    label="Token / query cap"
+                                    label="CA token allowance"
                                     value={plan.queryCap}
                                     onChange={(value) =>
                                         patch(plan, { queryCap: value })

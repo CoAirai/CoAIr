@@ -74,17 +74,21 @@ describe("mapAccessRequest", () => {
 });
 
 describe("mapTokenEconomics", () => {
-    it("maps sell-rate fields", () => {
+    it("maps USD-per-CA fields", () => {
         expect(
             mapTokenEconomics({
-                provider_tokens_per_usd: 120,
-                sell_tokens_per_usd: 90,
+                usd_per_ca_cost: 1,
+                usd_per_ca_sell: 1.2,
+                provider_tokens_per_usd: 1,
+                sell_tokens_per_usd: 1.2,
                 updated_at: "2026-08-14T08:00:00+00:00",
                 updated_by: "ops",
             })
         ).toEqual({
-            providerTokensPerUsd: 120,
-            sellTokensPerUsd: 90,
+            usdPerCaCost: 1,
+            usdPerCaSell: 1.2,
+            providerTokensPerUsd: 1,
+            sellTokensPerUsd: 1.2,
             updatedAt: "2026-08-14T08:00:00+00:00",
             updatedBy: "ops",
         });

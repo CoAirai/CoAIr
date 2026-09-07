@@ -1,34 +1,55 @@
 import { describe, expect, it } from "vitest";
 import {
-  chargeUsdForTokens,
+  CA_MICROS,
+  caFromProviderUsd,
+  caToMicros,
+  chargeUsdForCa,
   effectiveSellRate,
-  marginForTokens,
-  overageUsdPer1kTokens,
+  isNegativeMargin,
+  marginForCa,
+  microsToCa,
+  overageUsdPerCa,
+  providerCostUsdForCa,
 } from "./tokenEconomics";
 
-describe("tokenEconomics", () => {
-  it("charges from sell rate", () => {
-    expect(chargeUsdForTokens(8000, 80)).toBe(100);
+describe("CA tokenEconomics", () => {
+  it("charges from sell USD per CA", () => {
+    expect(chargeUsdForCa(100, 1.2)).toBe(120);
   });
 
-  it("computes margin", () => {
-    const m = marginForTokens(8000, 100, 80);
-    expect(m.chargeUsd).toBe(100);
-    expect(m.providerCostUsd).toBe(80);
+  it("maps provider USD 1:1 to CA at cost rate 1", () => {
+    expect(caFromProviderUsd(0.05, 1)).toBeCloseTo(0.05);
+  });
+
+  it("computes margin at $1 cost / $1.20 sell", () => {
+    const m = marginForCa(100, 1, 1.2);
+    expect(m.chargeUsd).toBe(120);
+    expect(m.providerCostUsd).toBe(100);
     expect(m.marginUsd).toBe(20);
-    expect(m.marginPct).toBeCloseTo(0.2);
+    expect(m.marginPct).toBeCloseTo(20 / 120);
   });
 
-  it("derives overage per 1k", () => {
-    expect(overageUsdPer1kTokens(80)).toBe(12.5);
+  it("derives overage per CA", () => {
+    expect(overageUsdPerCa(1.2)).toBe(1.2);
+  });
+
+  it("flags sell below cost", () => {
+    expect(isNegativeMargin(1.2, 1)).toBe(true);
+    expect(isNegativeMargin(1, 1.2)).toBe(false);
+  });
+
+  it("converts micros", () => {
+    expect(caToMicros(42)).toBe(42 * CA_MICROS);
+    expect(microsToCa(42 * CA_MICROS)).toBe(42);
   });
 
   it("uses company override for effective sell rate", () => {
     expect(
-      effectiveSellRate(
-        { providerTokensPerUsd: 100, sellTokensPerUsd: 80 },
-        90
-      )
-    ).toBe(90);
+      effectiveSellRate({ usdPerCaCost: 1, usdPerCaSell: 1.2 }, 1.5)
+    ).toBe(1.5);
+  });
+
+  it("provider cost helper", () => {
+    expect(providerCostUsdForCa(10, 1)).toBe(10);
   });
 });

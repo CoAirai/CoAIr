@@ -640,26 +640,29 @@ def _credit_topup(
     owner = next((member for member in members if member["role"] == "owner"), None)
     if not owner:
         raise HTTPException(409, "org_has_no_owner")
+    from src.ca_tokens import ca_to_charge_usd, ca_to_micros
+
+    ca_amount = float(request["tokens_requested"] or 0)
     credits = float(request["amount_usd"] or 0)
     if credits <= 0:
-        credits = max(int(request["tokens_requested"]) / 1000, 0.01)
+        credits = max(ca_to_charge_usd(ca_amount), 0.01)
     users.billing.adjust_credits(
         owner["username"],
         credits,
-        f"Approved top-up {request['id']}: {request['tokens_requested']} tokens",
+        f"Approved top-up {request['id']}: {ca_amount} CA tokens",
         idempotency_key=f"topup:{request['id']}",
     )
     record = users.get_user(owner["username"])
     if record:
         users.update_user(
             owner["username"],
-            token_limit=int(record["token_limit"]) + int(request["tokens_requested"]),
+            token_limit=int(record["token_limit"]) + ca_to_micros(ca_amount),
         )
     ops.create_invoice(
         request["company_id"],
         amount_usd=float(request["amount_usd"] or credits),
         status="paid",
-        description=f"Token top-up {request['tokens_requested']}",
+        description=f"CA token top-up {ca_amount}",
     )
 
 

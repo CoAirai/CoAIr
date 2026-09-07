@@ -60,7 +60,26 @@ def billing_usage_series(weeks: int = Query(8, ge=1, le=52)) -> dict:
     return get_billing_store().usage_series(weeks=weeks)
 
 
-@router.get("/admin/usage/series")
-def billing_usage_series(weeks: int = Query(8, ge=1, le=52)) -> dict:
-    """Weekly spend / calls / tokens for Super Admin analytics."""
-    return get_billing_store().usage_series(weeks=weeks)
+@router.get("/admin/queries")
+def billing_queries(
+    username: str = Query(""),
+    org_id: str = Query(""),
+    date_from: str = Query(""),
+    date_to: str = Query(""),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """Per-call rows: CA tokens used + Gemini input/output for Super Admin."""
+    org_usernames: list[str] = []
+    if org_id.strip() and not username.strip():
+        from src.org_store import get_org_store
+
+        org_usernames = get_org_store().list_usernames(org_id.strip())
+    return get_billing_store().list_queries(
+        username=username.strip(),
+        org_usernames=org_usernames,
+        since=date_from.strip(),
+        until=date_to.strip(),
+        limit=limit,
+        offset=offset,
+    )

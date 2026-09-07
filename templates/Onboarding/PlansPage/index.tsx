@@ -79,7 +79,8 @@ const PlansPage = () => {
                                 <li>{plan.usersIncluded} users included</li>
                                 <li>{plan.storageLimitGb} GB workspace</li>
                                 <li>
-                                    {plan.queryCap.toLocaleString()} queries /
+                                    {plan.queryCap.toLocaleString()} CA tokens /
+
                                     tokens
                                 </li>
                                 <li>${plan.apiCreditsUsd} API credits</li>

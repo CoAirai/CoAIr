@@ -46,7 +46,8 @@ const GROUPS: NavGroup[] = [
         label: "Usage",
         icon: "flash",
         items: [
-            { href: "/admin/tokens", label: "Tokens", icon: "flash" },
+            { href: "/admin/tokens", label: "CA tokens", icon: "flash" },
+            { href: "/admin/queries", label: "Queries", icon: "chat" },
             { href: "/admin/storage", label: "Storage", icon: "database" },
             { href: "/admin/models", label: "Models", icon: "build" },
         ],

@@ -21,8 +21,11 @@ import {
 } from "@/lib/admin/companyDocuments";
 import { consumeUserTokens as consumeUserTokenRecord } from "@/lib/admin/consumeUserTokens";
 import {
+    caToMicros,
+    chargeUsdForCa,
     chargeUsdForTokens,
     effectiveSellRate,
+    marginForCa,
     marginForTokens,
 } from "@/lib/billing/tokenEconomics";
 import { applyCheckout } from "@/lib/billing/checkout";
@@ -119,8 +122,8 @@ type AdminDataContextValue = {
     topUpRequests: TopUpRequest[];
 
     updateTokenEconomics: (input: {
-        providerTokensPerUsd: number;
-        sellTokensPerUsd: number;
+        usdPerCaCost: number;
+        usdPerCaSell: number;
     }) => { ok: boolean; error?: string };
     setCompanySellRateOverride: (
         companyId: string,
@@ -315,8 +318,10 @@ const ACCESS_REQUESTS_KEY = "coair.accessRequests";
 const TOKEN_ECONOMICS_KEY = "coair.tokenEconomics";
 
 const DEFAULT_TOKEN_ECONOMICS: TokenEconomics = {
-    providerTokensPerUsd: 100,
-    sellTokensPerUsd: 80,
+    usdPerCaCost: 1,
+    usdPerCaSell: 1.2,
+    providerTokensPerUsd: 1,
+    sellTokensPerUsd: 1.2,
     updatedAt: new Date().toISOString(),
     updatedBy: "system",
 };
@@ -331,12 +336,21 @@ function loadTokenEconomics(): TokenEconomics {
             return { ...DEFAULT_TOKEN_ECONOMICS };
         }
         const parsed = JSON.parse(raw) as TokenEconomics;
-        if (
-            parsed &&
-            parsed.providerTokensPerUsd > 0 &&
-            parsed.sellTokensPerUsd > 0
-        ) {
-            return parsed;
+        const cost = parsed.usdPerCaCost || parsed.providerTokensPerUsd;
+        const sell = parsed.usdPerCaSell || parsed.sellTokensPerUsd;
+        if (parsed && cost > 0 && sell > 0) {
+            // Migrate stale tokens-per-$1 cache into USD-per-CA defaults.
+            if (cost >= 10) {
+                return { ...DEFAULT_TOKEN_ECONOMICS };
+            }
+            return {
+                ...DEFAULT_TOKEN_ECONOMICS,
+                ...parsed,
+                usdPerCaCost: cost,
+                usdPerCaSell: sell,
+                providerTokensPerUsd: cost,
+                sellTokensPerUsd: sell,
+            };
         }
         return { ...DEFAULT_TOKEN_ECONOMICS };
     } catch {
@@ -566,7 +580,7 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
                 usersCount: 1,
                 storageLimitGb: plan.storageLimitGb,
                 storageUsedGb: 0,
-                tokenLimit: plan.queryCap,
+                tokenLimit: caToMicros(plan.queryCap),
                 tokensUsed: 0,
                 createdAt: today(),
                 addOns: [],
@@ -789,12 +803,15 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
                               ...c,
                               planId,
                               storageLimitGb: plan.storageLimitGb,
-                              tokenLimit: plan.queryCap,
+                              tokenLimit: caToMicros(plan.queryCap),
                               storageUsedGb: Math.min(
                                   c.storageUsedGb,
                                   plan.storageLimitGb
                               ),
-                              tokensUsed: Math.min(c.tokensUsed, plan.queryCap),
+                              tokensUsed: Math.min(
+                                  c.tokensUsed,
+                                  caToMicros(plan.queryCap)
+                              ),
                           }
                         : c
                 )
@@ -1069,20 +1086,25 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
     );
 
     const updateTokenEconomics = useCallback(
-        (input: { providerTokensPerUsd: number; sellTokensPerUsd: number }) => {
+        (input: { usdPerCaCost: number; usdPerCaSell: number }) => {
             if (
-                !Number.isFinite(input.providerTokensPerUsd) ||
-                !Number.isFinite(input.sellTokensPerUsd) ||
-                input.providerTokensPerUsd <= 0 ||
-                input.sellTokensPerUsd <= 0
+                !Number.isFinite(input.usdPerCaCost) ||
+                !Number.isFinite(input.usdPerCaSell) ||
+                input.usdPerCaCost <= 0 ||
+                input.usdPerCaSell <= 0
             ) {
                 return { ok: false, error: "Rates must be greater than zero" };
+            }
+            if (input.usdPerCaSell < input.usdPerCaCost) {
+                return { ok: false, error: "Sell rate cannot be below cost" };
             }
 
             const previous = tokenEconomics;
             const next: TokenEconomics = {
-                providerTokensPerUsd: input.providerTokensPerUsd,
-                sellTokensPerUsd: input.sellTokensPerUsd,
+                usdPerCaCost: input.usdPerCaCost,
+                usdPerCaSell: input.usdPerCaSell,
+                providerTokensPerUsd: input.usdPerCaCost,
+                sellTokensPerUsd: input.usdPerCaSell,
                 updatedAt: new Date().toISOString(),
                 updatedBy: "Super Admin",
             };
@@ -1091,8 +1113,8 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
                 action: "tokens.rates_update",
                 targetType: "company",
                 targetId: "platform",
-                targetLabel: "Token rates",
-                detail: `Provider ${previous.providerTokensPerUsd}→${next.providerTokensPerUsd} tokens/$1; sell ${previous.sellTokensPerUsd}→${next.sellTokensPerUsd} tokens/$1`,
+                targetLabel: "CA token rates",
+                detail: `Cost $${previous.usdPerCaCost}→$${next.usdPerCaCost}/CA; sell $${previous.usdPerCaSell}→$${next.usdPerCaSell}/CA`,
             });
             return { ok: true };
         },
@@ -1158,12 +1180,12 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
                 tokenEconomics,
                 company.sellTokensPerUsdOverride
             );
-            const pricing = marginForTokens(
+            const pricing = marginForCa(
                 request.tokensRequested,
-                tokenEconomics.providerTokensPerUsd,
+                tokenEconomics.usdPerCaCost,
                 sellRate
             );
-            const amountUsd = chargeUsdForTokens(
+            const amountUsd = chargeUsdForCa(
                 request.tokensRequested,
                 sellRate
             );
@@ -1184,7 +1206,8 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
                             ? {
                                   ...entry,
                                   tokenLimit:
-                                      entry.tokenLimit + request.tokensRequested,
+                                      entry.tokenLimit +
+                                      caToMicros(request.tokensRequested),
                               }
                             : entry
                     )
@@ -1199,7 +1222,7 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
                 targetType: "company",
                 targetId: company.id,
                 targetLabel: company.name,
-                detail: `${status === "approved" ? "Approved" : "Denied"} ${request.tokensRequested.toLocaleString()} tokens — charge $${pricing.chargeUsd.toFixed(2)}, cost $${pricing.providerCostUsd.toFixed(2)}, margin $${pricing.marginUsd.toFixed(2)}`,
+                detail: `${status === "approved" ? "Approved" : "Denied"} ${request.tokensRequested.toLocaleString()} CA tokens — charge $${pricing.chargeUsd.toFixed(2)}, cost $${pricing.providerCostUsd.toFixed(2)}, margin $${pricing.marginUsd.toFixed(2)}`,
             });
 
             return { ok: true };

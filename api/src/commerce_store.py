@@ -28,6 +28,7 @@ _ADDON = {"access": "addon"}
 _TRIAL = {"access": "trial", "trial_reports": 1}
 _PAID = {"chatbot": dict(_CHATBOT), "chronology": dict(_ADDON), "forensic": dict(_ADDON)}
 
+# query_cap = whole CA tokens included (price / sell rate at $1.20).
 DEFAULT_PLANS: List[Dict[str, Any]] = [
     {
         "id": "demo",
@@ -36,7 +37,7 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
         "users_included": 3,
         "storage_limit_gb": 20,
         "api_credits_usd": 20,
-        "query_cap": 376,
+        "query_cap": 17,
         "modules": {
             "chatbot": dict(_CHATBOT),
             "chronology": dict(_TRIAL),
@@ -50,7 +51,7 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
         "users_included": 5,
         "storage_limit_gb": 20,
         "api_credits_usd": 50,
-        "query_cap": 939,
+        "query_cap": 42,
         "modules": {key: dict(value) for key, value in _PAID.items()},
     },
     {
@@ -60,7 +61,7 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
         "users_included": 10,
         "storage_limit_gb": 80,
         "api_credits_usd": 100,
-        "query_cap": 1878,
+        "query_cap": 83,
         "modules": {key: dict(value) for key, value in _PAID.items()},
     },
     {
@@ -70,7 +71,7 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
         "users_included": 15,
         "storage_limit_gb": 150,
         "api_credits_usd": 200,
-        "query_cap": 3756,
+        "query_cap": 167,
         "modules": {key: dict(value) for key, value in _PAID.items()},
     },
     {
@@ -80,15 +81,26 @@ DEFAULT_PLANS: List[Dict[str, Any]] = [
         "users_included": 25,
         "storage_limit_gb": 300,
         "api_credits_usd": 400,
-        "query_cap": 7512,
+        "query_cap": 333,
         "modules": {key: dict(value) for key, value in _PAID.items()},
     },
 ]
 
+# Stored in token_economics columns provider_tokens_per_usd / sell_tokens_per_usd
+# (legacy column names) as USD-per-CA cost and sell rates.
 DEFAULT_TOKEN_ECONOMICS = {
-    "provider_tokens_per_usd": 100,
-    "sell_tokens_per_usd": 80,
+    "usd_per_ca_cost": 1.0,
+    "usd_per_ca_sell": 1.2,
     "updated_by": "system",
+}
+
+# Old Gemini-token package caps → CA whole-token caps (one-shot seed repair).
+_LEGACY_QUERY_CAP_TO_CA = {
+    376: 17,
+    939: 42,
+    1878: 83,
+    3756: 167,
+    7512: 333,
 }
 
 _SCHEMA = """
@@ -315,12 +327,46 @@ class CommerceStore:
             "(id, provider_tokens_per_usd, sell_tokens_per_usd, updated_at, updated_by) "
             "VALUES (1,?,?,?,?)",
             [
-                DEFAULT_TOKEN_ECONOMICS["provider_tokens_per_usd"],
-                DEFAULT_TOKEN_ECONOMICS["sell_tokens_per_usd"],
+                DEFAULT_TOKEN_ECONOMICS["usd_per_ca_cost"],
+                DEFAULT_TOKEN_ECONOMICS["usd_per_ca_sell"],
                 now,
                 DEFAULT_TOKEN_ECONOMICS["updated_by"],
             ],
         )
+        self._migrate_ca_token_defaults(conn, now)
+
+    def _migrate_ca_token_defaults(self, conn, now: str) -> None:
+        """Flip legacy tokens-per-$1 rates and Gemini query caps to CA defaults."""
+        row = conn.execute("SELECT * FROM token_economics WHERE id=1").fetchone()
+        if row and float(row["provider_tokens_per_usd"] or 0) >= 10:
+            conn.execute(
+                "UPDATE token_economics SET provider_tokens_per_usd=?, "
+                "sell_tokens_per_usd=?, updated_at=?, updated_by=? WHERE id=1",
+                [
+                    DEFAULT_TOKEN_ECONOMICS["usd_per_ca_cost"],
+                    DEFAULT_TOKEN_ECONOMICS["usd_per_ca_sell"],
+                    now,
+                    "ca-token-migration",
+                ],
+            )
+        for plan in DEFAULT_PLANS:
+            existing = conn.execute(
+                "SELECT payload_json FROM packages WHERE plan_id=?",
+                [plan["id"]],
+            ).fetchone()
+            if not existing:
+                continue
+            try:
+                payload = json.loads(existing["payload_json"])
+            except Exception:
+                continue
+            old_cap = int(payload.get("query_cap") or 0)
+            if old_cap in _LEGACY_QUERY_CAP_TO_CA:
+                payload["query_cap"] = _LEGACY_QUERY_CAP_TO_CA[old_cap]
+                conn.execute(
+                    "UPDATE packages SET payload_json=?, updated_at=? WHERE plan_id=?",
+                    [_json(payload), now, plan["id"]],
+                )
 
     # ── Tickets ─────────────────────────────────────────────
 
@@ -460,9 +506,14 @@ class CommerceStore:
     def get_token_economics(self) -> Dict[str, Any]:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM token_economics WHERE id=1").fetchone()
+        cost = float(row["provider_tokens_per_usd"])
+        sell = float(row["sell_tokens_per_usd"])
         return {
-            "provider_tokens_per_usd": float(row["provider_tokens_per_usd"]),
-            "sell_tokens_per_usd": float(row["sell_tokens_per_usd"]),
+            "usd_per_ca_cost": cost,
+            "usd_per_ca_sell": sell,
+            # Legacy aliases (same values — columns reused for USD-per-CA).
+            "provider_tokens_per_usd": cost,
+            "sell_tokens_per_usd": sell,
             "updated_at": row["updated_at"],
             "updated_by": row["updated_by"],
         }
@@ -470,19 +521,32 @@ class CommerceStore:
     def update_token_economics(
         self,
         *,
-        provider_tokens_per_usd: float,
-        sell_tokens_per_usd: float,
         updated_by: str,
+        usd_per_ca_cost: Optional[float] = None,
+        usd_per_ca_sell: Optional[float] = None,
+        provider_tokens_per_usd: Optional[float] = None,
+        sell_tokens_per_usd: Optional[float] = None,
     ) -> Dict[str, Any]:
-        if provider_tokens_per_usd <= 0 or sell_tokens_per_usd <= 0:
+        cost = (
+            usd_per_ca_cost
+            if usd_per_ca_cost is not None
+            else provider_tokens_per_usd
+        )
+        sell = (
+            usd_per_ca_sell
+            if usd_per_ca_sell is not None
+            else sell_tokens_per_usd
+        )
+        if cost is None or sell is None or cost <= 0 or sell <= 0:
             raise ValueError("invalid_token_rate")
+        if sell < cost:
+            raise ValueError("sell_below_cost")
         now = _now()
         with self._write_lock, self._connect() as conn:
             conn.execute(
                 "UPDATE token_economics SET provider_tokens_per_usd=?, "
                 "sell_tokens_per_usd=?, updated_at=?, updated_by=? WHERE id=1",
-                [float(provider_tokens_per_usd), float(sell_tokens_per_usd),
-                 now, updated_by],
+                [float(cost), float(sell), now, updated_by],
             )
         return self.get_token_economics()
 

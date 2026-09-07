@@ -29,6 +29,9 @@ export type Plan = {
 };
 
 export type TokenEconomics = {
+    usdPerCaCost: number;
+    usdPerCaSell: number;
+    /** @deprecated aliases populated from API for older UI */
     providerTokensPerUsd: number;
     sellTokensPerUsd: number;
     updatedAt: string;

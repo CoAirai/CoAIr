@@ -1,4 +1,5 @@
 import type { Company, Plan } from "../admin/types";
+import { caToMicros } from "./tokenEconomics";
 
 export type DummyPaymentInput = {
     name: string;
@@ -12,7 +13,7 @@ export function applyCheckout(company: Company, plan: Plan): Company {
         ...company,
         planId: plan.id,
         storageLimitGb: plan.storageLimitGb,
-        tokenLimit: plan.queryCap,
+        tokenLimit: caToMicros(plan.queryCap),
         status: "active",
         needsCheckout: false,
     };

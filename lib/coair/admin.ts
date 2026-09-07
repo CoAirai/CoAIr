@@ -420,6 +420,47 @@ export async function listAdminUsage(
     });
 }
 
+export type CoairAdminQueryRow = {
+    event_id: string;
+    username: string;
+    created_at: string;
+    project_id?: string | null;
+    model?: string;
+    provider?: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    reasoning_tokens?: number;
+    gemini_input_tokens: number;
+    gemini_output_tokens: number;
+    provider_cost_usd: number;
+    ca_tokens: number;
+};
+
+export async function listAdminQueries(
+    token: string,
+    filters: {
+        username?: string;
+        orgId?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        limit?: number;
+        offset?: number;
+    } = {}
+) {
+    const params = new URLSearchParams();
+    if (filters.username) params.set("username", filters.username);
+    if (filters.orgId) params.set("org_id", filters.orgId);
+    if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+    if (filters.dateTo) params.set("date_to", filters.dateTo);
+    if (filters.limit) params.set("limit", String(filters.limit));
+    if (filters.offset) params.set("offset", String(filters.offset));
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return coairFetch<{ entries: CoairAdminQueryRow[]; total: number }>(
+        `/admin/queries${query}`,
+        { token }
+    );
+}
+
 export async function loadWeeklySpend(token: string, count = 8): Promise<ChartPoint[]> {
     try {
         const payload = await coairFetch<{

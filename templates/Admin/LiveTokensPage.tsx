@@ -10,8 +10,10 @@ import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import { planLabel } from "@/lib/admin/liveHelpers";
 import {
+    formatCa,
     isNegativeMargin,
-    marginForTokens,
+    marginForCa,
+    microsToCa,
 } from "@/lib/billing/tokenEconomics";
 import {
     listAdminTokenPools,
@@ -42,8 +44,8 @@ const LiveTokensPage = () => {
     const [pools, setPools] = useState<CoairAdminTokenPool[]>([]);
     const [requests, setRequests] = useState<CoairAdminTokenRequest[]>([]);
     const [loading, setLoading] = useState(true);
-    const [providerRate, setProviderRate] = useState("100");
-    const [sellRate, setSellRate] = useState("80");
+    const [costRate, setCostRate] = useState("1");
+    const [sellRate, setSellRate] = useState("1.2");
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
@@ -63,8 +65,8 @@ const LiveTokensPage = () => {
             ]);
             setPools(poolPayload.pools ?? []);
             setRequests(requestPayload.requests ?? []);
-            setProviderRate(String(economics.providerTokensPerUsd));
-            setSellRate(String(economics.sellTokensPerUsd));
+            setCostRate(String(economics.usdPerCaCost));
+            setSellRate(String(economics.usdPerCaSell));
             setError(null);
         } catch (err) {
             setError(apiErrorMessage(err));
@@ -77,15 +79,15 @@ const LiveTokensPage = () => {
         void refresh();
     }, [refresh]);
 
-    const previewTokens = 8000;
-    const previewMargin = marginForTokens(
-        previewTokens,
-        Number(providerRate) || 100,
-        Number(sellRate) || 80
+    const previewCa = 100;
+    const previewMargin = marginForCa(
+        previewCa,
+        Number(costRate) || 1,
+        Number(sellRate) || 1.2
     );
     const negativeMargin = isNegativeMargin(
-        Number(providerRate) || 100,
-        Number(sellRate) || 80
+        Number(costRate) || 1,
+        Number(sellRate) || 1.2
     );
 
     const platform = useMemo(() => {
@@ -109,13 +111,13 @@ const LiveTokensPage = () => {
         event.preventDefault();
         try {
             const saved = await writeTokenEconomics(token, {
-                providerTokensPerUsd: Number(providerRate),
-                sellTokensPerUsd: Number(sellRate),
+                usdPerCaCost: Number(costRate),
+                usdPerCaSell: Number(sellRate),
             });
-            setProviderRate(String(saved.providerTokensPerUsd));
-            setSellRate(String(saved.sellTokensPerUsd));
+            setCostRate(String(saved.usdPerCaCost));
+            setSellRate(String(saved.usdPerCaSell));
             setError(null);
-            setMessage("Token rates saved");
+            setMessage("CA token rates saved");
         } catch (err) {
             setMessage(null);
             setError(apiErrorMessage(err));
@@ -125,8 +127,8 @@ const LiveTokensPage = () => {
     return (
         <div className="page-stack">
             <PageHeader
-                title="Tokens"
-                description="Live company token pools and member requests from the same data company admins and users see."
+                title="CA tokens"
+                description="Company CA token pools and member requests. 1 CA = $1 Gemini cost; customers buy at the sell rate."
             />
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
@@ -134,52 +136,52 @@ const LiveTokensPage = () => {
 
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">
-                    Platform token pool
+                    Platform CA token pool
                 </h2>
                 <p className="mt-1 text-label-xs text-sub-600">
                     Sum of every active company package pool.
                 </p>
                 <div className="mt-4">
                     <QuotaBar
-                        label="Tokens"
-                        used={platform.used}
-                        limit={platform.pool}
+                        label="CA tokens"
+                        used={microsToCa(platform.used)}
+                        limit={microsToCa(platform.pool)}
                     />
                 </div>
                 <p className="mt-3 text-label-sm text-sub-600">
-                    Remaining across companies:{" "}
-                    {numberFormatter.format(platform.remaining)}
+                    Remaining across companies: {formatCa(platform.remaining)} CA
                 </p>
             </section>
 
             <form onSubmit={onSaveRates} className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">Token rates</h2>
+                <h2 className="text-label-lg text-strong-950">CA token rates</h2>
                 <p className="mt-1 text-label-xs text-sub-600">
-                    Provider cost vs customer sell rate (tokens per $1). Top-ups
-                    and overage use the sell rate.
+                    Cost is what Gemini spend maps to (usually $1 = 1 CA). Sell is
+                    what customers pay per CA. Top-ups and overage use the sell
+                    rate.
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <label className="block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
-                            Provider tokens / $1
+                            $ per CA (cost)
                         </span>
                         <input
                             type="number"
-                            min={1}
-                            value={providerRate}
-                            onChange={(event) =>
-                                setProviderRate(event.target.value)
-                            }
+                            min={0.01}
+                            step="0.01"
+                            value={costRate}
+                            onChange={(event) => setCostRate(event.target.value)}
                             className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
                         />
                     </label>
                     <label className="block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
-                            Sell tokens / $1
+                            $ per CA (sell)
                         </span>
                         <input
                             type="number"
-                            min={1}
+                            min={0.01}
+                            step="0.01"
                             value={sellRate}
                             onChange={(event) => setSellRate(event.target.value)}
                             className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
@@ -187,7 +189,7 @@ const LiveTokensPage = () => {
                     </label>
                     <div className="rounded-xl bg-weak-50 p-3 text-label-xs text-sub-600 xl:col-span-2">
                         <p className="text-label-sm text-strong-950">
-                            Preview ({numberFormatter.format(previewTokens)} tokens)
+                            Preview ({numberFormatter.format(previewCa)} CA)
                         </p>
                         <p className="mt-1">
                             Charge {currencyFormatter.format(previewMargin.chargeUsd)} ·
@@ -197,8 +199,7 @@ const LiveTokensPage = () => {
                         </p>
                         {negativeMargin ? (
                             <p className="mt-1 text-warning-base">
-                                Sell rate is above provider rate — margin will be
-                                negative.
+                                Sell rate is below cost — margin will be negative.
                             </p>
                         ) : null}
                     </div>
@@ -220,7 +221,7 @@ const LiveTokensPage = () => {
                 <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
                     <div className="border-b border-stroke-soft-200 px-5 py-4">
                         <h2 className="text-label-lg text-strong-950">
-                            Company token pools
+                            Company CA token pools
                         </h2>
                         <p className="mt-1 text-label-xs text-sub-600">
                             Package pool split equally across active members
@@ -233,13 +234,13 @@ const LiveTokensPage = () => {
                                     <th className="px-5 py-3 font-medium">Company</th>
                                     <th className="px-5 py-3 font-medium">Plan</th>
                                     <th className="px-5 py-3 font-medium">Members</th>
-                                    <th className="px-5 py-3 font-medium">Pool</th>
-                                    <th className="px-5 py-3 font-medium">Used</th>
+                                    <th className="px-5 py-3 font-medium">Pool (CA)</th>
+                                    <th className="px-5 py-3 font-medium">Used (CA)</th>
                                     <th className="px-5 py-3 font-medium">
-                                        Remaining
+                                        Remaining (CA)
                                     </th>
                                     <th className="px-5 py-3 font-medium">
-                                        Equal share
+                                        Equal share (CA)
                                     </th>
                                 </tr>
                             </thead>
@@ -261,18 +262,16 @@ const LiveTokensPage = () => {
                                             {pool.member_count}
                                         </td>
                                         <td className="px-5 py-4 text-sub-600">
-                                            {numberFormatter.format(pool.pool)}
+                                            {formatCa(pool.pool)}
                                         </td>
                                         <td className="px-5 py-4 text-sub-600">
-                                            {numberFormatter.format(pool.total_used)}
+                                            {formatCa(pool.total_used)}
                                         </td>
                                         <td className="px-5 py-4 text-sub-600">
-                                            {numberFormatter.format(pool.remaining)}
+                                            {formatCa(pool.remaining)}
                                         </td>
                                         <td className="px-5 py-4 text-sub-600">
-                                            {numberFormatter.format(
-                                                pool.equal_share
-                                            )}
+                                            {formatCa(pool.equal_share)}
                                         </td>
                                     </tr>
                                 ))}
@@ -282,7 +281,7 @@ const LiveTokensPage = () => {
                                             className="px-5 py-4 text-label-sm text-sub-600"
                                             colSpan={7}
                                         >
-                                            No company token pools yet.
+                                            No company CA token pools yet.
                                         </td>
                                     </tr>
                                 ) : null}
@@ -295,7 +294,7 @@ const LiveTokensPage = () => {
             <section className="overflow-hidden rounded-2xl border border-stroke-soft-200 bg-white-0">
                 <div className="border-b border-stroke-soft-200 px-5 py-4">
                     <h2 className="text-label-lg text-strong-950">
-                        Member token requests
+                        Member CA token requests
                     </h2>
                     <p className="mt-1 text-label-xs text-sub-600">
                         {pendingRequests.length} pending · company admins approve
@@ -309,7 +308,7 @@ const LiveTokensPage = () => {
                                 <th className="px-5 py-3 font-medium">When</th>
                                 <th className="px-5 py-3 font-medium">Company</th>
                                 <th className="px-5 py-3 font-medium">Member</th>
-                                <th className="px-5 py-3 font-medium">Tokens</th>
+                                <th className="px-5 py-3 font-medium">CA tokens</th>
                                 <th className="px-5 py-3 font-medium">Reason</th>
                                 <th className="px-5 py-3 font-medium">Status</th>
                             </tr>
@@ -357,7 +356,7 @@ const LiveTokensPage = () => {
                 </div>
                 {!loading && requests.length === 0 ? (
                     <p className="px-5 py-12 text-center text-label-sm text-sub-600">
-                        No member token requests yet.
+                        No member CA token requests yet.
                     </p>
                 ) : null}
             </section>

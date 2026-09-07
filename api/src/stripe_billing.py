@@ -332,9 +332,10 @@ def fulfill_plan(
             )
 
     from src.org_quota import resolve_org_token_limit, sync_org_member_quotas
+    from src.ca_tokens import ca_to_micros
 
     base_storage = gb_to_bytes(int(plan["storage_limit_gb"]))
-    base_tokens = int(plan.get("query_cap") or 0)
+    base_tokens = ca_to_micros(int(plan.get("query_cap") or 0))
     credits = float(plan["api_credits_usd"])
 
     remaining_tokens = 0
@@ -498,9 +499,10 @@ def renew_package_period(
     plan_id = str(sub.get("plan_id") or "demo")
     plan = commerce.get_plan(plan_id) or {}
     from src.org_quota import sync_org_member_quotas
+    from src.ca_tokens import ca_to_micros
 
     # Always use catalog caps — do not keep mid-cycle carryover into the next period.
-    token_limit = int(plan.get("query_cap") or 0)
+    token_limit = ca_to_micros(int(plan.get("query_cap") or 0))
     storage_bytes = gb_to_bytes(int(plan.get("storage_limit_gb") or 0))
     credits = float(plan.get("api_credits_usd") or 0)
     orgs.update_org(
@@ -597,7 +599,9 @@ def cancel_package_subscription(
         )
         # Clear paid pool to demo defaults.
         plan = commerce.get_plan("demo") or {}
-        token_limit = int(plan.get("query_cap") or 0)
+        from src.ca_tokens import ca_to_micros
+
+        token_limit = ca_to_micros(int(plan.get("query_cap") or 0))
         storage_bytes = gb_to_bytes(int(plan.get("storage_limit_gb") or 0))
         orgs.update_org(
             org_id,
@@ -803,11 +807,13 @@ def fulfill_purchase(
         amount = amount or float({10: 10, 50: 40, 100: 70}.get(int(gb), gb))
         description = description or f"Storage +{gb} GB"
     elif kind == "tokens":
-        add = int(tokens or 0)
-        if add < 1:
-            raise ValueError("tokens_required")
+        from src.ca_tokens import ca_to_micros
         from src.org_quota import resolve_org_token_limit, sync_org_member_quotas
 
+        add_ca = int(tokens or 0)
+        if add_ca < 1:
+            raise ValueError("tokens_required")
+        add = ca_to_micros(add_ca)
         current = resolve_org_token_limit(
             org_id, orgs=orgs, commerce=commerce
         )
@@ -835,9 +841,9 @@ def fulfill_purchase(
             )
         amount = amount or 0
         description = description or (
-            f"Token pack {add} for {credit_to}"
+            f"CA token pack {add_ca} for {credit_to}"
             if credit_to
-            else f"Token pack {add}"
+            else f"CA token pack {add_ca}"
         )
     else:
         description = description or f"Add-on {module_id or ''}".strip()

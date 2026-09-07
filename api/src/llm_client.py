@@ -124,7 +124,15 @@ def _attribute_to_current_user(
 
         store = get_user_store()
         if count_legacy_tokens:
-            store.increment_usage(username, prompt_tok, comp_tok)
+            from .ca_tokens import nanos_to_ca_micros
+
+            ca_micros = nanos_to_ca_micros(cost_nanos)
+            if ca_micros > 0:
+                store.increment_usage(username, ca_micros, 0)
+            elif prompt_tok > 0 or comp_tok > 0:
+                # Zero-cost calls still bump call count via a no-op path —
+                # skip balance when provider reported no billable USD.
+                pass
         if provider and model:
             try:
                 from .project_context import get_current_project_id

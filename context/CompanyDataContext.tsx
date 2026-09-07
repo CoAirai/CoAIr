@@ -16,6 +16,7 @@ import {
     userRemainingInSlice,
 } from "@/lib/company/tokenMath";
 import { getPlanById } from "@/lib/admin/plans";
+import { caToMicros } from "@/lib/billing/tokenEconomics";
 import { companyForSession } from "@/lib/workspace/companyForSession";
 import type { Company, ModuleId, Plan, PlanId, TokenEconomics, User, UserRole } from "@/lib/admin/types";
 import type { RightKey } from "@/lib/admin/rolesStub";
@@ -360,7 +361,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
                 return { ok: false, error: "Select a valid plan" };
             }
             if (
-                company.tokensUsed > plan.queryCap ||
+                company.tokensUsed > caToMicros(plan.queryCap) ||
                 company.storageUsedGb > plan.storageLimitGb
             ) {
                 return {
@@ -371,7 +372,7 @@ export function CompanyDataProvider({ children }: { children: ReactNode }) {
 
             patchCompany(company.id, {
                 planId,
-                tokenLimit: plan.queryCap,
+                tokenLimit: caToMicros(plan.queryCap),
                 storageLimitGb: plan.storageLimitGb,
             });
             pushCompanyActivity(company.id, `Upgraded plan to ${plan.name}`);

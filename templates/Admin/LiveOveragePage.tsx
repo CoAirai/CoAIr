@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/context/AuthContext";
 import type { OverageMode, OveragePolicy } from "@/lib/admin/billingTypes";
-import { overageUsdPer1kTokens } from "@/lib/billing/tokenEconomics";
+import { overageUsdPerCa } from "@/lib/billing/tokenEconomics";
 import { apiErrorMessage, readTokenEconomics } from "@/lib/coair/commerce";
 import { readOveragePolicy, writeOveragePolicy } from "@/lib/coair/ops";
 
@@ -50,14 +50,14 @@ const LiveOveragePage = () => {
         void Promise.all([readOveragePolicy(token), readTokenEconomics(token)])
             .then(([nextPolicy, economics]) => {
                 setPolicy(nextPolicy);
-                setSellRate(economics.sellTokensPerUsd);
+                setSellRate(economics.usdPerCaSell);
                 setError(null);
             })
             .catch((err) => setError(apiErrorMessage(err)));
     }, [token]);
 
     const derivedOverageRate = useMemo(
-        () => overageUsdPer1kTokens(sellRate),
+        () => overageUsdPerCa(sellRate),
         [sellRate]
     );
 
@@ -92,8 +92,8 @@ const LiveOveragePage = () => {
 
             <div className="rounded-xl border border-stroke-soft-200 bg-weak-50 px-4 py-3 text-label-xs text-sub-600">
                 Applies to both token chat usage and file-upload storage.
-                Sell rate: {sellRate} tokens/$1 · Overage billing reference: $
-                {derivedOverageRate.toFixed(2)} per 1,000 tokens (from Tokens page).
+                Sell rate: ${sellRate}/CA · Overage billing reference: $
+                {derivedOverageRate.toFixed(2)} per CA (from CA tokens page).
             </div>
 
             <form
@@ -163,7 +163,7 @@ const LiveOveragePage = () => {
                             />
                         </label>
                         <label className="block text-label-xs text-sub-600">
-                            Overage rate per 1,000 tokens (USD)
+                            Overage rate per CA (USD)
                             <input
                                 type="number"
                                 readOnly

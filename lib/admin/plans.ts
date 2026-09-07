@@ -26,7 +26,7 @@ export const PLANS: Plan[] = [
         usersIncluded: 3,
         storageLimitGb: 20,
         apiCreditsUsd: 20,
-        queryCap: 376,
+        queryCap: 17,
         modules: {
             chatbot: CHATBOT_INCLUDED,
             chronology: TRIAL_ONE,
@@ -40,7 +40,7 @@ export const PLANS: Plan[] = [
         usersIncluded: 5,
         storageLimitGb: 20,
         apiCreditsUsd: 50,
-        queryCap: 939,
+        queryCap: 42,
         modules: { ...PAID_MODULES },
     },
     {
@@ -50,7 +50,7 @@ export const PLANS: Plan[] = [
         usersIncluded: 10,
         storageLimitGb: 80,
         apiCreditsUsd: 100,
-        queryCap: 1878,
+        queryCap: 83,
         modules: { ...PAID_MODULES },
     },
     {
@@ -60,7 +60,7 @@ export const PLANS: Plan[] = [
         usersIncluded: 15,
         storageLimitGb: 150,
         apiCreditsUsd: 200,
-        queryCap: 3756,
+        queryCap: 167,
         modules: { ...PAID_MODULES },
     },
     {
@@ -70,7 +70,7 @@ export const PLANS: Plan[] = [
         usersIncluded: 25,
         storageLimitGb: 300,
         apiCreditsUsd: 400,
-        queryCap: 7512,
+        queryCap: 333,
         modules: { ...PAID_MODULES },
     },
 ];

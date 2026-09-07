@@ -5,6 +5,7 @@ import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import { CompanyUsageSkeleton } from "@/components/Skeleton/sections";
 import { bytesToGb } from "@/lib/admin/liveHelpers";
+import { formatCa, microsToCa } from "@/lib/billing/tokenEconomics";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { readOrgTokenPool, type CoairTokenPool } from "@/lib/coair/org";
@@ -25,8 +26,9 @@ const LiveUsagePage = () => {
     const storageLimit = bytesToGb(usage?.storage_limit_bytes);
     const totals = orgUsage?.totals;
     const groups = orgUsage?.groups?.slice(0, 8) ?? [];
-    const tokensConsumed =
+    const geminiConsumed =
         (totals?.prompt_tokens ?? 0) + (totals?.completion_tokens ?? 0);
+    const caFromSpend = totals?.provider_cost_usd ?? totals?.cost_usd;
     const [pool, setPool] = useState<CoairTokenPool | null>(null);
 
     useEffect(() => {
@@ -40,7 +42,7 @@ const LiveUsagePage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Usage"
-                description="Company token pool, equal shares, and storage."
+                description="Company CA token pool, equal shares, and storage."
             />
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
@@ -50,44 +52,44 @@ const LiveUsagePage = () => {
                     {pool ? (
                         <section className="surface-panel p-5">
                             <h2 className="text-label-lg text-strong-950">
-                                Company token pool
+                                Company CA token pool
                             </h2>
                             <p className="mt-1 text-label-xs text-sub-600">
                                 Package pool is split equally across active
                                 members. Equal share snapshot:{" "}
-                                {numberFormatter.format(pool.equal_share)} tokens
-                                each ({pool.member_count} members).
+                                {formatCa(pool.equal_share)} CA each (
+                                {pool.member_count} members).
                             </p>
                             <div className="mt-4 grid gap-4 sm:grid-cols-3">
                                 <div>
                                     <p className="text-label-xs text-sub-600">
-                                        Pool
+                                        Pool (CA)
                                     </p>
                                     <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
-                                        {numberFormatter.format(pool.pool)}
+                                        {formatCa(pool.pool)}
                                     </p>
                                 </div>
                                 <div>
                                     <p className="text-label-xs text-sub-600">
-                                        Company used
+                                        Company used (CA)
                                     </p>
                                     <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
-                                        {numberFormatter.format(pool.total_used)}
+                                        {formatCa(pool.total_used)}
                                     </p>
                                 </div>
                                 <div>
                                     <p className="text-label-xs text-sub-600">
-                                        Company remaining
+                                        Company remaining (CA)
                                     </p>
                                     <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
-                                        {numberFormatter.format(pool.remaining)}
+                                        {formatCa(pool.remaining)}
                                     </p>
                                 </div>
                             </div>
                             <QuotaBar
                                 label="Company pool used"
-                                used={pool.total_used}
-                                limit={pool.pool || 1}
+                                used={microsToCa(pool.total_used)}
+                                limit={microsToCa(pool.pool) || 1}
                             />
                             {pool.members.length > 0 ? (
                                 <ul className="mt-4 divide-y divide-stroke-soft-200">
@@ -101,18 +103,9 @@ const LiveUsagePage = () => {
                                                     member.username}
                                             </span>
                                             <span className="text-sub-600 tabular-nums">
-                                                {numberFormatter.format(
-                                                    member.used_tokens
-                                                )}{" "}
-                                                /{" "}
-                                                {numberFormatter.format(
-                                                    member.token_limit
-                                                )}{" "}
-                                                ·{" "}
-                                                {numberFormatter.format(
-                                                    member.remaining
-                                                )}{" "}
-                                                left
+                                                {formatCa(member.used_tokens)} /{" "}
+                                                {formatCa(member.token_limit)} ·{" "}
+                                                {formatCa(member.remaining)} left
                                             </span>
                                         </li>
                                     ))}
@@ -122,18 +115,19 @@ const LiveUsagePage = () => {
                     ) : null}
                     <section className="grid gap-4 md:grid-cols-2">
                         <div className="surface-panel p-5">
-                            <p className="text-label-xs text-sub-600">Your tokens</p>
+                            <p className="text-label-xs text-sub-600">
+                                Your CA tokens
+                            </p>
                             <p className="mt-1 text-label-xl text-strong-950">
-                                {numberFormatter.format(used)} /{" "}
-                                {numberFormatter.format(limit)}
+                                {formatCa(used)} / {formatCa(limit)}
                             </p>
                             <p className="mt-1 text-label-xs text-sub-600">
-                                {numberFormatter.format(remaining)} remaining
+                                {formatCa(remaining)} remaining
                             </p>
                             <QuotaBar
-                                label="Tokens used"
-                                used={used}
-                                limit={limit || 1}
+                                label="CA tokens used"
+                                used={microsToCa(used)}
+                                limit={microsToCa(limit) || 1}
                             />
                         </div>
                         <div className="surface-panel p-5">
@@ -166,7 +160,7 @@ const LiveUsagePage = () => {
                             </div>
                             <div>
                                 <p className="text-label-xs text-sub-600">
-                                    Prompt tokens
+                                    Gemini prompt
                                 </p>
                                 <p className="mt-1 text-label-lg text-strong-950">
                                     {numberFormatter.format(
@@ -176,7 +170,7 @@ const LiveUsagePage = () => {
                             </div>
                             <div>
                                 <p className="text-label-xs text-sub-600">
-                                    Completion tokens
+                                    Gemini completion
                                 </p>
                                 <p className="mt-1 text-label-lg text-strong-950">
                                     {numberFormatter.format(
@@ -186,10 +180,21 @@ const LiveUsagePage = () => {
                             </div>
                         </div>
                         <p className="mt-3 text-label-sm text-sub-600">
-                            Total tokens consumed:{" "}
+                            Total Gemini tokens:{" "}
                             <span className="text-strong-950">
-                                {numberFormatter.format(tokensConsumed)}
+                                {numberFormatter.format(geminiConsumed)}
                             </span>
+                            {caFromSpend != null ? (
+                                <>
+                                    {" "}
+                                    · CA used ≈{" "}
+                                    <span className="text-strong-950">
+                                        {numberFormatter.format(
+                                            Number(caFromSpend)
+                                        )}
+                                    </span>
+                                </>
+                            ) : null}
                         </p>
                         {groups.length > 0 ? (
                             <ul className="mt-4 divide-y divide-stroke-soft-200">
@@ -208,7 +213,7 @@ const LiveUsagePage = () => {
                                                 (group.prompt_tokens ?? 0) +
                                                     (group.completion_tokens ?? 0)
                                             )}{" "}
-                                            tokens ·{" "}
+                                            Gemini ·{" "}
                                             {numberFormatter.format(
                                                 group.calls ?? 0
                                             )}{" "}

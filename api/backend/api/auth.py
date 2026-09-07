@@ -605,18 +605,6 @@ async def me(
     record = store.get_user(user.username)
     if not record:
         raise HTTPException(401, "unknown_user")
-    # Soft-repair legacy 1M caps: rebalance remaining pool across the org once.
-    try:
-        membership = orgs.membership_for(user.username)
-        if membership and int(record.get("token_limit") or 0) == 1_000_000:
-            from src.org_token_pool import rebalance_equal_remaining
-
-            rebalance_equal_remaining(
-                str(membership["org_id"]), orgs=orgs, users=store
-            )
-            record = store.get_user(user.username) or record
-    except Exception:
-        pass
     usage = store.get_billing_summary(user.username)
     timeout = int(ops.get_security().get("session_timeout_minutes") or 30)
     return {

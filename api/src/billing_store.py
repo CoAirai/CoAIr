@@ -604,17 +604,79 @@ class BillingStore:
             rows = [dict(r) for r in conn.execute(
                 "SELECT event_id,event_type,created_at,project_id,run_id,job_id,"
                 "task_type,provider,model,prompt_tokens,completion_tokens,"
-                "reasoning_tokens,cached_tokens,retail_credit_micros,"
-                "debited_credit_micros,uncovered_credit_micros,note "
+                "reasoning_tokens,cached_tokens,provider_cost_nanos,"
+                "retail_credit_micros,debited_credit_micros,"
+                "uncovered_credit_micros,note "
                 f"FROM billing_ledger WHERE {clause} "
                 "ORDER BY created_at DESC, event_id DESC LIMIT ? OFFSET ?",
                 [*params, max(1, min(int(limit), 500)), max(0, int(offset))],
             ).fetchall()]
         for row in rows:
+            nanos = int(row.pop("provider_cost_nanos") or 0)
+            row["provider_cost_usd"] = round(nanos / NANOUSD_PER_USD, 9)
+            row["ca_tokens"] = round(nanos / NANOUSD_PER_USD, 9)
             for key in ("retail_credit_micros", "debited_credit_micros",
                         "uncovered_credit_micros"):
                 row[key.removesuffix("_micros")] = _credits(int(row.pop(key) or 0))
         return {"entries": rows, "total": total}
+
+    def list_queries(
+        self,
+        *,
+        username: str = "",
+        org_usernames: Sequence[str] = (),
+        since: str = "",
+        until: str = "",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Platform-wide LLM charge rows for Super Admin Queries tab."""
+        where = ["event_type='charge'"]
+        params: List[Any] = []
+        clean_user = (username or "").strip()
+        if clean_user:
+            where.append("username=?")
+            params.append(clean_user)
+        elif org_usernames:
+            names = [u for u in org_usernames if u]
+            if not names:
+                return {"entries": [], "total": 0}
+            where.append(f"username IN ({','.join('?' * len(names))})")
+            params.extend(names)
+        if since:
+            where.append("created_at>=?")
+            params.append(since)
+        if until:
+            where.append("created_at<=?")
+            params.append(until)
+        clause = " AND ".join(where)
+        with self._connect() as conn:
+            total = int(conn.execute(
+                f"SELECT COUNT(*) FROM billing_ledger WHERE {clause}", params,
+            ).fetchone()[0])
+            rows = [dict(r) for r in conn.execute(
+                "SELECT event_id,username,created_at,project_id,run_id,job_id,"
+                "task_type,provider,model,prompt_tokens,completion_tokens,"
+                "reasoning_tokens,cached_tokens,provider_cost_nanos "
+                f"FROM billing_ledger WHERE {clause} "
+                "ORDER BY created_at DESC, event_id DESC LIMIT ? OFFSET ?",
+                [*params, max(1, min(int(limit), 500)), max(0, int(offset))],
+            ).fetchall()]
+        entries = []
+        for row in rows:
+            nanos = int(row.pop("provider_cost_nanos") or 0)
+            cost = round(nanos / NANOUSD_PER_USD, 9)
+            entries.append({
+                **row,
+                "provider_cost_usd": cost,
+                "ca_tokens": cost,
+                "gemini_input_tokens": int(row.get("prompt_tokens") or 0),
+                "gemini_output_tokens": int(
+                    (row.get("completion_tokens") or 0)
+                    + (row.get("reasoning_tokens") or 0)
+                ),
+            })
+        return {"entries": entries, "total": total}
 
     def job_usage(self, job_id: str) -> Dict[str, Any]:
         """Admin-safe exact token/cost totals for one background report job."""

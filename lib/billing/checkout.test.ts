@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyCheckout, validateDummyPayment } from "./checkout";
 import type { Company } from "../admin/types";
 import { PLANS } from "../admin/plans";
+import { caToMicros } from "./tokenEconomics";
 
 const company: Company = {
     id: "co-new",
@@ -12,7 +13,7 @@ const company: Company = {
     usersCount: 1,
     storageLimitGb: 20,
     storageUsedGb: 0,
-    tokenLimit: 376,
+    tokenLimit: caToMicros(17),
     tokensUsed: 0,
     createdAt: "2026-08-05",
     addOns: [],
@@ -28,7 +29,7 @@ describe("applyCheckout", () => {
         expect(next.needsCheckout).toBe(false);
         expect(next.status).toBe("active");
         expect(next.storageLimitGb).toBe(pro.storageLimitGb);
-        expect(next.tokenLimit).toBe(pro.queryCap);
+        expect(next.tokenLimit).toBe(caToMicros(pro.queryCap));
     });
 });
 
