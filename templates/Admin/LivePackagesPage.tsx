@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AdminPackagesSkeleton } from "@/components/Skeleton/sections";
 import { useAuth } from "@/context/AuthContext";
+import { useAdminBadges } from "@/context/AdminBadgesContext";
 import { planLabel } from "@/lib/admin/liveHelpers";
 import type { ModuleAccess, ModuleId, Plan } from "@/lib/admin/types";
 import { apiErrorMessage, listPackages, patchPackage } from "@/lib/coair/commerce";
@@ -31,6 +32,7 @@ const MODULE_UNLOCK_LABEL: Record<string, string> = {
 
 const LivePackagesPage = () => {
     const { session } = useAuth();
+    const { refresh: refreshBadges } = useAdminBadges();
     const token = session?.accessToken ?? "";
     const [plans, setPlans] = useState<Plan[]>([]);
     const [plansReady, setPlansReady] = useState(false);
@@ -105,6 +107,7 @@ const LivePackagesPage = () => {
                 setResolveMessage("Package change denied.");
             }
             await loadRequests();
+            await refreshBadges();
         } catch (err) {
             setError(apiErrorMessage(err));
         } finally {
@@ -130,6 +133,7 @@ const LivePackagesPage = () => {
                 setResolveMessage("Module unlock denied.");
             }
             await loadRequests();
+            await refreshBadges();
         } catch (err) {
             setError(apiErrorMessage(err));
         } finally {

@@ -10,6 +10,7 @@ import {
     type ReactNode,
 } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import type { CompanyDocument } from "@/lib/admin/companyDocuments";
 import type { ModuleId } from "@/lib/admin/types";
 import type { WorkspaceUser } from "@/lib/chat/threads";
@@ -72,6 +73,7 @@ const LiveWorkspaceContext = createContext<LiveWorkspaceValue | null>(null);
 
 export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const { session, updateSession } = useAuth();
+    const { pushToast } = useToast();
     const enabled = session?.source === "live" && Boolean(session.accessToken);
     const canListTeammates =
         enabled && session?.role === "company_admin" && Boolean(session.companyId);
@@ -174,15 +176,19 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     file
                 );
                 await refresh();
+                pushToast(`Uploaded ${file.name}`, "success");
                 return { ok: true };
             } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Upload failed";
+                pushToast(message, "error");
                 return {
                     ok: false,
-                    error: err instanceof Error ? err.message : "Upload failed",
+                    error: message,
                 };
             }
         },
-        [refresh, session?.accessToken, session?.projectId]
+        [pushToast, refresh, session?.accessToken, session?.projectId]
     );
 
     const removeFile = useCallback(
@@ -197,15 +203,19 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     fileId
                 );
                 await refresh();
+                pushToast("Document removed", "info");
                 return { ok: true };
             } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Delete failed";
+                pushToast(message, "error");
                 return {
                     ok: false,
-                    error: err instanceof Error ? err.message : "Delete failed",
+                    error: message,
                 };
             }
         },
-        [refresh, session?.accessToken, session?.projectId]
+        [pushToast, refresh, session?.accessToken, session?.projectId]
     );
 
     const teammates = useMemo(() => {

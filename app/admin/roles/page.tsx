@@ -1,7 +1,12 @@
 "use client";
 
-import LiveRolesPage from "@/templates/Admin/LiveRolesPage";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Page() {
-    return <LiveRolesPage />;
+    const router = useRouter();
+    useEffect(() => {
+        router.replace("/admin/users");
+    }, [router]);
+    return null;
 }

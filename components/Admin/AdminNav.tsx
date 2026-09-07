@@ -5,11 +5,14 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import AnimateHeight from "react-animate-height";
 import Icon from "@/components/Icon";
+import { useAdminBadges } from "@/context/AdminBadgesContext";
+import type { AdminBadgeKey } from "@/lib/admin/navBadges";
 
 type NavLeaf = {
     href: string;
     label: string;
     icon: string;
+    badgeKey?: AdminBadgeKey;
 };
 
 type NavGroup = {
@@ -35,10 +38,10 @@ const GROUPS: NavGroup[] = [
                 href: "/admin/onboarding",
                 label: "Onboarding",
                 icon: "document-check",
+                badgeKey: "onboarding",
             },
             { href: "/admin/companies", label: "Companies", icon: "folder" },
             { href: "/admin/users", label: "Users", icon: "profile" },
-            { href: "/admin/roles", label: "Roles & Rights", icon: "check" },
         ],
     },
     {
@@ -58,7 +61,12 @@ const GROUPS: NavGroup[] = [
         icon: "gift",
         items: [
             { href: "/admin/billing", label: "Billing", icon: "gift" },
-            { href: "/admin/topups", label: "Top-ups", icon: "plus" },
+            {
+                href: "/admin/topups",
+                label: "Top-ups",
+                icon: "plus",
+                badgeKey: "topups",
+            },
             { href: "/admin/alerts", label: "Alerts", icon: "bell" },
             {
                 href: "/admin/overage",
@@ -74,9 +82,19 @@ const GROUPS: NavGroup[] = [
         label: "Platform",
         icon: "wrench",
         items: [
-            { href: "/admin/packages", label: "Packages", icon: "gift" },
+            {
+                href: "/admin/packages",
+                label: "Packages",
+                icon: "gift",
+                badgeKey: "packages",
+            },
             { href: "/admin/security", label: "Security", icon: "security" },
-            { href: "/admin/tickets", label: "Tickets", icon: "comment" },
+            {
+                href: "/admin/tickets",
+                label: "Tickets",
+                icon: "comment",
+                badgeKey: "tickets",
+            },
             { href: "/admin/ops", label: "Ops", icon: "browser" },
             { href: "/admin/analytics", label: "Analytics", icon: "analytic" },
             {
@@ -96,6 +114,15 @@ const findActiveGroupId = (pathname: string) =>
         group.items.some((item) => isActiveHref(pathname, item.href))
     )?.id;
 
+const Badge = ({ count }: { count: number }) => {
+    if (count <= 0) return null;
+    return (
+        <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-md bg-blue-500 px-1.5 py-0.5 text-[10px] font-semibold text-white-0">
+            {count > 99 ? "99+" : count}
+        </span>
+    );
+};
+
 type Props = {
     onNavigate?: () => void;
     onExpandSidebar?: () => void;
@@ -104,6 +131,7 @@ type Props = {
 
 const AdminNav = ({ onNavigate, onExpandSidebar, collapsed = false }: Props) => {
     const pathname = usePathname();
+    const { counts } = useAdminBadges();
     const [openGroupId, setOpenGroupId] = useState<string | null>(
         () => findActiveGroupId(pathname) ?? null
     );
@@ -126,6 +154,7 @@ const AdminNav = ({ onNavigate, onExpandSidebar, collapsed = false }: Props) => 
 
     const renderLeaf = (item: NavLeaf) => {
         const active = isActiveHref(pathname, item.href);
+        const badge = item.badgeKey ? counts[item.badgeKey] : 0;
 
         return (
             <Link
@@ -142,24 +171,43 @@ const AdminNav = ({ onNavigate, onExpandSidebar, collapsed = false }: Props) => 
                         : "text-sub-600 hover:bg-weak-50/70 hover:text-blue-500"
                 }`}
                 aria-current={active ? "page" : undefined}
-                aria-label={collapsed ? item.label : undefined}
+                aria-label={
+                    collapsed
+                        ? badge > 0
+                            ? `${item.label}, ${badge} new`
+                            : item.label
+                        : undefined
+                }
                 onClick={onNavigate}
             >
-                <Icon
-                    className={`shrink-0 transition-colors ${
-                        active
-                            ? "fill-strong-950"
-                            : "fill-sub-600 group-hover:fill-blue-500"
-                    }`}
-                    name={item.icon}
-                />
+                <span className="relative shrink-0">
+                    <Icon
+                        className={`transition-colors ${
+                            active
+                                ? "fill-strong-950"
+                                : "fill-sub-600 group-hover:fill-blue-500"
+                        }`}
+                        name={item.icon}
+                    />
+                    {collapsed && badge > 0 ? (
+                        <span className="absolute -right-1 -top-1 size-2 rounded-full bg-blue-500 max-lg:hidden" />
+                    ) : null}
+                </span>
                 {!collapsed && (
-                    <span className="truncate">{item.label}</span>
+                    <>
+                        <span className="truncate">{item.label}</span>
+                        <Badge count={badge} />
+                    </>
                 )}
                 {collapsed && (
-                    <span className="hidden truncate max-lg:inline">
-                        {item.label}
-                    </span>
+                    <>
+                        <span className="hidden truncate max-lg:inline">
+                            {item.label}
+                        </span>
+                        <span className="hidden max-lg:inline">
+                            <Badge count={badge} />
+                        </span>
+                    </>
                 )}
             </Link>
         );
@@ -170,6 +218,11 @@ const AdminNav = ({ onNavigate, onExpandSidebar, collapsed = false }: Props) => 
             isActiveHref(pathname, item.href)
         );
         const open = openGroupId === group.id;
+        const groupBadge = group.items.reduce(
+            (sum, item) =>
+                sum + (item.badgeKey ? counts[item.badgeKey] : 0),
+            0
+        );
 
         return (
             <div key={group.id} className="flex flex-col gap-1">
@@ -189,23 +242,36 @@ const AdminNav = ({ onNavigate, onExpandSidebar, collapsed = false }: Props) => 
                     aria-label={collapsed ? group.label : undefined}
                     onClick={() => handleGroupClick(group.id)}
                 >
-                    <Icon
-                        className={`shrink-0 transition-colors ${
-                            groupActive
-                                ? "fill-strong-950"
-                                : "fill-sub-600 group-hover:fill-blue-500"
-                        }`}
-                        name={group.icon}
-                    />
+                    <span className="relative shrink-0">
+                        <Icon
+                            className={`transition-colors ${
+                                groupActive
+                                    ? "fill-strong-950"
+                                    : "fill-sub-600 group-hover:fill-blue-500"
+                            }`}
+                            name={group.icon}
+                        />
+                        {collapsed && groupBadge > 0 ? (
+                            <span className="absolute -right-1 -top-1 size-2 rounded-full bg-blue-500 max-lg:hidden" />
+                        ) : null}
+                    </span>
                     {!collapsed && (
-                        <span className="min-w-0 grow truncate text-left">
-                            {group.label}
-                        </span>
+                        <>
+                            <span className="min-w-0 grow truncate text-left">
+                                {group.label}
+                            </span>
+                            <Badge count={groupBadge} />
+                        </>
                     )}
                     {collapsed && (
-                        <span className="hidden min-w-0 grow truncate text-left max-lg:inline">
-                            {group.label}
-                        </span>
+                        <>
+                            <span className="hidden min-w-0 grow truncate text-left max-lg:inline">
+                                {group.label}
+                            </span>
+                            <span className="hidden max-lg:inline">
+                                <Badge count={groupBadge} />
+                            </span>
+                        </>
                     )}
                     <Icon
                         className={`shrink-0 transition-transform ${

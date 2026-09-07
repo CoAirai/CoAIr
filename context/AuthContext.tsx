@@ -10,6 +10,7 @@ import {
     type ReactNode,
 } from "react";
 import { useAdminData } from "@/context/AdminDataContext";
+import { useToast } from "@/context/ToastContext";
 import {
     AUTH_SESSION_KEY,
     ADMIN_BACKUP_KEY,
@@ -133,6 +134,7 @@ function readStoredSession(): AuthSession | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const { users } = useAdminData();
+    const { pushToast } = useToast();
     const [session, setSession] = useState<AuthSession | null>(null);
     const [ready, setReady] = useState(false);
 
@@ -363,6 +365,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 clearSignedOutFlag();
                 persist(live.session);
                 setSession(live.session);
+                pushToast(`Signed in as ${live.session.name || email}`, "success");
                 return live;
             }
             if (live.kind === "mfa") {
@@ -387,19 +390,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     clearSignedOutFlag();
                     persist(mock.session);
                     setSession(mock.session);
+                    pushToast(
+                        `Signed in as ${mock.session.name || email}`,
+                        "success"
+                    );
                     return mock;
                 }
             }
             return { ok: false, error: live.error };
         },
-        [users]
+        [pushToast, users]
     );
 
-    const applySession = useCallback((next: AuthSession) => {
-        clearSignedOutFlag();
-        persist(next);
-        setSession(next);
-    }, []);
+    const applySession = useCallback(
+        (next: AuthSession) => {
+            clearSignedOutFlag();
+            persist(next);
+            setSession(next);
+            pushToast(`Signed in as ${next.name || next.email}`, "success");
+        },
+        [pushToast]
+    );
 
     const signOut = useCallback(async () => {
         persist(null);
@@ -413,7 +424,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         persist(null);
         // persist(null) must not wipe the shared logout marker.
         markSignedOut();
-    }, []);
+        pushToast("Signed out", "info");
+    }, [pushToast]);
 
     const updateSession = useCallback((patch: Partial<AuthSession>) => {
         setSession((prev) => {

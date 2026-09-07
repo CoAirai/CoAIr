@@ -6,6 +6,7 @@ import { AdminDataProvider } from "@/context/AdminDataContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { ChatProvider } from "@/context/ChatContext";
 import { LiveWorkspaceProvider } from "@/context/LiveWorkspaceContext";
+import { ToastProvider } from "@/context/ToastContext";
 
 const Providers = ({ children }: { children: React.ReactNode }) => {
     return (
@@ -15,13 +16,15 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
             enableSystem
             disableTransitionOnChange
         >
-            <AdminDataProvider>
-                <AuthProvider>
-                    <LiveWorkspaceProvider>
-                        <ChatProvider>{children}</ChatProvider>
-                    </LiveWorkspaceProvider>
-                </AuthProvider>
-            </AdminDataProvider>
+            <ToastProvider>
+                <AdminDataProvider>
+                    <AuthProvider>
+                        <LiveWorkspaceProvider>
+                            <ChatProvider>{children}</ChatProvider>
+                        </LiveWorkspaceProvider>
+                    </AuthProvider>
+                </AdminDataProvider>
+            </ToastProvider>
         </ThemeProvider>
     );
 };
