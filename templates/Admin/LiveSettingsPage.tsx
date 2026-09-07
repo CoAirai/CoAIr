@@ -86,7 +86,7 @@ const LiveSettingsPage = () => {
     ];
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Settings</h1>
                 <p className="mt-1 text-label-sm text-sub-600">

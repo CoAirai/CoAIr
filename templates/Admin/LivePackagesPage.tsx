@@ -73,7 +73,7 @@ const LivePackagesPage = () => {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Packages</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -107,7 +107,7 @@ const LivePackagesPage = () => {
                                     {plan.id}
                                 </span>
                             </div>
-                            <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                            <div className="mt-4 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
                                 <Field
                                     label="Price label (display)"
                                     value={plan.priceLabel}

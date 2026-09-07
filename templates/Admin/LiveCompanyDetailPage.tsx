@@ -384,7 +384,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                     <Link
@@ -450,7 +450,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             </div>
 
             {activeTab === "overview" ? (
-                <div className="space-y-6">
+                <div className="space-y-8">
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                         <h2 className="text-label-lg text-strong-950">
                             Company details
@@ -607,7 +607,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             ) : null}
 
             {activeTab === "users" ? (
-                <div className="space-y-6">
+                <div className="space-y-8">
                     <form
                         onSubmit={async (event: FormEvent) => {
                             event.preventDefault();
@@ -908,7 +908,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             ) : null}
 
             {activeTab === "tokens" ? (
-                <div className="space-y-6">
+                <div className="space-y-8">
                 <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                     <h2 className="text-label-lg text-strong-950">
                         Company token pool
@@ -1136,7 +1136,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             ) : null}
 
             {activeTab === "billing" ? (
-                <div className="space-y-6">
+                <div className="space-y-8">
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
                         <div className="border-b border-stroke-soft-200 px-5 py-4">
                             <h2 className="text-label-lg text-strong-950">

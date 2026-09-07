@@ -146,7 +146,7 @@ const LiveDashboardPage = () => {
             ) : null}
             <AdminDashboardSkeleton loading={loading}>
                 <>
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                         <StatCard
                             label="Companies"
                             value={numberFormatter.format(orgs.length)}

@@ -160,7 +160,7 @@ const LiveTokensPage = () => {
                     what customers pay per CA. Top-ups and overage use the sell
                     rate.
                 </p>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <label className="block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
                             $ per CA (cost)

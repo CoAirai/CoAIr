@@ -27,12 +27,17 @@ function wrap(
     children: ReactNode,
     className?: string
 ) {
+    // Keep vertical rhythm when Skeleton wraps sibling panels/sections
+    // (page-stack space-y only applies to direct children).
+    const stackedClass = ["flex flex-col gap-8", className]
+        .filter(Boolean)
+        .join(" ");
     return (
         <DataSkeleton
             name={name}
             loading={loading}
             fixture={fixture}
-            className={className}
+            className={stackedClass}
         >
             {children}
         </DataSkeleton>

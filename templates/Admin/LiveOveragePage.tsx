@@ -78,7 +78,7 @@ const LiveOveragePage = () => {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Overage policy</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -108,7 +108,7 @@ const LiveOveragePage = () => {
                         Saved to the live overage policy API.
                     </p>
                 </div>
-                <div className="space-y-6 p-5">
+                <div className="space-y-8 p-5">
                     <fieldset>
                         <legend className="text-label-sm text-strong-950">
                             Overage mode

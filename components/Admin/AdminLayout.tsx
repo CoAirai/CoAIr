@@ -200,7 +200,7 @@ const AdminLayout = ({ children }: Props) => {
                         )}
                     </>
                 )}
-                <header className="relative z-20 mb-3.5 flex shrink-0 items-center gap-4 max-md:mb-3 max-md:gap-2">
+                <header className="relative z-20 mb-5 flex shrink-0 items-center gap-4 max-md:mb-4 max-md:gap-2">
                     <button
                         type="button"
                         className="mr-2 hidden size-10 items-center justify-center max-lg:flex max-md:mr-0"

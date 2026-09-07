@@ -205,7 +205,7 @@ const LiveBillingPage = () => {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Billing</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -233,7 +233,7 @@ const LiveBillingPage = () => {
                         setError(apiErrorMessage(err));
                     }
                 }}
-                className="grid gap-3 rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)_auto]"
+                className="grid gap-4 rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)_auto]"
             >
                 <select
                     required
@@ -272,7 +272,7 @@ const LiveBillingPage = () => {
                 </button>
             </form>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard
                     label="Active packages"
                     value={String(

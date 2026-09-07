@@ -124,7 +124,7 @@ const LiveOpsPage = () => {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Ops</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -351,7 +351,7 @@ const LiveOpsPage = () => {
 
             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                 <h2 className="text-label-lg text-strong-950">Data tables</h2>
-                <dl className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <dl className="mt-4 grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                     <div>
                         <dt className="text-label-xs text-sub-600">Files</dt>
                         <dd className="mt-1 text-label-sm text-strong-950">
@@ -478,7 +478,7 @@ const LiveOpsPage = () => {
                 </p>
                 <form
                     onSubmit={(event) => void onAddTerm(event)}
-                    className="mt-4 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_auto]"
+                    className="mt-4 grid gap-4 md:grid-cols-[160px_minmax(0,1fr)_auto]"
                 >
                     <input
                         required

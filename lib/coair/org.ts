@@ -35,6 +35,8 @@ export type CoairOrgUsage = {
         prompt_tokens?: number;
         completion_tokens?: number;
         credits_used?: number;
+        provider_cost_usd?: number;
+        cost_usd?: number;
     };
 };
 

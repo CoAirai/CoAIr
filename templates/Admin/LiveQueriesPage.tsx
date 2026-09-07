@@ -83,7 +83,7 @@ const LiveQueriesPage = () => {
 
             <form
                 onSubmit={onFilter}
-                className="surface-panel grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-5"
+                className="surface-panel grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-5"
             >
                 <label className="block">
                     <span className="mb-1.5 block text-label-xs text-sub-600">

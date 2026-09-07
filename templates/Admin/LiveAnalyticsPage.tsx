@@ -83,7 +83,7 @@ const LiveAnalyticsPage = () => {
     }, [token]);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Analytics</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -98,7 +98,7 @@ const LiveAnalyticsPage = () => {
             ) : null}
             <AdminAnalyticsSkeleton loading={loading}>
                 <>
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                         <StatCard
                             label="Total calls"
                             value={numberFormatter.format(usage?.total_calls ?? 0)}

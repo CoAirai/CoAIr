@@ -51,7 +51,7 @@ const LiveStoragePage = () => {
     const top = [...rows].sort((a, b) => b.usedGb - a.usedGb).slice(0, 5);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-8">
             <div>
                 <h1 className="text-label-xl text-strong-950">Storage</h1>
                 <p className="mt-1 text-label-sm text-sub-600">
@@ -63,7 +63,7 @@ const LiveStoragePage = () => {
             ) : null}
             <AdminStorageSkeleton loading={loading && rows.length === 0}>
                 <>
-                    <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="grid gap-6 sm:grid-cols-3">
                         <StatCard
                             label="Total used"
                             value={`${numberFormatter.format(totals.used)} GB`}
