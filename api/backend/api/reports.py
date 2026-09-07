@@ -11,7 +11,13 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.api._docx import docx_response
 from backend.core.projects import ProjectContext, get_current_project, require_project_editor
-from backend.core.security import UserContext, get_current_user, require_admin
+from backend.core.security import (
+    UserContext,
+    get_current_user,
+    require_admin,
+    require_user_right,
+    user_has_right,
+)
 from backend.tasks.ingestion_jobs import get_ingestion_job_store
 from backend.tasks.report_jobs import get_report_job_store
 from src.docx_kit import safe_filename
@@ -162,7 +168,7 @@ def _public(job: dict) -> dict:
 @router.post("/chronology/source-preview")
 def preview_chronology_sources(
     body: ChronologyGenerateRequest,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_user_right("chronology")),
     project: ProjectContext = Depends(require_project_editor),
 ):
     _assert_chronology_enabled()
@@ -192,7 +198,7 @@ def preview_chronology_sources(
 @router.post("/chronology/generate", status_code=202)
 def generate_chronology_report(
     body: ChronologyGenerateRequest,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_user_right("chronology")),
     project: ProjectContext = Depends(require_project_editor),
 ):
     _assert_chronology_enabled()
@@ -229,7 +235,7 @@ def generate_chronology_report(
 @router.post("/forensic/generate", status_code=202)
 def generate_forensic_report(
     body: ForensicGenerateRequest,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_user_right("forensic")),
     project: ProjectContext = Depends(require_project_editor),
 ):
     status = body.status.strip().title()
@@ -252,7 +258,7 @@ def generate_forensic_report(
 @router.post("/forensic/toolkit-evidence", status_code=201)
 def register_toolkit_evidence(
     body: ToolkitEvidenceRequest,
-    user: UserContext = Depends(get_current_user),
+    user: UserContext = Depends(require_user_right("forensic")),
     project: ProjectContext = Depends(require_project_editor),
 ):
     from src.document_registry import get_document_registry
@@ -271,7 +277,10 @@ def register_toolkit_evidence(
 
 
 @router.get("/forensic/toolkit-evidence")
-def list_toolkit_evidence(project: ProjectContext = Depends(get_current_project)):
+def list_toolkit_evidence(
+    _: UserContext = Depends(require_user_right("forensic")),
+    project: ProjectContext = Depends(get_current_project),
+):
     from src.toolkit_evidence_store import get_toolkit_evidence_store
     return {"artifacts": get_toolkit_evidence_store().list_project(project.project_id)}
 
@@ -279,10 +288,13 @@ def list_toolkit_evidence(project: ProjectContext = Depends(get_current_project)
 @router.get("/reports")
 def list_reports(
     module: str = Query(""),
+    user: UserContext = Depends(get_current_user),
     project: ProjectContext = Depends(get_current_project),
 ):
     if module and module not in ("chronology", "forensic"):
         raise HTTPException(422, "unsupported report module")
+    if module in ("chronology", "forensic") and not user_has_right(user, module):
+        raise HTTPException(403, f"feature_not_available:{module}")
     return {"reports": [_public(j) for j in get_report_job_store().list_project(
         project.project_id, module=module,
     )]}

@@ -58,7 +58,10 @@ const HubPage = () => {
         ? MODULES.find((module) => module.id === lockedModule)
         : null;
     const lockedGate = lockedModule
-        ? getModuleGate(plan, company, lockedModule)
+        ? getModuleGate(plan, company, lockedModule, {
+              features: session?.features,
+              role: session?.role,
+          })
         : null;
 
     return (
@@ -145,7 +148,10 @@ const HubPage = () => {
 
                     <div className="mt-10 grid gap-5 md:grid-cols-3">
                         {MODULES.map((module, index) => {
-                            const gate = getModuleGate(plan, company, module.id);
+                            const gate = getModuleGate(plan, company, module.id, {
+                                features: session?.features,
+                                role: session?.role,
+                            });
                             const locked = gate.state === "locked";
                             return (
                                 <motion.button

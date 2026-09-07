@@ -39,7 +39,12 @@ const ChronologyHomePage = () => {
     const company = companyForSession(session, companies);
     const plan = planForCompany(company, plans);
     const gate =
-        company && plan ? getModuleGate(plan, company, "chronology") : null;
+        company && plan
+            ? getModuleGate(plan, company, "chronology", {
+                  features: session?.features,
+                  role: session?.role,
+              })
+            : null;
     const ownerUserId = activeWorkspaceUserId ?? session?.userId ?? undefined;
     const mockReports = company
         ? ownedByUser(

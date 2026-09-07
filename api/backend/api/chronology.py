@@ -16,10 +16,10 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 
-from backend.core.security import get_current_user, UserContext
+from backend.core.security import get_current_user, UserContext, require_user_right
 from backend.core.projects import ProjectContext, get_current_project
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_user_right("chronology"))])
 
 # How much of the store we are willing to READ before scoping. This is a memory
 # backstop, not a business rule — it exists only so a runaway store cannot pull

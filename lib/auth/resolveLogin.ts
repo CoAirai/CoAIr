@@ -13,6 +13,8 @@ export type AuthSession = {
     companyName?: string;
     needsCheckout?: boolean;
     impersonator?: string;
+    /** Per-user module rights from the API (chronology, forensic, …). */
+    features?: Record<string, boolean>;
 };
 
 export const SUPER_ADMIN_EMAIL = "admin@coair.ai";

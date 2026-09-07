@@ -1,8 +1,13 @@
 import type { Company, ModuleId, Plan } from "../admin/types";
+import { rightsFromFeatures, type RightKey } from "../admin/rolesStub";
+import type { SessionRole } from "../auth/resolveLogin";
 
 export type ModuleGate =
     | { state: "open"; kind: "included" | "trial" | "addon"; trialRemaining?: number }
-    | { state: "locked"; reason: "addon" | "trial_exhausted" };
+    | {
+          state: "locked";
+          reason: "addon" | "trial_exhausted" | "user_denied";
+      };
 
 export const MODULES: {
     id: ModuleId;
@@ -41,11 +46,48 @@ export const MODULES: {
     },
 ];
 
+function sessionRoleToOrgRole(role?: SessionRole | string | null): string {
+    if (
+        role === "company_admin" ||
+        role === "super_admin" ||
+        role === "owner" ||
+        role === "admin"
+    ) {
+        return "owner";
+    }
+    return "member";
+}
+
+/** Per-user Super Admin / company-admin rights toggles. Chatbot is always allowed. */
+export function userMayAccessModule(
+    moduleId: ModuleId,
+    features?: Record<string, boolean> | null,
+    sessionRole?: SessionRole | string | null
+): boolean {
+    if (moduleId === "chatbot") return true;
+    if (moduleId !== "chronology" && moduleId !== "forensic") return true;
+    const rights = rightsFromFeatures(
+        features,
+        sessionRoleToOrgRole(sessionRole)
+    );
+    return rights[moduleId as RightKey];
+}
+
+export type ModuleGateUser = {
+    features?: Record<string, boolean> | null;
+    role?: SessionRole | string | null;
+};
+
 export function getModuleGate(
     plan: Plan,
     company: Pick<Company, "addOns" | "trialUsage">,
-    moduleId: ModuleId
+    moduleId: ModuleId,
+    user?: ModuleGateUser
 ): ModuleGate {
+    if (user && !userMayAccessModule(moduleId, user.features, user.role)) {
+        return { state: "locked", reason: "user_denied" };
+    }
+
     const rule = plan.modules[moduleId];
     if (!rule || rule.access === "included") {
         return { state: "open", kind: "included" };
@@ -69,7 +111,10 @@ export function getModuleGate(
 }
 
 export function moduleStatusLabel(gate: ModuleGate): string {
-    if (gate.state === "locked") return "Locked";
+    if (gate.state === "locked") {
+        if (gate.reason === "user_denied") return "No access";
+        return "Locked";
+    }
     if (gate.kind === "trial") {
         return `Trial (${gate.trialRemaining} left)`;
     }

@@ -49,4 +49,25 @@ describe("getModuleGate", () => {
         expect(unlocked).toEqual({ state: "open", kind: "addon" });
         expect(moduleStatusLabel(unlocked)).toBe("Live");
     });
+
+    it("locks chronology when the user right is off", () => {
+        const gate = getModuleGate(
+            demo,
+            { addOns: [], trialUsage: {} },
+            "chronology",
+            {
+                features: {
+                    projectAccess: true,
+                    chronology: false,
+                    forensic: false,
+                    upload: true,
+                    download: false,
+                    reports: false,
+                },
+                role: "member",
+            }
+        );
+        expect(gate).toEqual({ state: "locked", reason: "user_denied" });
+        expect(moduleStatusLabel(gate)).toBe("No access");
+    });
 });

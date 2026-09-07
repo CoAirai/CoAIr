@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.core.projects import ProjectContext, get_current_project, require_project_editor
-from backend.core.security import UserContext, get_current_user, is_admin
+from backend.core.security import UserContext, get_current_user, is_admin, require_user_right
 from backend.services.forensic_toolkit import (
     MODULE_DEFINITIONS, ForensicActionError, ForensicActionService,
     ForensicProgrammeService, ForensicSourceService,
@@ -23,7 +23,7 @@ from src.forensic_store import MAX_WORKSPACE_BYTES, UPSTREAM_SHA, get_forensic_s
 from src.billing_store import CreditBalanceExceededError
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_user_right("forensic"))])
 
 
 def _flag(name: str) -> bool:

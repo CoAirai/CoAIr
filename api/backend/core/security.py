@@ -285,8 +285,71 @@ def require_feature(feature_name: str) -> Callable[[UserContext], UserContext]:
     """Dependency factory: 403 if `feature_name` is not enabled for the user."""
 
     def _checker(user: UserContext = Depends(get_current_user)) -> UserContext:
-        if not user.features.get(feature_name, False):
+        if not user_has_right(user, feature_name):
             raise HTTPException(403, f"feature_not_available:{feature_name}")
+        return user
+
+    return _checker
+
+
+# Per-user module rights toggled by Super Admin / company admin.
+_USER_RIGHT_KEYS = (
+    "projectAccess",
+    "chronology",
+    "forensic",
+    "upload",
+    "download",
+    "reports",
+)
+
+_MEMBER_RIGHT_DEFAULTS = {
+    "projectAccess": True,
+    "chronology": True,
+    "forensic": False,
+    "upload": True,
+    "download": False,
+    "reports": False,
+}
+
+_OWNER_RIGHT_DEFAULTS = {
+    "projectAccess": True,
+    "chronology": True,
+    "forensic": True,
+    "upload": True,
+    "download": True,
+    "reports": True,
+}
+
+
+def user_has_right(user: UserContext, right: str) -> bool:
+    """Match frontend rightsFromFeatures: explicit flags win; else role defaults."""
+    if is_admin(user.role):
+        return True
+    features = user.features or {}
+    has_explicit = any(key in features for key in _USER_RIGHT_KEYS)
+    if has_explicit:
+        return bool(features.get(right, False))
+    org_role = "member"
+    try:
+        from src.org_store import get_org_store
+
+        membership = get_org_store().membership_for(user.username)
+        if membership and membership.get("role") == "owner":
+            org_role = "owner"
+    except Exception:
+        org_role = "member"
+    defaults = (
+        _OWNER_RIGHT_DEFAULTS if org_role == "owner" else _MEMBER_RIGHT_DEFAULTS
+    )
+    return bool(defaults.get(right, False))
+
+
+def require_user_right(right: str) -> Callable[[UserContext], UserContext]:
+    """403 when the user's assignable module right is off."""
+
+    def _checker(user: UserContext = Depends(get_current_user)) -> UserContext:
+        if not user_has_right(user, right):
+            raise HTTPException(403, f"feature_not_available:{right}")
         return user
 
     return _checker
@@ -309,5 +372,7 @@ __all__ = [
     "require_admin",
     "require_superadmin",
     "require_feature",
+    "require_user_right",
+    "user_has_right",
     "JWT_SECRET",
 ]

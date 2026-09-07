@@ -69,7 +69,12 @@ const ForensicHomePage = () => {
     const company = companyForSession(session, companies);
     const plan = planForCompany(company, plans);
     const gate =
-        company && plan ? getModuleGate(plan, company, "forensic") : null;
+        company && plan
+            ? getModuleGate(plan, company, "forensic", {
+                  features: session?.features,
+                  role: session?.role,
+              })
+            : null;
     const workspaceState = company
         ? companyWorkspaces[company.id]
         : undefined;

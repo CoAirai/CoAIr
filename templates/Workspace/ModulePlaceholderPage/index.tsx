@@ -27,7 +27,13 @@ const ModulePlaceholderPage = ({ moduleId }: Props) => {
         [companies, session]
     );
     const plan = planForCompany(company, plans);
-    const gate = company && plan ? getModuleGate(plan, company, moduleId) : null;
+    const gate =
+        company && plan
+            ? getModuleGate(plan, company, moduleId, {
+                  features: session?.features,
+                  role: session?.role,
+              })
+            : null;
 
     useEffect(() => {
         if (!company || !plan || !gate) return;
