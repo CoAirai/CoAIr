@@ -1,5 +1,7 @@
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+const REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 export const ACCESS_TOKEN_KEY = "coair.accessToken";
+export const REFRESH_TOKEN_KEY = "coair.refreshToken";
 /** Shared across *.coair.ai so logout on one portal blocks restore on siblings. */
 export const SIGNED_OUT_KEY = "coair.signedOut";
 
@@ -12,9 +14,9 @@ function cookieDomain(): string | undefined {
     return undefined;
 }
 
-function cookieSuffix(): string {
+function cookieSuffix(maxAge = COOKIE_MAX_AGE): string {
     const domain = cookieDomain();
-    const parts = ["path=/", "SameSite=Lax", `max-age=${COOKIE_MAX_AGE}`];
+    const parts = ["path=/", "SameSite=Lax", `max-age=${maxAge}`];
     if (window.location.protocol === "https:") {
         parts.push("Secure");
     }
@@ -86,13 +88,21 @@ export function isSharedSignedOut(): boolean {
     return false;
 }
 
-export function writeSharedItem(key: string, value: string, cookie = true): void {
+export function writeSharedItem(
+    key: string,
+    value: string,
+    cookie = true,
+    maxAge?: number
+): void {
     if (typeof window === "undefined") return;
     // Never store Supabase auth JSON in cookies (too large → truncation → false SIGNED_OUT).
     const useCookie =
         cookie && !isSupabaseAuthKey(key) && value.length < 3500;
     if (useCookie) {
-        document.cookie = `${key}=${encodeURIComponent(value)}; ${cookieSuffix()}`;
+        const age =
+            maxAge ??
+            (key === REFRESH_TOKEN_KEY ? REFRESH_COOKIE_MAX_AGE : COOKIE_MAX_AGE);
+        document.cookie = `${key}=${encodeURIComponent(value)}; ${cookieSuffix(age)}`;
     } else if (isSupabaseAuthKey(key)) {
         // Drop any legacy truncated sb-* cookies so they cannot win on read.
         expireCookie(key);
@@ -141,6 +151,9 @@ export function clearSharedAuth(): void {
         if (name === SIGNED_OUT_KEY) continue;
         // Keep pending MFA challenge across a pre-code signOut.
         if (name === "coair.mfaChallenge") continue;
+        // Keep remembered devices across intentional logout so "30 days"
+        // still skips MFA on the next password login.
+        if (name.startsWith("coair.trustedDevice")) continue;
         if (name.startsWith("coair.") || name.startsWith("sb-")) {
             removeSharedItem(name);
         }
@@ -153,6 +166,7 @@ export function clearSharedAuth(): void {
                 key &&
                 key !== SIGNED_OUT_KEY &&
                 key !== "coair.mfaChallenge" &&
+                !key.startsWith("coair.trustedDevice") &&
                 (key.startsWith("coair.") || key.startsWith("sb-"))
             ) {
                 keys.push(key);

@@ -16,8 +16,16 @@ import {
     type AuthSession,
     resolveLogin,
 } from "@/lib/auth/resolveLogin";
+import { CoairApiError } from "@/lib/coair/client";
+import {
+    tryLiveLogin,
+    sessionFromLiveToken,
+    hydrateSharedSupabaseSession,
+} from "@/lib/coair/liveLogin";
+import { portalKindFromHost } from "@/lib/auth/hosts";
 import {
     ACCESS_TOKEN_KEY,
+    REFRESH_TOKEN_KEY,
     SIGNED_OUT_KEY,
     clearSharedAuth,
     isSharedSignedOut,
@@ -25,9 +33,6 @@ import {
     removeSharedItem,
     writeSharedItem,
 } from "@/lib/auth/sharedStorage";
-import { CoairApiError } from "@/lib/coair/client";
-import { tryLiveLogin, sessionFromLiveToken } from "@/lib/coair/liveLogin";
-import { portalKindFromHost } from "@/lib/auth/hosts";
 import {
     authEmailFromUsername,
     getSupabaseBrowser,
@@ -90,7 +95,9 @@ function persist(session: AuthSession | null, options?: { wipeAll?: boolean }) {
     if (!session) {
         removeSharedItem(AUTH_SESSION_KEY);
         removeSharedItem(ACCESS_TOKEN_KEY);
+        removeSharedItem(REFRESH_TOKEN_KEY);
         // Full wipe (including Supabase refresh material) only on intentional logout.
+        // Trusted-device keys are preserved inside clearSharedAuth.
         if (options?.wipeAll !== false) {
             clearSharedAuth();
         }
@@ -151,10 +158,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         const supabase = getSupabaseBrowser();
                         if (supabase) {
                             try {
+                                await hydrateSharedSupabaseSession();
                                 const { data, error: refreshError } =
                                     await supabase.auth.refreshSession();
                                 const next =
                                     data.session?.access_token?.trim() || "";
+                                if (data.session?.refresh_token) {
+                                    writeSharedItem(
+                                        REFRESH_TOKEN_KEY,
+                                        data.session.refresh_token,
+                                        true
+                                    );
+                                }
                                 if (!refreshError && next && next !== token) {
                                     await adoptToken(next, false);
                                     return;
@@ -227,6 +242,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
+                // Cross-subdomain: hydrate Supabase from shared refresh cookie
+                // before reading local sb-* (which is origin-scoped).
+                const hydrated = await hydrateSharedSupabaseSession();
+
                 const stored = readStoredSession();
                 if (stored && !cancelled) {
                     if (shouldIgnoreSessionOnThisPortal(stored)) {
@@ -239,6 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 const supabase = getSupabaseBrowser();
                 const token =
+                    hydrated ||
                     readSharedItem(ACCESS_TOKEN_KEY) ||
                     (supabase
                         ? (await supabase.auth.getSession()).data.session?.access_token
@@ -270,12 +290,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setSession(null);
                     return;
                 }
-                // Incidental SIGNED_OUT (multi-tab refresh race / storage glitch):
-                // do NOT clearSharedAuth — that causes logout→login flicker for all roles.
+                // Incidental SIGNED_OUT (multi-tab refresh race / storage glitch /
+                // background tab): recover quietly — never flash logout UI.
+                const sharedRefresh = readSharedItem(REFRESH_TOKEN_KEY)?.trim();
+                const sharedAccess = readSharedItem(ACCESS_TOKEN_KEY)?.trim();
+                if (sharedAccess && sharedRefresh && !isSignedOutFlag()) {
+                    try {
+                        await hydrateSharedSupabaseSession();
+                        const recovered =
+                            await getSupabaseBrowser()?.auth.getSession();
+                        const token =
+                            recovered?.data.session?.access_token ||
+                            sharedAccess;
+                        if (token) {
+                            patchToken(token);
+                            return;
+                        }
+                    } catch {
+                        /* fall through */
+                    }
+                }
                 const recovered = await getSupabaseBrowser()?.auth.getSession();
                 const token = recovered?.data.session?.access_token;
                 if (token && !isSignedOutFlag()) {
                     patchToken(token);
+                    return;
+                }
+                // Keep the last known app session on screen; a later
+                // TOKEN_REFRESHED / visibility restore can heal without flicker.
+                const kept = readStoredSession();
+                if (kept && !shouldIgnoreSessionOnThisPortal(kept)) {
                     return;
                 }
                 setSession(null);
@@ -285,13 +329,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (isSignedOutFlag()) {
                     return;
                 }
+                if (next.refresh_token) {
+                    writeSharedItem(REFRESH_TOKEN_KEY, next.refresh_token, true);
+                }
+                writeSharedItem(ACCESS_TOKEN_KEY, next.access_token, true);
                 patchToken(next.access_token);
             }
         }) ?? { data: { subscription: { unsubscribe() {} } } };
 
+        const onVisible = () => {
+            if (document.visibilityState !== "visible" || isSignedOutFlag()) {
+                return;
+            }
+            void hydrateSharedSupabaseSession().then((token) => {
+                if (token && !cancelled) {
+                    void adoptToken(token);
+                }
+            });
+        };
+        document.addEventListener("visibilitychange", onVisible);
+
         return () => {
             cancelled = true;
             data.subscription.unsubscribe();
+            document.removeEventListener("visibilitychange", onVisible);
         };
     }, []);
 

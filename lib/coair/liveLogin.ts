@@ -1,9 +1,11 @@
 import { CoairApiError, coairFetch, isApiUnreachable } from "./client";
 import { showAuthDebugCodes } from "./debugFlags";
 import { mapLiveSession } from "./mapSession";
-import { readTrustedDeviceToken } from "./trustedDevice";
+import { readTrustedDeviceTokenForLogin } from "./trustedDevice";
 import type { AuthSession } from "@/lib/auth/resolveLogin";
 import {
+    ACCESS_TOKEN_KEY,
+    REFRESH_TOKEN_KEY,
     readSharedItem,
     removeSharedItem,
     writeSharedItem,
@@ -110,6 +112,14 @@ async function adoptSupabaseSession(
     accessToken: string,
     refreshToken?: string | null
 ): Promise<void> {
+    if (accessToken) {
+        writeSharedItem(ACCESS_TOKEN_KEY, accessToken, true);
+    }
+    if (refreshToken) {
+        // Shared across *.coair.ai — localStorage alone is per-subdomain and
+        // caused refresh failures (logout flicker) after redirect from login → user.
+        writeSharedItem(REFRESH_TOKEN_KEY, refreshToken, true);
+    }
     const supabase = getSupabaseBrowser();
     if (!supabase || !accessToken || !refreshToken) {
         return;
@@ -118,6 +128,21 @@ async function adoptSupabaseSession(
         access_token: accessToken,
         refresh_token: refreshToken,
     });
+}
+
+/** Rehydrate Supabase on any portal from shared access/refresh cookies. */
+export async function hydrateSharedSupabaseSession(): Promise<string | null> {
+    const access = readSharedItem(ACCESS_TOKEN_KEY)?.trim() || "";
+    const refresh = readSharedItem(REFRESH_TOKEN_KEY)?.trim() || "";
+    if (!access) return null;
+    if (refresh) {
+        try {
+            await adoptSupabaseSession(access, refresh);
+        } catch {
+            /* keep access cookie; adoptToken may still work */
+        }
+    }
+    return access;
 }
 
 /** Browser/Supabase logins skip /auth/login — ask API to send login emails. */
@@ -164,7 +189,7 @@ async function loginViaApi(
     username: string,
     password: string
 ): Promise<CoairLoginResponse> {
-    const device_token = readTrustedDeviceToken(username) || "";
+    const device_token = readTrustedDeviceTokenForLogin(username) || "";
     return coairFetch<CoairLoginResponse>("/auth/login", {
         method: "POST",
         body: { username, password, device_token },

@@ -1020,10 +1020,13 @@ class OpsStore:
         hashed = _hash(raw)
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM trusted_devices WHERE token_hash=? AND username=?",
-                [hashed, clean_user],
+                "SELECT * FROM trusted_devices WHERE token_hash=?",
+                [hashed],
             ).fetchone()
         if not row or row["revoked_at"]:
+            return None
+        row_user = str(row["username"] or "").strip()
+        if row_user.lower() != clean_user.lower():
             return None
         if row["expires_at"] < _now_iso():
             return None
@@ -1034,7 +1037,7 @@ class OpsStore:
             )
         return {
             "device_id": str(row["device_id"]),
-            "username": clean_user,
+            "username": row_user or clean_user,
             "expires_at": str(row["expires_at"]),
         }
 

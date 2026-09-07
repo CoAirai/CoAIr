@@ -20,8 +20,16 @@ import {
 } from "@/lib/coair/liveLogin";
 import { verifyMfa } from "@/lib/coair/ops";
 import { showAuthDebugCodes } from "@/lib/coair/debugFlags";
-import { writeTrustedDeviceToken } from "@/lib/coair/trustedDevice";
-import { getSupabaseBrowser } from "@/lib/supabase/browser";
+import { writeTrustedDeviceAliases } from "@/lib/coair/trustedDevice";
+import {
+    ACCESS_TOKEN_KEY,
+    REFRESH_TOKEN_KEY,
+    writeSharedItem,
+} from "@/lib/auth/sharedStorage";
+import {
+    authEmailFromUsername,
+    getSupabaseBrowser,
+} from "@/lib/supabase/browser";
 
 const CODE_LENGTH = 6;
 
@@ -87,17 +95,29 @@ const EnterCodePage = ({ portalHint }: Props) => {
                 rememberDevice: !isAdminPortal && rememberDevice,
             });
             clearMfaChallenge();
-            if (verified.device_token && verified.user?.username) {
-                writeTrustedDeviceToken(
-                    verified.user.username,
-                    verified.device_token
-                );
+            if (verified.device_token) {
+                writeTrustedDeviceAliases(verified.device_token, [
+                    verified.user?.username,
+                    challenge.username,
+                    authEmailFromUsername(
+                        verified.user?.username || challenge.username
+                    ),
+                    authEmailFromUsername(challenge.username),
+                ]);
             }
             if (verified.refresh_token) {
+                writeSharedItem(ACCESS_TOKEN_KEY, verified.access_token, true);
+                writeSharedItem(
+                    REFRESH_TOKEN_KEY,
+                    verified.refresh_token,
+                    true
+                );
                 await getSupabaseBrowser()?.auth.setSession({
                     access_token: verified.access_token,
                     refresh_token: verified.refresh_token,
                 });
+            } else if (verified.access_token) {
+                writeSharedItem(ACCESS_TOKEN_KEY, verified.access_token, true);
             }
             const session = await sessionFromAccessToken(
                 verified.access_token,
