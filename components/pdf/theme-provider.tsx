@@ -33,5 +33,7 @@ export const PdfcnThemeProvider = ({
 
 export const usePdfcnTheme = (): PdfcnTheme => serializedTheme;
 
-export const useSafeMemo = <T,>(factory: () => T, _deps: DependencyList): T =>
-  factory();
+export const useSafeMemo = <T,>(factory: () => T, deps: DependencyList): T => {
+  void deps;
+  return factory();
+};

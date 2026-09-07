@@ -15,9 +15,7 @@ export const createTableStyles = (t: PdfcnTheme) => {
 
   const cellPadV = spacing[2] - 2;
   const cellPadH = spacing[2] + 2;
-  // eslint-disable-next-line prefer-destructuring
   const cellPadVCompact = spacing[0.5];
-  // eslint-disable-next-line prefer-destructuring
   const cellPadHCompact = spacing[2];
 
   const rowDivider = {

@@ -377,14 +377,14 @@ export const PageFooter = ({
 }: PageFooterProps) => {
   const theme = usePdfcnTheme();
   const styles = useSafeMemo(() => createPageFooterStyles(theme), [theme]);
-  const _isFixed = fixed || sticky;
-  const mt = sticky ? 0 : (marginTop ?? theme.spacing.sectionGap);
+  const isFixed = fixed || sticky;
+  const mt = isFixed ? 0 : (marginTop ?? theme.spacing.sectionGap);
   const resolvedTextColor = textColor
     ? resolveColor(textColor, theme.colors)
     : undefined;
   // A footer passed as a render option lays out at full page width, so the
   // page padding has to come from the footer itself to line up with the content.
-  const placement: Style = sticky
+  const placement: Style = isFixed
     ? {
         bottom: pagePadding,
         left: pagePadding,

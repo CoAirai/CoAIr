@@ -172,9 +172,10 @@ export const View = ({ children, style, className, ...rest }: ViewProps) => {
     wrap,
     fixed,
     break: br,
-    minPresenceAhead: _m,
+    minPresenceAhead,
     ...dom
   } = rest as ViewProps & Record<string, unknown>;
+  void minPresenceAhead;
   const merged = {
     display: "flex",
     flexDirection: "column",
@@ -214,11 +215,12 @@ export const Text = ({
   children,
   style,
   className,
-  render: _render,
+  render,
   href,
   src,
   ...rest
 }: TextProps) => {
+  void render;
   const merged = flatten(style) as React.CSSProperties | undefined;
   const link = href ?? src;
   if (link) {
@@ -296,23 +298,26 @@ export const Document = ({
 
 export const Page = ({
   children,
-  size: _size,
+  size,
   style,
 }: {
   children?: ReactNode;
   size?: string | { width: number; height: number };
   style?: StyleInput;
-}) => (
-  <div
-    data-pdf-page
-    style={
-      {
-        display: "flex",
-        flexDirection: "column",
-        ...flatten(style),
-      } as React.CSSProperties
-    }
-  >
-    {children}
-  </div>
-);
+}) => {
+  void size;
+  return (
+    <div
+      data-pdf-page
+      style={
+        {
+          display: "flex",
+          flexDirection: "column",
+          ...flatten(style),
+        } as React.CSSProperties
+      }
+    >
+      {children}
+    </div>
+  );
+};

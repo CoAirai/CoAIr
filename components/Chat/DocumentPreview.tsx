@@ -27,7 +27,7 @@ const DocumentPreview = () => {
 
     useEffect(() => {
         if (openCitation) setPage(openCitation.page);
-    }, [openCitation?.documentId, openCitation?.page]);
+    }, [openCitation]);
 
     const current =
         preview?.pages.find((entry) => entry.page === page) ?? preview?.pages[0];
