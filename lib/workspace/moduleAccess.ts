@@ -112,7 +112,7 @@ export function getModuleGate(
 
 export function moduleStatusLabel(gate: ModuleGate): string {
     if (gate.state === "locked") {
-        if (gate.reason === "user_denied") return "No access";
+        if (gate.reason === "user_denied") return "Request access";
         return "Locked";
     }
     if (gate.kind === "trial") {

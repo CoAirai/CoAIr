@@ -68,6 +68,6 @@ describe("getModuleGate", () => {
             }
         );
         expect(gate).toEqual({ state: "locked", reason: "user_denied" });
-        expect(moduleStatusLabel(gate)).toBe("No access");
+        expect(moduleStatusLabel(gate)).toBe("Request access");
     });
 });

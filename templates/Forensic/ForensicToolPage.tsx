@@ -65,7 +65,9 @@ const ForensicToolPage = ({ toolId }: Props) => {
     const live = useLiveWorkspace();
     const tool = getForensicTool(toolId);
     const { activeWorkspaceUserId } = useChat();
-    const company = companyForSession(session, companies);
+    const company = companyForSession(session, companies, {
+        addOns: live.enabled ? live.moduleAddOns : undefined,
+    });
     const plan = planForCompany(company, plans);
     const gate =
         company && plan

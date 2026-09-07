@@ -3,17 +3,22 @@
 import { motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import Image from "@/components/Image";
 import PageEnter from "@/components/Motion/PageEnter";
 import UpgradePackageModal from "@/components/Workspace/UpgradePackageModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { companyForSession } from "@/lib/workspace/companyForSession";
 import { planForCompany } from "@/lib/admin/plans";
 import type { ModuleId } from "@/lib/admin/types";
+import {
+    listOrgModuleAccessRequests,
+    listOrgModuleUnlockRequests,
+} from "@/lib/coair/ops";
 import {
     getModuleGate,
     MODULES,
@@ -30,16 +35,24 @@ const HubPage = () => {
     const searchParams = useSearchParams();
     const { session, signOut } = useAuth();
     const { companies, plans } = useAdminData();
+    const { moduleAddOns, enabled: liveEnabled } = useLiveWorkspace();
     const requested = searchParams.get("upgrade") as ModuleId | null;
     const [lockedModule, setLockedModule] = useState<ModuleId | null>(
         requested && MODULES.some((module) => module.id === requested)
             ? requested
             : null
     );
+    const [pendingModules, setPendingModules] = useState<Set<string>>(
+        new Set()
+    );
+    const isCompanyAdmin = session?.role === "company_admin";
 
     const company = useMemo(
-        () => companyForSession(session, companies),
-        [companies, session]
+        () =>
+            companyForSession(session, companies, {
+                addOns: liveEnabled ? moduleAddOns : undefined,
+            }),
+        [companies, liveEnabled, moduleAddOns, session]
     );
     const plan = planForCompany(company, plans);
     const initials = (session?.name ?? "U")
@@ -49,6 +62,47 @@ const HubPage = () => {
         .map((part) => part[0]?.toUpperCase() ?? "")
         .join("");
     const reduceMotion = useReducedMotion();
+
+    useEffect(() => {
+        if (!session?.accessToken || session.source !== "live") {
+            setPendingModules(new Set());
+            return;
+        }
+        const token = session.accessToken;
+        const username = session.username || session.email || "";
+        void (async () => {
+            const pending = new Set<string>();
+            try {
+                const access = await listOrgModuleAccessRequests(token);
+                for (const row of access) {
+                    if (row.status === "pending" && row.username === username) {
+                        pending.add(String(row.module));
+                    }
+                }
+            } catch {
+                /* ignore */
+            }
+            if (isCompanyAdmin) {
+                try {
+                    const unlock = await listOrgModuleUnlockRequests(token);
+                    for (const row of unlock.requests ?? []) {
+                        if (row.status === "pending") {
+                            pending.add(String(row.module));
+                        }
+                    }
+                } catch {
+                    /* ignore */
+                }
+            }
+            setPendingModules(pending);
+        })();
+    }, [
+        isCompanyAdmin,
+        session?.accessToken,
+        session?.email,
+        session?.source,
+        session?.username,
+    ]);
 
     if (!company || !plan) {
         return <WorkspaceHubSkeleton />;
@@ -210,7 +264,12 @@ const HubPage = () => {
                                     </p>
                                     {locked ? (
                                         <p className="mt-auto pt-6 text-label-xs text-sub-600">
-                                            Upgrade to unlock this module
+                                            {module.id === "chronology" ||
+                                            module.id === "forensic"
+                                                ? isCompanyAdmin
+                                                    ? "Request Super Admin to unlock"
+                                                    : "Request company admin for access"
+                                                : "Upgrade to unlock this module"}
                                         </p>
                                     ) : (
                                         <p className="mt-auto pt-6 text-label-xs font-medium text-blue-500 opacity-0 transition-opacity group-hover:opacity-100">
@@ -228,15 +287,27 @@ const HubPage = () => {
                         lockedMeta && lockedGate?.state === "locked"
                     )}
                     moduleTitle={lockedMeta?.title ?? ""}
+                    moduleId={lockedModule}
                     reason={
                         lockedGate?.state === "locked"
                             ? lockedGate.reason
                             : "addon"
                     }
-                    isCompanyAdmin={session?.role === "company_admin"}
+                    isCompanyAdmin={Boolean(isCompanyAdmin)}
+                    accessToken={session?.accessToken}
+                    pendingRequest={Boolean(
+                        lockedModule && pendingModules.has(lockedModule)
+                    )}
                     onClose={() => {
                         setLockedModule(null);
                         router.replace("/workspace");
+                    }}
+                    onRequested={() => {
+                        if (lockedModule) {
+                            setPendingModules(
+                                (prev) => new Set(prev).add(lockedModule)
+                            );
+                        }
                     }}
                 />
             </div>

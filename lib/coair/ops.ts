@@ -647,6 +647,108 @@ export async function denyAdminPackageChangeRequest(token: string, id: string) {
     );
 }
 
+export type ModuleAccessModule = "chronology" | "forensic";
+
+export type ModuleAccessRequest = {
+    id: string;
+    org_id: string;
+    org_name?: string | null;
+    username: string;
+    module: ModuleAccessModule | string;
+    status: string;
+    created_at: string;
+    resolved_at?: string | null;
+    resolved_by?: string | null;
+};
+
+export type OrgModuleGrants = {
+    org_id: string;
+    chronology: boolean;
+    forensic: boolean;
+    updated_at?: string | null;
+};
+
+export async function listOrgModuleAccessRequests(token: string) {
+    const payload = await coairFetch<{ requests: ModuleAccessRequest[] }>(
+        "/org/module-access-requests",
+        { token }
+    );
+    return payload.requests ?? [];
+}
+
+export async function createOrgModuleAccessRequest(
+    token: string,
+    module: ModuleAccessModule
+) {
+    return coairFetch<{ request: ModuleAccessRequest }>(
+        "/org/module-access-requests",
+        { method: "POST", token, body: { module } }
+    );
+}
+
+export async function approveOrgModuleAccessRequest(token: string, id: string) {
+    return coairFetch<{ request: ModuleAccessRequest }>(
+        `/org/module-access-requests/${encodeURIComponent(id)}/approve`,
+        { method: "POST", token }
+    );
+}
+
+export async function denyOrgModuleAccessRequest(token: string, id: string) {
+    return coairFetch<{ request: ModuleAccessRequest }>(
+        `/org/module-access-requests/${encodeURIComponent(id)}/deny`,
+        { method: "POST", token }
+    );
+}
+
+export async function listOrgModuleUnlockRequests(token: string) {
+    return coairFetch<{
+        requests: ModuleAccessRequest[];
+        module_grants: OrgModuleGrants;
+    }>("/org/module-unlock-requests", { token });
+}
+
+export async function createOrgModuleUnlockRequest(
+    token: string,
+    module: ModuleAccessModule
+) {
+    return coairFetch<{ request: ModuleAccessRequest }>(
+        "/org/module-unlock-requests",
+        { method: "POST", token, body: { module } }
+    );
+}
+
+export async function listAdminModuleUnlockRequests(
+    token: string,
+    status: string = "pending"
+) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const payload = await coairFetch<{ requests: ModuleAccessRequest[] }>(
+        `/admin/module-unlock-requests${query}`,
+        { token }
+    );
+    return payload.requests ?? [];
+}
+
+export async function approveAdminModuleUnlockRequest(
+    token: string,
+    id: string
+) {
+    return coairFetch<{
+        request: ModuleAccessRequest;
+        module_grants: OrgModuleGrants;
+    }>(`/admin/module-unlock-requests/${encodeURIComponent(id)}/approve`, {
+        method: "POST",
+        token,
+    });
+}
+
+export async function denyAdminModuleUnlockRequest(token: string, id: string) {
+    return coairFetch<{ request: ModuleAccessRequest }>(
+        `/admin/module-unlock-requests/${encodeURIComponent(id)}/deny`,
+        { method: "POST", token }
+    );
+}
+
 export async function listOrgTopups(token: string): Promise<TopUpRequest[]> {
     const payload = await coairFetch<{
         requests: Parameters<typeof mapTopUpRequest>[0][];

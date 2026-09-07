@@ -46,8 +46,24 @@ describe("companyForSession", () => {
         const company = companyForSession(session, mockCompanies);
         expect(company?.id).toBe("3fed7a1b1d0840db");
         expect(company?.name).toBe("Acme Construction");
-        expect(company?.addOns).toEqual(["chronology", "forensic"]);
+        expect(company?.addOns).toEqual([]);
         expect(company?.planId).toBe("pro");
+    });
+
+    it("applies live module grants as addOns", () => {
+        const session: AuthSession = {
+            email: "acme-admin",
+            name: "Company SuperAdmin",
+            role: "company_admin",
+            companyId: "3fed7a1b1d0840db",
+            userId: "acme-admin",
+            source: "live",
+            companyName: "Acme Construction",
+        };
+        const company = companyForSession(session, mockCompanies, {
+            addOns: ["chronology"],
+        });
+        expect(company?.addOns).toEqual(["chronology"]);
     });
 
     it("synthesizes a company for an unmatched id even if source was not persisted", () => {

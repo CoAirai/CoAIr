@@ -245,6 +245,41 @@ CREATE INDEX IF NOT EXISTS idx_package_change_requests_org
     ON package_change_requests(org_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_package_change_requests_status
     ON package_change_requests(status, created_at);
+
+CREATE TABLE IF NOT EXISTS org_module_grants (
+    org_id TEXT PRIMARY KEY,
+    chronology INTEGER NOT NULL DEFAULT 0,
+    forensic INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS module_access_requests (
+    request_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    module TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_module_access_requests_org
+    ON module_access_requests(org_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS module_unlock_requests (
+    request_id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    module TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_module_unlock_requests_org
+    ON module_unlock_requests(org_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_module_unlock_requests_status
+    ON module_unlock_requests(status, created_at);
 """
 
 
@@ -336,6 +371,62 @@ class OpsStore:
                     """
                     CREATE INDEX IF NOT EXISTS idx_package_change_requests_status
                         ON package_change_requests(status, created_at)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS org_module_grants (
+                        org_id TEXT PRIMARY KEY,
+                        chronology INTEGER NOT NULL DEFAULT 0,
+                        forensic INTEGER NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS module_access_requests (
+                        request_id TEXT PRIMARY KEY,
+                        org_id TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        module TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        resolved_by TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_module_access_requests_org
+                        ON module_access_requests(org_id, status, created_at)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS module_unlock_requests (
+                        request_id TEXT PRIMARY KEY,
+                        org_id TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        module TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        resolved_by TEXT
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_module_unlock_requests_org
+                        ON module_unlock_requests(org_id, status, created_at)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_module_unlock_requests_status
+                        ON module_unlock_requests(status, created_at)
                     """
                 )
                 conn.execute(
@@ -1798,6 +1889,267 @@ class OpsStore:
                 [status, resolved_at, resolved_by, request_id],
             )
         return self.get_package_change_request(request_id) or current
+
+    # ── Org module grants (company-wide Chronology / Forensic) ──
+
+    MODULE_GRANT_KEYS = ("chronology", "forensic")
+
+    def _module_grants_row(self, row: Optional[DbRow], org_id: str) -> Dict[str, Any]:
+        if not row:
+            return {
+                "org_id": org_id,
+                "chronology": False,
+                "forensic": False,
+                "updated_at": None,
+            }
+        return {
+            "org_id": row["org_id"],
+            "chronology": bool(row["chronology"]),
+            "forensic": bool(row["forensic"]),
+            "updated_at": row["updated_at"],
+        }
+
+    def get_org_module_grants(self, org_id: str) -> Dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM org_module_grants WHERE org_id=?",
+                [org_id],
+            ).fetchone()
+        return self._module_grants_row(row, org_id)
+
+    def set_org_module_grant(
+        self, org_id: str, module: str, enabled: bool
+    ) -> Dict[str, Any]:
+        module = (module or "").strip().lower()
+        if module not in self.MODULE_GRANT_KEYS:
+            raise ValueError("invalid_module")
+        current = self.get_org_module_grants(org_id)
+        chronology = current["chronology"]
+        forensic = current["forensic"]
+        if module == "chronology":
+            chronology = bool(enabled)
+        else:
+            forensic = bool(enabled)
+        updated_at = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO org_module_grants "
+                "(org_id, chronology, forensic, updated_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(org_id) DO UPDATE SET "
+                "chronology=excluded.chronology, forensic=excluded.forensic, "
+                "updated_at=excluded.updated_at",
+                [org_id, int(chronology), int(forensic), updated_at],
+            )
+        return self.get_org_module_grants(org_id)
+
+    def org_module_unlocked(self, org_id: str, module: str) -> bool:
+        grants = self.get_org_module_grants(org_id)
+        key = (module or "").strip().lower()
+        return bool(grants.get(key))
+
+    # ── Member → company-admin module access requests ──
+
+    def _module_access_request_row(self, row: DbRow) -> Dict[str, Any]:
+        return {
+            "id": row["request_id"],
+            "org_id": row["org_id"],
+            "username": row["username"],
+            "module": row["module"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "resolved_at": row["resolved_at"],
+            "resolved_by": row["resolved_by"],
+        }
+
+    def list_module_access_requests(
+        self,
+        *,
+        org_id: Optional[str] = None,
+        username: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM module_access_requests"
+        params: List[Any] = []
+        clauses: List[str] = []
+        if org_id:
+            clauses.append("org_id=?")
+            params.append(org_id)
+        if username:
+            clauses.append("username=?")
+            params.append(username)
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._module_access_request_row(row) for row in rows]
+
+    def get_module_access_request(
+        self, request_id: str
+    ) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM module_access_requests WHERE request_id=?",
+                [request_id],
+            ).fetchone()
+        return self._module_access_request_row(row) if row else None
+
+    def create_module_access_request(
+        self, *, org_id: str, username: str, module: str
+    ) -> Dict[str, Any]:
+        module = (module or "").strip().lower()
+        if module not in self.MODULE_GRANT_KEYS:
+            raise ValueError("invalid_module")
+        pending = self.list_module_access_requests(
+            org_id=org_id, username=username, status="pending", limit=20
+        )
+        for row in pending:
+            if row["module"] == module:
+                raise ValueError("module_access_already_pending")
+        request_id = f"mar-{uuid.uuid4().hex[:12]}"
+        created = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO module_access_requests "
+                "(request_id, org_id, username, module, status, created_at, "
+                "resolved_at, resolved_by) VALUES (?,?,?,?,?, ?,NULL,NULL)",
+                [request_id, org_id, username, module, "pending", created],
+            )
+        return self.get_module_access_request(request_id) or {
+            "id": request_id,
+            "org_id": org_id,
+            "username": username,
+            "module": module,
+            "status": "pending",
+            "created_at": created,
+            "resolved_at": None,
+            "resolved_by": None,
+        }
+
+    def resolve_module_access_request(
+        self, request_id: str, status: str, resolved_by: str
+    ) -> Dict[str, Any]:
+        if status not in ("approved", "denied"):
+            raise ValueError("invalid_module_access_status")
+        current = self.get_module_access_request(request_id)
+        if not current:
+            raise ValueError("module_access_not_found")
+        if current["status"] != "pending":
+            raise ValueError("module_access_already_resolved")
+        resolved_at = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE module_access_requests SET status=?, resolved_at=?, "
+                "resolved_by=? WHERE request_id=?",
+                [status, resolved_at, resolved_by, request_id],
+            )
+        return self.get_module_access_request(request_id) or current
+
+    # ── Company-admin → Super Admin module unlock requests ──
+
+    def _module_unlock_request_row(self, row: DbRow) -> Dict[str, Any]:
+        return {
+            "id": row["request_id"],
+            "org_id": row["org_id"],
+            "username": row["username"],
+            "module": row["module"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "resolved_at": row["resolved_at"],
+            "resolved_by": row["resolved_by"],
+        }
+
+    def list_module_unlock_requests(
+        self,
+        *,
+        org_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM module_unlock_requests"
+        params: List[Any] = []
+        clauses: List[str] = []
+        if org_id:
+            clauses.append("org_id=?")
+            params.append(org_id)
+        if status:
+            clauses.append("status=?")
+            params.append(status)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._module_unlock_request_row(row) for row in rows]
+
+    def get_module_unlock_request(
+        self, request_id: str
+    ) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM module_unlock_requests WHERE request_id=?",
+                [request_id],
+            ).fetchone()
+        return self._module_unlock_request_row(row) if row else None
+
+    def create_module_unlock_request(
+        self, *, org_id: str, username: str, module: str
+    ) -> Dict[str, Any]:
+        module = (module or "").strip().lower()
+        if module not in self.MODULE_GRANT_KEYS:
+            raise ValueError("invalid_module")
+        if self.org_module_unlocked(org_id, module):
+            raise ValueError("module_already_unlocked")
+        pending = self.list_module_unlock_requests(
+            org_id=org_id, status="pending", limit=20
+        )
+        for row in pending:
+            if row["module"] == module:
+                raise ValueError("module_unlock_already_pending")
+        request_id = f"mur-{uuid.uuid4().hex[:12]}"
+        created = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO module_unlock_requests "
+                "(request_id, org_id, username, module, status, created_at, "
+                "resolved_at, resolved_by) VALUES (?,?,?,?,?, ?,NULL,NULL)",
+                [request_id, org_id, username, module, "pending", created],
+            )
+        return self.get_module_unlock_request(request_id) or {
+            "id": request_id,
+            "org_id": org_id,
+            "username": username,
+            "module": module,
+            "status": "pending",
+            "created_at": created,
+            "resolved_at": None,
+            "resolved_by": None,
+        }
+
+    def resolve_module_unlock_request(
+        self, request_id: str, status: str, resolved_by: str
+    ) -> Dict[str, Any]:
+        if status not in ("approved", "denied"):
+            raise ValueError("invalid_module_unlock_status")
+        current = self.get_module_unlock_request(request_id)
+        if not current:
+            raise ValueError("module_unlock_not_found")
+        if current["status"] != "pending":
+            raise ValueError("module_unlock_already_resolved")
+        resolved_at = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE module_unlock_requests SET status=?, resolved_at=?, "
+                "resolved_by=? WHERE request_id=?",
+                [status, resolved_at, resolved_by, request_id],
+            )
+        return self.get_module_unlock_request(request_id) or current
 
 
 def get_ops_store() -> OpsStore:

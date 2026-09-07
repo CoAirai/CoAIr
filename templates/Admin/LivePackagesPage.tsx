@@ -8,9 +8,13 @@ import { planLabel } from "@/lib/admin/liveHelpers";
 import type { ModuleAccess, ModuleId, Plan } from "@/lib/admin/types";
 import { apiErrorMessage, listPackages, patchPackage } from "@/lib/coair/commerce";
 import {
+    approveAdminModuleUnlockRequest,
     approveAdminPackageChangeRequest,
+    denyAdminModuleUnlockRequest,
     denyAdminPackageChangeRequest,
+    listAdminModuleUnlockRequests,
     listAdminPackageChangeRequests,
+    type ModuleAccessRequest,
     type PackageChangeRequest,
 } from "@/lib/coair/ops";
 
@@ -19,6 +23,11 @@ const MODULES: { id: ModuleId; label: string }[] = [
     { id: "chronology", label: "Module 2 · Chronology" },
     { id: "forensic", label: "Module 3 · Forensic Delay Analysis" },
 ];
+
+const MODULE_UNLOCK_LABEL: Record<string, string> = {
+    chronology: "Chronology",
+    forensic: "Forensic",
+};
 
 const LivePackagesPage = () => {
     const { session } = useAuth();
@@ -29,19 +38,28 @@ const LivePackagesPage = () => {
     const [changeRequests, setChangeRequests] = useState<
         PackageChangeRequest[]
     >([]);
+    const [unlockRequests, setUnlockRequests] = useState<ModuleAccessRequest[]>(
+        []
+    );
     const [resolveBusy, setResolveBusy] = useState<string | null>(null);
     const [resolveMessage, setResolveMessage] = useState<string | null>(null);
 
     const loadRequests = useCallback(async () => {
         if (!token) {
             setChangeRequests([]);
+            setUnlockRequests([]);
             return;
         }
         try {
-            const rows = await listAdminPackageChangeRequests(token, "pending");
-            setChangeRequests(rows);
+            const [changes, unlocks] = await Promise.all([
+                listAdminPackageChangeRequests(token, "pending"),
+                listAdminModuleUnlockRequests(token, "pending"),
+            ]);
+            setChangeRequests(changes);
+            setUnlockRequests(unlocks);
         } catch {
             setChangeRequests([]);
+            setUnlockRequests([]);
         }
     }, [token]);
 
@@ -72,6 +90,31 @@ const LivePackagesPage = () => {
             } else {
                 await denyAdminPackageChangeRequest(token, id);
                 setResolveMessage("Package change denied.");
+            }
+            await loadRequests();
+        } catch (err) {
+            setError(apiErrorMessage(err));
+        } finally {
+            setResolveBusy(null);
+        }
+    };
+
+    const resolveUnlockRequest = async (
+        id: string,
+        action: "approved" | "denied"
+    ) => {
+        setResolveBusy(id);
+        setResolveMessage(null);
+        setError(null);
+        try {
+            if (action === "approved") {
+                await approveAdminModuleUnlockRequest(token, id);
+                setResolveMessage(
+                    "Module unlocked company-wide. Company admin can grant users."
+                );
+            } else {
+                await denyAdminModuleUnlockRequest(token, id);
+                setResolveMessage("Module unlock denied.");
             }
             await loadRequests();
         } catch (err) {
@@ -188,6 +231,70 @@ const LivePackagesPage = () => {
                                         disabled={resolveBusy === row.id}
                                         onClick={() =>
                                             void resolveRequest(row.id, "denied")
+                                        }
+                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
+                                    >
+                                        Deny
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </section>
+
+            <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                <h2 className="text-label-lg text-strong-950">
+                    Module unlock requests
+                </h2>
+                <p className="mt-1 text-label-xs text-sub-600">
+                    Company admins request Chronology or Forensic company-wide.
+                    Approve unlocks the module for that company so they can
+                    grant teammates.
+                </p>
+                {unlockRequests.length === 0 ? (
+                    <p className="mt-4 text-label-sm text-sub-600">
+                        No pending module unlock requests.
+                    </p>
+                ) : (
+                    <ul className="mt-4 divide-y divide-stroke-soft-200">
+                        {unlockRequests.map((row) => (
+                            <li
+                                key={row.id}
+                                className="flex flex-wrap items-center justify-between gap-3 py-3"
+                            >
+                                <div>
+                                    <p className="text-label-sm text-strong-950">
+                                        {row.org_name || row.org_id}
+                                    </p>
+                                    <p className="text-label-xs text-sub-600">
+                                        {MODULE_UNLOCK_LABEL[row.module] ||
+                                            row.module}{" "}
+                                        · {row.username}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={resolveBusy === row.id}
+                                        onClick={() =>
+                                            void resolveUnlockRequest(
+                                                row.id,
+                                                "approved"
+                                            )
+                                        }
+                                        className="h-9 rounded-xl bg-strong-950 px-3 text-label-sm text-white-0 hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        Approve
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={resolveBusy === row.id}
+                                        onClick={() =>
+                                            void resolveUnlockRequest(
+                                                row.id,
+                                                "denied"
+                                            )
                                         }
                                         className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-50"
                                     >

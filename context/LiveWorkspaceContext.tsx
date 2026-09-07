@@ -11,13 +11,19 @@ import {
 } from "react";
 import { useAuth } from "@/context/AuthContext";
 import type { CompanyDocument } from "@/lib/admin/companyDocuments";
+import type { ModuleId } from "@/lib/admin/types";
 import type { WorkspaceUser } from "@/lib/chat/threads";
 import { mapLibraryDocuments } from "@/lib/coair/mapLibrary";
 import {
     ensureSelfInWorkspaceUsers,
     mapLiveOrgUsersToWorkspaceUsers,
 } from "@/lib/coair/mapWorkspaceUsers";
-import { listOrgUsers, readAuthMe, type CoairOrgUser } from "@/lib/coair/org";
+import {
+    listOrgUsers,
+    readAuthMe,
+    readOrg,
+    type CoairOrgUser,
+} from "@/lib/coair/org";
 import type { CoairProject } from "@/lib/coair/types";
 import {
     deleteProjectFile,
@@ -25,6 +31,7 @@ import {
     listProjects,
     uploadProjectFile,
 } from "@/lib/coair/workspace";
+import { addOnsFromModuleGrants } from "@/lib/workspace/companyForSession";
 
 type AccountUsage = {
     used_tokens?: number;
@@ -34,6 +41,11 @@ type AccountUsage = {
     storage_used_bytes?: number;
     storage_limit_bytes?: number;
     percent_remaining?: number;
+};
+
+type ModuleGrants = {
+    chronology: boolean;
+    forensic: boolean;
 };
 
 type LiveWorkspaceValue = {
@@ -46,11 +58,15 @@ type LiveWorkspaceValue = {
     /** Live org members for company-admin workspace switcher. */
     teammates: WorkspaceUser[];
     orgUsers: CoairOrgUser[];
+    moduleGrants: ModuleGrants;
+    moduleAddOns: ModuleId[];
     selectProject: (projectId: string) => void;
     uploadFile: (file: File) => Promise<{ ok: boolean; error?: string }>;
     removeFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
     refresh: () => Promise<void>;
 };
+
+const EMPTY_GRANTS: ModuleGrants = { chronology: false, forensic: false };
 
 const LiveWorkspaceContext = createContext<LiveWorkspaceValue | null>(null);
 
@@ -65,6 +81,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const [documents, setDocuments] = useState<CompanyDocument[]>([]);
     const [accountUsage, setAccountUsage] = useState<AccountUsage | null>(null);
     const [orgUsers, setOrgUsers] = useState<CoairOrgUser[]>([]);
+    const [moduleGrants, setModuleGrants] =
+        useState<ModuleGrants>(EMPTY_GRANTS);
 
     const refresh = useCallback(async () => {
         if (!enabled || !session?.accessToken) {
@@ -72,6 +90,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             setDocuments([]);
             setAccountUsage(null);
             setOrgUsers([]);
+            setModuleGrants(EMPTY_GRANTS);
             return;
         }
         setLoading(true);
@@ -87,6 +106,15 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 }
             } catch {
                 /* keep existing session features */
+            }
+            try {
+                const org = await readOrg(session.accessToken);
+                setModuleGrants({
+                    chronology: Boolean(org.module_grants?.chronology),
+                    forensic: Boolean(org.module_grants?.forensic),
+                });
+            } catch {
+                setModuleGrants(EMPTY_GRANTS);
             }
             if (session.projectId) {
                 const library = await listLibrary(
@@ -199,6 +227,11 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         session?.userId,
     ]);
 
+    const moduleAddOns = useMemo(
+        () => addOnsFromModuleGrants(moduleGrants),
+        [moduleGrants]
+    );
+
     const value = useMemo(
         () => ({
             enabled,
@@ -209,6 +242,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             accountUsage,
             teammates,
             orgUsers,
+            moduleGrants,
+            moduleAddOns,
             selectProject,
             uploadFile,
             removeFile,
@@ -220,6 +255,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             enabled,
             error,
             loading,
+            moduleAddOns,
+            moduleGrants,
             orgUsers,
             projects,
             refresh,

@@ -38,6 +38,12 @@ export type CoairOrgResponse = {
         current_period_end?: string | null;
         stripe_subscription_id?: string | null;
     };
+    module_grants?: {
+        org_id?: string;
+        chronology?: boolean;
+        forensic?: boolean;
+        updated_at?: string | null;
+    };
 };
 
 export type CoairProject = {

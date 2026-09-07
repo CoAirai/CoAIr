@@ -908,3 +908,172 @@ async def create_org_package_change_request(
         detail=f"Requested {from_plan_id} → {req.plan_id}",
     )
     return {"request": request}
+
+
+class ModuleAccessRequestBody(BaseModel):
+    module: Literal["chronology", "forensic"]
+
+
+def _module_http(exc: ValueError) -> HTTPException:
+    code = str(exc)
+    status = 404 if code.endswith("not_found") else 400
+    if code in (
+        "module_access_already_pending",
+        "module_unlock_already_pending",
+        "module_access_already_resolved",
+        "module_unlock_already_resolved",
+    ):
+        status = 409
+    if code == "module_not_unlocked_for_org":
+        status = 403
+    return HTTPException(status, code)
+
+
+@router.get("/org/module-access-requests")
+async def list_org_module_access_requests(
+    org: OrgContext = Depends(require_org),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    """Owners see all org requests; members see only their own."""
+    if org.role == "owner":
+        rows = ops.list_module_access_requests(org_id=org.org_id)
+    else:
+        rows = ops.list_module_access_requests(
+            org_id=org.org_id, username=user.username
+        )
+    return {"requests": rows}
+
+
+@router.post("/org/module-access-requests", status_code=201)
+async def create_org_module_access_request(
+    req: ModuleAccessRequestBody,
+    org: OrgContext = Depends(require_org),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    """Any member may request Chronology/Forensic from the company admin."""
+    try:
+        request = ops.create_module_access_request(
+            org_id=org.org_id,
+            username=user.username,
+            module=req.module,
+        )
+    except ValueError as exc:
+        raise _module_http(exc) from exc
+    ops.record_audit(
+        actor=user.username,
+        action="company.module_access_request",
+        target_type="module_access_request",
+        target_id=request["id"],
+        target_label=org.name,
+        detail=f"Requested {req.module} access",
+    )
+    return {"request": request}
+
+
+@router.post("/org/module-access-requests/{request_id}/approve")
+async def approve_org_module_access_request(
+    request_id: str,
+    org: OrgContext = Depends(require_org_owner),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+    users: UserStore = Depends(get_user_store),
+    orgs: OrgStore = Depends(get_org_store),
+):
+    current = ops.get_module_access_request(request_id)
+    if not current or current["org_id"] != org.org_id:
+        raise HTTPException(404, "module_access_not_found")
+    if current["status"] != "pending":
+        raise HTTPException(409, "module_access_already_resolved")
+    if not ops.org_module_unlocked(org.org_id, current["module"]):
+        raise HTTPException(403, "module_not_unlocked_for_org")
+    membership = orgs.membership_for(current["username"])
+    if not membership or membership["org_id"] != org.org_id:
+        raise HTTPException(404, "user_not_found")
+    record = users.get_user(current["username"])
+    if not record:
+        raise HTTPException(404, "user_not_found")
+    features = dict(record.get("features") or {})
+    features[current["module"]] = True
+    users.update_user(current["username"], features=features)
+    try:
+        updated = ops.resolve_module_access_request(
+            request_id, "approved", user.username
+        )
+    except ValueError as exc:
+        raise _module_http(exc) from exc
+    ops.record_audit(
+        actor=user.username,
+        action="company.module_access_approve",
+        target_type="module_access_request",
+        target_id=updated["id"],
+        target_label=current["username"],
+        detail=f"Approved {current['module']} for {current['username']}",
+    )
+    return {"request": updated}
+
+
+@router.post("/org/module-access-requests/{request_id}/deny")
+async def deny_org_module_access_request(
+    request_id: str,
+    org: OrgContext = Depends(require_org_owner),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    current = ops.get_module_access_request(request_id)
+    if not current or current["org_id"] != org.org_id:
+        raise HTTPException(404, "module_access_not_found")
+    try:
+        updated = ops.resolve_module_access_request(
+            request_id, "denied", user.username
+        )
+    except ValueError as exc:
+        raise _module_http(exc) from exc
+    ops.record_audit(
+        actor=user.username,
+        action="company.module_access_deny",
+        target_type="module_access_request",
+        target_id=updated["id"],
+        target_label=current["username"],
+        detail=f"Denied {current['module']} for {current['username']}",
+    )
+    return {"request": updated}
+
+
+@router.get("/org/module-unlock-requests")
+async def list_org_module_unlock_requests(
+    org: OrgContext = Depends(require_org_owner),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    return {
+        "requests": ops.list_module_unlock_requests(org_id=org.org_id),
+        "module_grants": ops.get_org_module_grants(org.org_id),
+    }
+
+
+@router.post("/org/module-unlock-requests", status_code=201)
+async def create_org_module_unlock_request(
+    req: ModuleAccessRequestBody,
+    org: OrgContext = Depends(require_org_owner),
+    user: UserContext = Depends(get_current_user),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    """Company admin asks Super Admin to unlock a module company-wide."""
+    try:
+        request = ops.create_module_unlock_request(
+            org_id=org.org_id,
+            username=user.username,
+            module=req.module,
+        )
+    except ValueError as exc:
+        raise _module_http(exc) from exc
+    ops.record_audit(
+        actor=user.username,
+        action="company.module_unlock_request",
+        target_type="module_unlock_request",
+        target_id=request["id"],
+        target_label=org.name,
+        detail=f"Requested company unlock for {req.module}",
+    )
+    return {"request": request}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { planForCompany } from "@/lib/admin/plans";
 import { companyForSession } from "@/lib/workspace/companyForSession";
 import type { ModuleId } from "@/lib/admin/types";
@@ -20,11 +21,15 @@ const ModulePlaceholderPage = ({ moduleId }: Props) => {
     const router = useRouter();
     const { session } = useAuth();
     const { companies, plans, incrementTrialUsage } = useAdminData();
+    const live = useLiveWorkspace();
     const meta = MODULES.find((module) => module.id === moduleId)!;
 
     const company = useMemo(
-        () => companyForSession(session, companies),
-        [companies, session]
+        () =>
+            companyForSession(session, companies, {
+                addOns: live.enabled ? live.moduleAddOns : undefined,
+            }),
+        [companies, live.enabled, live.moduleAddOns, session]
     );
     const plan = planForCompany(company, plans);
     const gate =

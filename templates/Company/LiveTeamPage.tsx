@@ -14,7 +14,18 @@ import {
     type RightKey,
 } from "@/lib/admin/rolesStub";
 import { apiErrorMessage } from "@/lib/coair/commerce";
-import { confirmPurchase, inviteOrgUser } from "@/lib/coair/ops";
+import {
+    approveOrgModuleAccessRequest,
+    confirmPurchase,
+    createOrgModuleUnlockRequest,
+    denyOrgModuleAccessRequest,
+    inviteOrgUser,
+    listOrgModuleAccessRequests,
+    listOrgModuleUnlockRequests,
+    type ModuleAccessModule,
+    type ModuleAccessRequest,
+    type OrgModuleGrants,
+} from "@/lib/coair/ops";
 import {
     approveMemberTokenRequest,
     denyMemberTokenRequest,
@@ -27,6 +38,10 @@ import { useAuth } from "@/context/AuthContext";
 import { CompanyTeamTableSkeleton } from "@/components/Skeleton/portals";
 
 const fmt = new Intl.NumberFormat("en-US");
+const MODULE_LABEL: Record<ModuleAccessModule, string> = {
+    chronology: "Chronology",
+    forensic: "Forensic",
+};
 
 const LiveTeamPage = () => {
     const { session } = useAuth();
@@ -41,6 +56,17 @@ const LiveTeamPage = () => {
     const [tokenRequests, setTokenRequests] = useState<CoairMemberTokenRequest[]>(
         []
     );
+    const [accessRequests, setAccessRequests] = useState<ModuleAccessRequest[]>(
+        []
+    );
+    const [unlockRequests, setUnlockRequests] = useState<ModuleAccessRequest[]>(
+        []
+    );
+    const [moduleGrants, setModuleGrants] = useState<OrgModuleGrants>({
+        org_id: "",
+        chronology: false,
+        forensic: false,
+    });
     const [donorByRequest, setDonorByRequest] = useState<Record<string, string>>(
         {}
     );
@@ -77,6 +103,25 @@ const LiveTeamPage = () => {
             );
         } catch {
             /* non-blocking */
+        }
+        try {
+            const access = await listOrgModuleAccessRequests(token);
+            setAccessRequests(
+                access.filter((row) => row.status === "pending")
+            );
+        } catch {
+            setAccessRequests([]);
+        }
+        try {
+            const unlock = await listOrgModuleUnlockRequests(token);
+            setUnlockRequests(
+                (unlock.requests ?? []).filter((row) => row.status === "pending")
+            );
+            if (unlock.module_grants) {
+                setModuleGrants(unlock.module_grants);
+            }
+        } catch {
+            setUnlockRequests([]);
         }
     }, [token]);
 
@@ -213,6 +258,47 @@ const LiveTeamPage = () => {
         }
     };
 
+    const resolveAccessRequest = async (
+        request: ModuleAccessRequest,
+        action: "approved" | "denied"
+    ) => {
+        try {
+            if (action === "approved") {
+                await approveOrgModuleAccessRequest(token, request.id);
+                setMessage(
+                    `Granted ${request.module} to ${request.username}`
+                );
+            } else {
+                await denyOrgModuleAccessRequest(token, request.id);
+                setMessage(
+                    `Denied ${request.module} for ${request.username}`
+                );
+            }
+            await Promise.all([refresh(), loadRequests()]);
+        } catch (err) {
+            setMessage(apiErrorMessage(err));
+        }
+    };
+
+    const requestModuleUnlock = async (module: ModuleAccessModule) => {
+        try {
+            await createOrgModuleUnlockRequest(token, module);
+            setMessage(
+                `Asked Super Admin to unlock ${MODULE_LABEL[module]} for the company.`
+            );
+            await loadRequests();
+        } catch (err) {
+            setMessage(apiErrorMessage(err));
+        }
+    };
+
+    const lockedRightKeys = useMemo(() => {
+        const locked: RightKey[] = [];
+        if (!moduleGrants.chronology) locked.push("chronology");
+        if (!moduleGrants.forensic) locked.push("forensic");
+        return locked;
+    }, [moduleGrants.chronology, moduleGrants.forensic]);
+
     return (
         <div className="page-stack">
             <PageHeader
@@ -279,6 +365,118 @@ const LiveTeamPage = () => {
                         Send invite
                     </button>
                 </form>
+            ) : null}
+
+            <section className="surface-panel p-5">
+                <h2 className="text-label-lg text-strong-950">
+                    Company module unlock
+                </h2>
+                <p className="mt-1 text-label-xs text-sub-600">
+                    Chronology and Forensic must be unlocked by Super Admin
+                    before you can grant them to teammates.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                    {(["chronology", "forensic"] as ModuleAccessModule[]).map(
+                        (module) => {
+                            const unlocked = Boolean(moduleGrants[module]);
+                            const pending = unlockRequests.some(
+                                (row) => row.module === module
+                            );
+                            return (
+                                <div
+                                    key={module}
+                                    className="flex min-w-56 flex-1 items-center justify-between gap-3 rounded-xl border border-stroke-soft-200 px-4 py-3"
+                                >
+                                    <div>
+                                        <p className="text-label-sm text-strong-950">
+                                            {MODULE_LABEL[module]}
+                                        </p>
+                                        <p className="text-label-xs text-sub-600">
+                                            {unlocked
+                                                ? "Unlocked for company"
+                                                : pending
+                                                  ? "Pending Super Admin"
+                                                  : "Locked"}
+                                        </p>
+                                    </div>
+                                    {!unlocked ? (
+                                        <button
+                                            type="button"
+                                            disabled={pending}
+                                            onClick={() =>
+                                                void requestModuleUnlock(module)
+                                            }
+                                            className="h-9 shrink-0 rounded-xl bg-strong-950 px-3 text-label-sm text-white-0 hover:opacity-90 disabled:opacity-50"
+                                        >
+                                            {pending
+                                                ? "Pending"
+                                                : "Request Super Admin"}
+                                        </button>
+                                    ) : null}
+                                </div>
+                            );
+                        }
+                    )}
+                </div>
+            </section>
+
+            {accessRequests.length > 0 ? (
+                <section className="surface-panel p-5">
+                    <h2 className="text-label-lg text-strong-950">
+                        Access requests
+                    </h2>
+                    <p className="mt-1 text-label-xs text-sub-600">
+                        Members asking for Chronology or Forensic. Approve only
+                        works after Super Admin unlocks the module for the
+                        company.
+                    </p>
+                    <ul className="mt-4 divide-y divide-stroke-soft-200">
+                        {accessRequests.map((request) => (
+                            <li
+                                key={request.id}
+                                className="flex flex-wrap items-center justify-between gap-3 py-3"
+                            >
+                                <div>
+                                    <p className="text-label-sm text-strong-950">
+                                        {request.username}
+                                    </p>
+                                    <p className="text-label-xs text-sub-600">
+                                        {MODULE_LABEL[
+                                            request.module as ModuleAccessModule
+                                        ] || request.module}{" "}
+                                        · {request.created_at}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            void resolveAccessRequest(
+                                                request,
+                                                "approved"
+                                            )
+                                        }
+                                        className="h-9 rounded-xl bg-strong-950 px-3 text-label-sm text-white-0 hover:opacity-90"
+                                    >
+                                        Approve
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            void resolveAccessRequest(
+                                                request,
+                                                "denied"
+                                            )
+                                        }
+                                        className="h-9 rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 hover:bg-weak-50"
+                                    >
+                                        Reject
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
             ) : null}
 
             {tokenRequests.length > 0 ? (
@@ -483,6 +681,7 @@ const LiveTeamPage = () => {
                                                     user.features,
                                                     user.org_role || "member"
                                                 )}
+                                                lockedKeys={lockedRightKeys}
                                                 onToggle={(key, enabled) =>
                                                     void toggleRight(
                                                         user.username,

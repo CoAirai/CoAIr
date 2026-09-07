@@ -9,13 +9,20 @@ import {
 type Props = {
     rights: Record<RightKey, boolean>;
     disabled?: boolean;
+    lockedKeys?: RightKey[];
     onToggle?: (key: RightKey, enabled: boolean) => void;
 };
 
-const RightsToggleCells = ({ rights, disabled, onToggle }: Props) => (
+const RightsToggleCells = ({
+    rights,
+    disabled,
+    lockedKeys = [],
+    onToggle,
+}: Props) => (
     <>
         {RIGHT_COLUMNS.map((column) => {
             const enabled = rights[column.key];
+            const locked = lockedKeys.includes(column.key);
             if (!onToggle) {
                 return (
                     <td key={column.key} className="px-5 py-4 text-center">
@@ -31,7 +38,12 @@ const RightsToggleCells = ({ rights, disabled, onToggle }: Props) => (
                 <td key={column.key} className="px-5 py-4 text-center">
                     <button
                         type="button"
-                        disabled={disabled}
+                        disabled={disabled || locked}
+                        title={
+                            locked
+                                ? "Request Super Admin to unlock this module for the company first"
+                                : undefined
+                        }
                         aria-pressed={enabled}
                         aria-label={`${column.label} ${enabled ? "on" : "off"}`}
                         onClick={() => onToggle(column.key, !enabled)}

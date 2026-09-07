@@ -75,7 +75,14 @@ class AnnouncementCreate(BaseModel):
 def _http(exc: ValueError) -> HTTPException:
     code = str(exc)
     status = 404 if code.endswith("not_found") else 400
-    if code in ("coupon_exists", "topup_already_resolved"):
+    if code in (
+        "coupon_exists",
+        "topup_already_resolved",
+        "module_unlock_already_resolved",
+        "module_access_already_resolved",
+        "module_unlock_already_pending",
+        "module_access_already_pending",
+    ):
         status = 409
     return HTTPException(status, code)
 
@@ -813,5 +820,80 @@ async def deny_package_change_request(
         detail=(
             f"Denied {updated['from_plan_id']} → {updated['to_plan_id']}"
         ),
+    )
+    return {"request": updated}
+
+
+@router.get("/admin/module-unlock-requests")
+async def list_admin_module_unlock_requests(
+    status: str = "pending",
+    _admin: UserContext = Depends(require_admin),
+    ops: OpsStore = Depends(get_ops_store),
+    orgs: OrgStore = Depends(get_org_store),
+):
+    filter_status = None if status in ("", "all") else status
+    rows = ops.list_module_unlock_requests(status=filter_status)
+    names = {
+        org["org_id"]: org["name"]
+        for org in orgs.list_orgs(include_archived=True)
+    }
+    return {
+        "requests": [
+            {**row, "org_name": names.get(str(row.get("org_id") or ""))}
+            for row in rows
+        ]
+    }
+
+
+@router.post("/admin/module-unlock-requests/{request_id}/approve")
+async def approve_module_unlock_request(
+    request_id: str,
+    admin: UserContext = Depends(require_admin),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    current = ops.get_module_unlock_request(request_id)
+    if not current:
+        raise HTTPException(404, "module_unlock_not_found")
+    if current["status"] != "pending":
+        raise HTTPException(409, "module_unlock_already_resolved")
+    try:
+        grants = ops.set_org_module_grant(
+            current["org_id"], current["module"], True
+        )
+        updated = ops.resolve_module_unlock_request(
+            request_id, "approved", admin.username
+        )
+    except ValueError as exc:
+        raise _http(exc) from exc
+    ops.record_audit(
+        actor=admin.username,
+        action="company.module_unlock_approve",
+        target_type="module_unlock_request",
+        target_id=updated["id"],
+        target_label=current["org_id"],
+        detail=f"Unlocked {current['module']} for org",
+    )
+    return {"request": updated, "module_grants": grants}
+
+
+@router.post("/admin/module-unlock-requests/{request_id}/deny")
+async def deny_module_unlock_request(
+    request_id: str,
+    admin: UserContext = Depends(require_admin),
+    ops: OpsStore = Depends(get_ops_store),
+):
+    try:
+        updated = ops.resolve_module_unlock_request(
+            request_id, "denied", admin.username
+        )
+    except ValueError as exc:
+        raise _http(exc) from exc
+    ops.record_audit(
+        actor=admin.username,
+        action="company.module_unlock_deny",
+        target_type="module_unlock_request",
+        target_id=updated["id"],
+        target_label=updated["org_id"],
+        detail=f"Denied unlock for {updated['module']}",
     )
     return {"request": updated}

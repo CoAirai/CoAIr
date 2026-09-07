@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from backend.core.security import UserContext, require_admin
 from src.auth_provision import provision_invited_user
 from src.commerce_store import get_commerce_store, resolve_org_plan_limits
+from src.ops_store import get_ops_store
 from src.org_store import OrgStore, get_org_store
 from src.project_store import ProjectStore, get_project_store
 from src.supabase_auth import use_supabase_auth
@@ -187,6 +188,7 @@ async def get_org(
         "projects": projects.list_for_org(org_id),
         "subscription": get_commerce_store().get_subscription(org_id),
         "token_pool": pool_snapshot(org_id, orgs=store, users=users),
+        "module_grants": get_ops_store().get_org_module_grants(org_id),
     }
 
 

@@ -28,6 +28,7 @@ from backend.core.orgs import OrgContext, require_org, require_org_owner
 from backend.core.security import UserContext, get_current_user
 from src.auth_provision import provision_invited_user
 from src.commerce_store import CommerceStore, get_commerce_store
+from src.ops_store import OpsStore, get_ops_store
 from src.org_store import OrgStore, get_org_store
 from src.project_store import PROJECT_ROLES, ProjectStore, get_project_store
 from src.supabase_auth import ensure_auth_user, use_supabase_auth
@@ -123,6 +124,7 @@ async def read_org(
     org: OrgContext = Depends(require_org),
     orgs: OrgStore = Depends(get_org_store),
     commerce: CommerceStore = Depends(get_commerce_store),
+    ops: OpsStore = Depends(get_ops_store),
 ):
     """The caller's company. Available to every member, not just the owner."""
     record = orgs.get_org(org.org_id) or {}
@@ -133,6 +135,7 @@ async def read_org(
         "policy": org.policy,
         "counts": orgs.summary(org.org_id),
         "subscription": commerce.get_subscription(org.org_id),
+        "module_grants": ops.get_org_module_grants(org.org_id),
     }
 
 
@@ -268,7 +271,12 @@ async def update_org_user(
         payload["is_active"] = req.is_active
     if req.features is not None:
         current_features = dict((users.get_user(username) or {}).get("features") or {})
-        for key, value in _assignable_features(req.features).items():
+        assigned = _assignable_features(req.features)
+        ops = get_ops_store()
+        for key, value in assigned.items():
+            if key in ("chronology", "forensic") and value is True:
+                if not ops.org_module_unlocked(org.org_id, key):
+                    raise HTTPException(403, "module_not_unlocked_for_org")
             current_features[key] = value
         payload["features"] = current_features
     record = users.update_user(username, **payload) if payload else users.get_user(username)

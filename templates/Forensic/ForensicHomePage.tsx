@@ -66,7 +66,9 @@ const ForensicHomePage = () => {
     } = useAdminData();
     const { activeWorkspaceUserId } = useChat();
     const live = useLiveWorkspace();
-    const company = companyForSession(session, companies);
+    const company = companyForSession(session, companies, {
+        addOns: live.enabled ? live.moduleAddOns : undefined,
+    });
     const plan = planForCompany(company, plans);
     const gate =
         company && plan
