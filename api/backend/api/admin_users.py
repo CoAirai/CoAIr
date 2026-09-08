@@ -122,6 +122,10 @@ def list_users(
 
     matched = []
     for record in store.list_users():
+        # Super-admin accounts are platform operators — hide from the Users
+        # table so operators manage customers here, not themselves.
+        if record.get("role") == SUPERADMIN_ROLE:
+            continue
         membership = memberships.get(record["username"])
         if org_id and (not membership or membership["org_id"] != org_id):
             continue

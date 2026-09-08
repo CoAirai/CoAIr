@@ -36,6 +36,7 @@ const LiveUsersPage = () => {
     const rows = useMemo(
         () =>
             users
+                .filter((user) => user.role !== "superadmin")
                 .map((user) => ({
                     username: user.username,
                     name: user.display_name || user.username,
