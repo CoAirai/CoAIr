@@ -6,6 +6,7 @@ import AvatarMenu from "@/components/AvatarMenu";
 import Icon from "@/components/Icon";
 import Image from "@/components/Image";
 import ModalSettings from "@/components/ModalSettings";
+import UserAvatar from "@/components/UserAvatar";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
@@ -143,9 +144,11 @@ const AdminLayout = ({ children }: Props) => {
                         aria-label="Open profile and settings"
                         title="Profile & settings"
                     >
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-weak-50 text-label-sm font-medium text-strong-950">
-                            SA
-                        </span>
+                        <UserAvatar
+                            initials="SA"
+                            sizeClassName="size-10"
+                            alt={session?.name ?? "Super Admin"}
+                        />
                         <span
                             className={`min-w-0 grow text-left ${
                                 collapsed ? "hidden max-lg:block" : "block"
