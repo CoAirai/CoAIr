@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import PageHeader from "@/components/Admin/PageHeader";
 import { AdminCompaniesTableSkeleton } from "@/components/Skeleton/sections";
@@ -12,10 +12,10 @@ import {
     companyStorageUsedBytes,
     planLabel,
 } from "@/lib/admin/liveHelpers";
-import { getPlanById } from "@/lib/admin/plans";
-import type { CompanyStatus } from "@/lib/admin/types";
+import { getPlanById, PLAN_ORDER, PLANS } from "@/lib/admin/plans";
+import type { CompanyStatus, Plan, PlanId } from "@/lib/admin/types";
 import { createAdminOrg } from "@/lib/coair/admin";
-import { apiErrorMessage } from "@/lib/coair/commerce";
+import { apiErrorMessage, listPackages } from "@/lib/coair/commerce";
 import { useAuth } from "@/context/AuthContext";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
 
@@ -45,9 +45,30 @@ const LiveCompaniesPage = () => {
     const { orgs, users, loading, error, refresh } = useLiveAdmin();
     const [name, setName] = useState("");
     const [owner, setOwner] = useState("");
-    const [planType, setPlanType] = useState<"demo" | "legacy">("demo");
+    const [planId, setPlanId] = useState<PlanId>("demo");
+    const [catalog, setCatalog] = useState<Plan[]>(PLANS);
     const [createError, setCreateError] = useState<string | null>(null);
     const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!token) return;
+        void listPackages(token)
+            .then((plans) => {
+                if (plans.length) setCatalog(plans);
+            })
+            .catch(() => {
+                /* keep static PLANS fallback */
+            });
+    }, [token]);
+
+    const selectable = useMemo(() => {
+        const byId = new Map(catalog.map((plan) => [plan.id, plan]));
+        return PLAN_ORDER.map((id) => byId.get(id)).filter(
+            (plan): plan is Plan => Boolean(plan)
+        );
+    }, [catalog]);
+
+    const selectedPlan = getPlanById(planId, selectable) ?? selectable[0];
 
     const rows: CompanyRow[] = orgs.map((org) => {
         const members = users.filter((user) => user.org_id === org.org_id);
@@ -59,8 +80,8 @@ const LiveCompaniesPage = () => {
             (sum, user) => sum + (user.token_limit ?? 0),
             0
         );
-        const planId = org.subscription?.plan_id || org.default_plan_type;
-        const plan = getPlanById(planId || "");
+        const orgPlanId = org.subscription?.plan_id || org.default_plan_type;
+        const plan = getPlanById(orgPlanId || "", catalog);
         const tokenLimit =
             org.default_token_limit ||
             tokensAllocated ||
@@ -84,7 +105,7 @@ const LiveCompaniesPage = () => {
             slug: org.slug ?? org.org_id.slice(0, 8),
             members: org.counts?.members ?? "—",
             projects: org.counts?.projects ?? "—",
-            planName: planLabel(planId),
+            planName: planLabel(orgPlanId),
             storageUsed: bytesToGb(companyStorageUsedBytes(members)),
             storageLimit: bytesToGb(storageLimit),
             tokensUsed,
@@ -125,13 +146,13 @@ const LiveCompaniesPage = () => {
                         await createAdminOrg(token, {
                             name: name.trim(),
                             owner_email: owner.trim(),
-                            default_plan_type: planType,
+                            plan_id: planId,
                         });
                         setName("");
                         setOwner("");
                         setCreateError(null);
                         setCreateSuccess(
-                            `Company created. Invite sent to ${owner.trim()}.`
+                            `Company created on ${selectedPlan?.name ?? planId}. Invite sent to ${owner.trim()}.`
                         );
                         await refresh();
                     } catch (err) {
@@ -139,39 +160,56 @@ const LiveCompaniesPage = () => {
                         setCreateError(apiErrorMessage(err));
                     }
                 }}
-                className="grid gap-3 rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)_140px_auto]"
+                className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
             >
-                <input
-                    required
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="Company name"
-                    className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                />
-                <input
-                    required
-                    type="email"
-                    value={owner}
-                    onChange={(event) => setOwner(event.target.value)}
-                    placeholder="Owner email"
-                    className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                />
-                <select
-                    value={planType}
-                    onChange={(event) =>
-                        setPlanType(event.target.value as "demo" | "legacy")
-                    }
-                    className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
-                >
-                    <option value="demo">Demo</option>
-                    <option value="legacy">Legacy</option>
-                </select>
-                <button
-                    type="submit"
-                    className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0"
-                >
-                    Create company
-                </button>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)_minmax(180px,220px)_auto]">
+                    <input
+                        required
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        placeholder="Company name"
+                        className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                    />
+                    <input
+                        required
+                        type="email"
+                        value={owner}
+                        onChange={(event) => setOwner(event.target.value)}
+                        placeholder="Owner email"
+                        className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                    />
+                    <select
+                        value={planId}
+                        onChange={(event) =>
+                            setPlanId(event.target.value as PlanId)
+                        }
+                        className="h-10 rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                    >
+                        {selectable.map((plan) => (
+                            <option key={plan.id} value={plan.id}>
+                                {plan.name}
+                                {plan.priceLabel ? ` · ${plan.priceLabel}` : ""}
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        type="submit"
+                        className="h-10 rounded-full bg-strong-950 px-4 text-label-sm text-white-0"
+                    >
+                        Create company
+                    </button>
+                </div>
+                {selectedPlan ? (
+                    <p className="mt-3 text-label-sm text-sub-600">
+                        {selectedPlan.name}: {selectedPlan.usersIncluded} users ·{" "}
+                        {selectedPlan.storageLimitGb} GB ·{" "}
+                        {numberFormatter.format(selectedPlan.queryCap)} CA · $
+                        {selectedPlan.apiCreditsUsd} credits
+                        {selectedPlan.id === "demo"
+                            ? " · 30-day trial, then upgrade"
+                            : ""}
+                    </p>
+                ) : null}
             </form>
 
             <AdminCompaniesTableSkeleton loading={loading && rows.length === 0}>

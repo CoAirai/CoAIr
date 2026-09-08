@@ -172,13 +172,17 @@ async def approve_access_request(
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     resolved = commerce.resolve_access_request(request_id, "approved", plan_id="demo")
-    from src.commerce_store import snapshot_plan
+    from src.commerce_store import demo_period_end_iso, snapshot_plan
 
     demo_plan = snapshot_plan(commerce.get_plan("demo") or {})
     subscription = commerce.set_subscription(
         org["org_id"],
         plan_id="demo",
-        needs_checkout=True,
+        # SA-approved demo is active for 30 days, then upgrade is required.
+        needs_checkout=False,
+        status="active",
+        auto_renew=False,
+        current_period_end=demo_period_end_iso(),
         assigned_plan=demo_plan,
     )
     invited = False

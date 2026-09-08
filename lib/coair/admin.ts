@@ -171,6 +171,7 @@ export async function createAdminOrg(
         owner_username?: string;
         owner_email?: string;
         owner_display_name?: string;
+        plan_id?: "demo" | "foundation" | "pro" | "enterprise" | "custom";
         default_plan_type?: "demo" | "legacy";
         default_credits?: number;
         default_token_limit?: number;

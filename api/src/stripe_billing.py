@@ -393,6 +393,8 @@ def fulfill_plan(
     # Demo is free — never charge unless caller passes an explicit amount.
     if amount_usd is None and plan_id == "demo":
         amount_usd = 0.0
+    # Demo does not auto-renew; after the trial window the owner must upgrade.
+    renew = False if plan_id == "demo" else True
     subscription = commerce.set_subscription(
         org_id,
         plan_id=plan_id,
@@ -402,7 +404,7 @@ def fulfill_plan(
         status="active",
         cancel_at_period_end=False,
         current_period_end=period_end,
-        auto_renew=True,
+        auto_renew=renew,
         assigned_plan=plan,
     )
     record = orgs.get_org(org_id) or {}

@@ -12,6 +12,9 @@ export type AuthSession = {
     username?: string;
     companyName?: string;
     needsCheckout?: boolean;
+    /** Live org package id (e.g. demo) — used for upgrade/expiry UI. */
+    subscriptionPlanId?: string;
+    subscriptionStatus?: string;
     impersonator?: string;
     /** Per-user module rights from the API (chronology, forensic, …). */
     features?: Record<string, boolean>;

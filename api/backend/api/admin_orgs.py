@@ -30,9 +30,14 @@ class OrgCreate(BaseModel):
     owner_username: str = Field(default="", max_length=160)
     owner_email: str = Field(default="", max_length=160)
     owner_display_name: str = Field(default="", max_length=160)
+    # Catalog package id (Packages page). Preferred over default_plan_type.
+    plan_id: Optional[
+        Literal["demo", "foundation", "pro", "enterprise", "custom"]
+    ] = None
+    # Legacy billing-model flag kept for older clients.
     default_plan_type: Literal["demo", "legacy"] = "demo"
     default_credits: Optional[float] = Field(default=None, ge=0)
-    default_token_limit: int = Field(default=1_000_000, ge=0)
+    default_token_limit: Optional[int] = Field(default=None, ge=0)
     default_storage_bytes: Optional[int] = Field(default=None, ge=0)
     project_limit: int = Field(default=0, ge=0)
     allow_member_projects: bool = False
@@ -74,16 +79,59 @@ def _require_user(username: str) -> None:
         raise HTTPException(404, "user_not_found")
 
 
-def _resolved_org_limits(req: OrgCreate) -> Dict[str, Any]:
+def _resolve_create_plan(req: OrgCreate) -> tuple[str, str, Dict[str, Any]]:
+    """Return (catalog_plan_id, billing_plan_type, org limit defaults)."""
+    from src.ca_tokens import ca_to_micros
+    from src.commerce_store import plan_org_defaults
+
+    plan_id = (req.plan_id or "").strip() or (
+        "demo" if req.default_plan_type == "demo" else ""
+    )
+    if plan_id:
+        commerce = get_commerce_store()
+        plan = commerce.get_plan(plan_id)
+        if not plan:
+            raise HTTPException(404, "plan_not_found")
+        defaults = plan_org_defaults(plan_id)
+        token_limit = (
+            req.default_token_limit
+            if req.default_token_limit is not None
+            else ca_to_micros(int(plan.get("query_cap") or 0))
+        )
+        return (
+            plan_id,
+            "demo" if plan_id == "demo" else "legacy",
+            {
+                "default_credits": (
+                    req.default_credits
+                    if req.default_credits is not None
+                    else defaults["default_credits"]
+                ),
+                "default_storage_bytes": (
+                    req.default_storage_bytes
+                    if req.default_storage_bytes is not None
+                    else defaults["default_storage_bytes"]
+                ),
+                "default_token_limit": token_limit,
+            },
+        )
     resolved = resolve_org_plan_limits(
         req.default_plan_type,
         credits=req.default_credits,
         storage_bytes=req.default_storage_bytes,
     )
-    return {
-        **resolved,
-        "default_token_limit": req.default_token_limit,
-    }
+    return (
+        "",
+        req.default_plan_type,
+        {
+            **resolved,
+            "default_token_limit": (
+                req.default_token_limit
+                if req.default_token_limit is not None
+                else 0
+            ),
+        },
+    )
 
 
 @router.get("/admin/orgs")
@@ -111,7 +159,7 @@ def create_org(
     admin: UserContext = Depends(require_admin),
     store: OrgStore = Depends(get_org_store),
 ):
-    limits = _resolved_org_limits(req)
+    plan_id, billing_type, limits = _resolve_create_plan(req)
     owner = (req.owner_email or req.owner_username).strip()
     if owner:
         users = get_user_store()
@@ -123,7 +171,7 @@ def create_org(
                         users,
                         owner,
                         display_name=req.owner_display_name or None,
-                        plan_type=req.default_plan_type,
+                        plan_type=billing_type,
                         initial_credits=limits["default_credits"],
                         storage_limit_bytes=limits["default_storage_bytes"],
                         company_name=req.name,
@@ -143,7 +191,7 @@ def create_org(
     try:
         org = store.create_org(
             req.name, created_by=admin.username, owner=owner,
-            default_plan_type=req.default_plan_type,
+            default_plan_type=billing_type,
             default_credits=limits["default_credits"],
             default_token_limit=limits["default_token_limit"],
             default_storage_bytes=limits["default_storage_bytes"],
@@ -152,16 +200,27 @@ def create_org(
         )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
-    if req.default_plan_type == "demo":
-        commerce = get_commerce_store()
-        from src.commerce_store import snapshot_plan
+    if plan_id:
+        from src.ops_store import get_ops_store
+        from src.stripe_billing import fulfill_plan
 
-        commerce.set_subscription(
-            org["org_id"],
-            plan_id="demo",
-            needs_checkout=True,
-            assigned_plan=snapshot_plan(commerce.get_plan("demo") or {}),
-        )
+        try:
+            fulfill_plan(
+                org["org_id"],
+                plan_id,
+                admin.username,
+                amount_usd=0.0,
+                invoice_description=(
+                    f"{plan_id} package (assigned on company create by "
+                    f"{admin.username})"
+                ),
+                commerce=get_commerce_store(),
+                orgs=store,
+                users=get_user_store(),
+                ops=get_ops_store(),
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     return _with_counts(org, store.summaries())
 
 

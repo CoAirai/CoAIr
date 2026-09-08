@@ -24,6 +24,22 @@ os.environ.setdefault("JWT_SECRET", "test-secret-please-replace-in-prod")
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
+    for key in (
+        "DATABASE_URL",
+        "SUPABASE_DB_URL",
+        "SUPABASE_DB_PASSWORD",
+        "SUPABASE_URL",
+        "SUPABASE_DB_HOST",
+        "SUPABASE_DB_USER",
+    ):
+        monkeypatch.setenv(key, "")
+    monkeypatch.setattr("src.database.use_postgres", lambda: False)
+    monkeypatch.setattr("src.commerce_store.use_postgres", lambda: False)
+    monkeypatch.setattr("src.user_store.use_postgres", lambda: False)
+    monkeypatch.setattr("src.org_store.use_postgres", lambda: False)
+    monkeypatch.setattr("src.ops_store.use_postgres", lambda: False)
+    monkeypatch.setattr("src.project_store.use_postgres", lambda: False)
+
     from src import commerce_store as commerce_store_module
     from src import ops_store as ops_store_module
     from src import org_store as org_store_module
@@ -383,17 +399,65 @@ def test_platform_admin_create_demo_org_uses_package_storage(client, stores):
     created = client.post("/api/admin/orgs", headers=headers, json={
         "name": "Demo Ltd",
         "owner_username": "demo-owner",
-        "default_plan_type": "demo",
+        "plan_id": "demo",
     })
     assert created.status_code == 201
     body = created.json()
     assert body["default_storage_bytes"] == expected["default_storage_bytes"]
     assert body["default_storage_bytes"] == gb_to_bytes(20)
     assert body["default_credits"] == expected["default_credits"]
+    from src.ca_tokens import ca_to_micros
     from src.commerce_store import get_commerce_store
     sub = get_commerce_store().get_subscription(body["org_id"])
     assert sub["plan_id"] == "demo"
-    assert sub["needs_checkout"] is True
+    assert sub["needs_checkout"] is False
+    assert sub["auto_renew"] is False
+    assert sub["current_period_end"]
+    assert sub["status"] == "active"
+    assert body["default_token_limit"] == ca_to_micros(20)
+
+
+def test_demo_subscription_expires_after_period(stores):
+    from datetime import datetime, timedelta, timezone
+
+    from src.commerce_store import get_commerce_store, snapshot_plan
+
+    users, _projects, orgs = stores
+    users.create_user("demo-owner", "pw", role="user")
+    org = orgs.create_org(
+        "Trial Co",
+        created_by="platform",
+        owner="demo-owner",
+        default_plan_type="demo",
+    )
+    commerce = get_commerce_store()
+    future = (datetime.now(timezone.utc) + timedelta(days=10)).isoformat()
+    commerce.set_subscription(
+        org["org_id"],
+        plan_id="demo",
+        needs_checkout=False,
+        status="active",
+        auto_renew=False,
+        current_period_end=future,
+        assigned_plan=snapshot_plan(commerce.get_plan("demo") or {}),
+    )
+    active = commerce.get_subscription(org["org_id"])
+    assert active["needs_checkout"] is False
+    assert active["status"] == "active"
+
+    past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    commerce.set_subscription(
+        org["org_id"],
+        plan_id="demo",
+        needs_checkout=False,
+        status="active",
+        auto_renew=False,
+        current_period_end=past,
+        assigned_plan=snapshot_plan(commerce.get_plan("demo") or {}),
+    )
+    expired = commerce.get_subscription(org["org_id"])
+    assert expired["needs_checkout"] is True
+    assert expired["status"] == "expired"
 
 
 def test_platform_admin_create_demo_user_uses_package_limits(client, stores):

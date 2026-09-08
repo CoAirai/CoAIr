@@ -7,7 +7,7 @@ import re
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
@@ -22,6 +22,8 @@ TICKET_STATUSES = ("open", "resolved")
 PLAN_IDS = ("demo", "foundation", "pro", "enterprise", "custom")
 MODULE_IDS = ("chatbot", "chronology", "forensic")
 MODULE_ACCESS = ("included", "trial", "addon")
+# SA-assigned Demo is free for one month, then the company must upgrade.
+DEMO_PERIOD_DAYS = 30
 
 _CHATBOT = {"access": "included"}
 _ADDON = {"access": "addon"}
@@ -179,6 +181,33 @@ def _now() -> str:
 
 def _today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def demo_period_end_iso(*, from_dt: Optional[datetime] = None) -> str:
+    """UTC ISO timestamp when a newly assigned Demo trial ends."""
+    start = from_dt or datetime.now(timezone.utc)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    return (start + timedelta(days=DEMO_PERIOD_DAYS)).isoformat()
+
+
+def demo_period_expired(period_end: Optional[str]) -> bool:
+    end = _parse_iso(period_end)
+    if not end:
+        return False
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    return end <= datetime.now(timezone.utc)
 
 
 def _json(value: Any) -> str:
@@ -756,15 +785,26 @@ class CommerceStore:
                     assigned_plan = parsed
             except Exception:
                 assigned_plan = None
+        plan_id = row["plan_id"]
+        period_end = row["current_period_end"]
+        needs_checkout = bool(row["needs_checkout"])
+        # Legacy demo rows may lack period_end — treat updated_at + 30d as the trial window.
+        if plan_id == "demo" and not period_end:
+            updated = _parse_iso(row["updated_at"])
+            if updated:
+                period_end = demo_period_end_iso(from_dt=updated)
+        if plan_id == "demo" and demo_period_expired(period_end):
+            needs_checkout = True
+            status = "expired"
         return {
-            "plan_id": row["plan_id"],
-            "needs_checkout": bool(row["needs_checkout"]),
+            "plan_id": plan_id,
+            "needs_checkout": needs_checkout,
             "sell_tokens_per_usd_override": row["sell_tokens_per_usd_override"],
             "stripe_customer_id": row["stripe_customer_id"],
             "stripe_subscription_id": row["stripe_subscription_id"],
             "status": status,
             "cancel_at_period_end": cancel_at,
-            "current_period_end": row["current_period_end"],
+            "current_period_end": period_end,
             "auto_renew": auto_renew,
             "assigned_plan": assigned_plan,
         }
@@ -901,6 +941,9 @@ def get_commerce_store() -> CommerceStore:
 __all__ = [
     "CommerceStore",
     "DEFAULT_PLANS",
+    "DEMO_PERIOD_DAYS",
+    "demo_period_end_iso",
+    "demo_period_expired",
     "get_commerce_store",
     "gb_to_bytes",
     "org_type_catalog_plan",

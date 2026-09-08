@@ -20,6 +20,10 @@ const PlansPage = () => {
     const selectable = catalog.filter(
         (plan) => plan.id !== "custom" && plan.id !== "demo"
     );
+    const demoExpired =
+        Boolean(session?.needsCheckout) &&
+        (session?.subscriptionPlanId === "demo" ||
+            session?.subscriptionStatus === "expired");
 
     useEffect(() => {
         if (!live || !session?.accessToken) return;
@@ -52,11 +56,30 @@ const PlansPage = () => {
                     Welcome{session?.name ? ` · ${session.name}` : ""}
                 </p>
                 <h1 className="mt-2 text-h3 text-strong-950">
-                    Choose a COAir package
+                    {demoExpired
+                        ? "Upgrade your COAir package"
+                        : "Choose a COAir package"}
                 </h1>
                 <p className="mt-2 max-w-2xl text-label-sm text-sub-600">
-                    Super Admin approved {company?.name ?? session?.companyName ?? "your company"}.
-                    Select a package, then pay with Stripe Checkout to unlock storage and token limits.
+                    {demoExpired ? (
+                        <>
+                            Your Demo trial for{" "}
+                            {company?.name ??
+                                session?.companyName ??
+                                "your company"}{" "}
+                            has ended. Select a package and pay with Stripe
+                            Checkout to keep storage and token limits.
+                        </>
+                    ) : (
+                        <>
+                            Super Admin approved{" "}
+                            {company?.name ??
+                                session?.companyName ??
+                                "your company"}
+                            . Select a package, then pay with Stripe Checkout to
+                            unlock storage and token limits.
+                        </>
+                    )}
                 </p>
 
                 <div className="mt-8 grid gap-4 md:grid-cols-2">
@@ -65,7 +88,9 @@ const PlansPage = () => {
                             key={plan.id}
                             type="button"
                             onClick={() =>
-                                router.push(`/onboarding/checkout?plan=${plan.id}`)
+                                router.push(
+                                    `/onboarding/checkout?plan=${plan.id}`
+                                )
                             }
                             className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 text-left transition hover:-translate-y-0.5 hover:border-stroke-sub-300 hover:shadow-lg"
                         >

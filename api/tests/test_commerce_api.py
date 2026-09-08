@@ -196,15 +196,15 @@ def test_packages_catalog_and_admin_update(client, acme):
 def test_token_economics_round_trip(client, acme):
     ops = _auth(client, "ops")
     current = client.get("/api/admin/token-economics", headers=ops).json()
-    assert current["provider_tokens_per_usd"] == 100
-    assert current["sell_tokens_per_usd"] == 80
+    assert current["usd_per_ca_cost"] == 1.0
+    assert current["usd_per_ca_sell"] == 1.2
 
     saved = client.put("/api/admin/token-economics", headers=ops, json={
-        "provider_tokens_per_usd": 120,
-        "sell_tokens_per_usd": 90,
+        "usd_per_ca_cost": 1.0,
+        "usd_per_ca_sell": 1.25,
     }).json()
-    assert saved["provider_tokens_per_usd"] == 120
-    assert saved["sell_tokens_per_usd"] == 90
+    assert saved["usd_per_ca_cost"] == 1.0
+    assert saved["usd_per_ca_sell"] == 1.25
     assert saved["updated_by"] == "ops"
 
 
@@ -243,7 +243,7 @@ def test_access_request_approve_creates_owner_and_checkout(client, stores, acme)
     owner = _auth(client, username, password)
     org = client.get("/api/org", headers=owner).json()
     assert org["org"]["name"] == "Northspan"
-    assert org["subscription"]["needs_checkout"] is True
+    assert org["subscription"]["needs_checkout"] is False
     assert org["subscription"]["plan_id"] == "demo"
 
     plans = client.get("/api/packages", headers=owner).json()["plans"]
@@ -258,7 +258,7 @@ def test_access_request_approve_creates_owner_and_checkout(client, stores, acme)
     assert refreshed["subscription"]["plan_id"] == "foundation"
     foundation = next(plan for plan in plans if plan["id"] == "foundation")
     assert refreshed["policy"]["default_credits"] == foundation["api_credits_usd"]
-    assert refreshed["policy"]["default_token_limit"] == foundation["query_cap"]
+    assert refreshed["policy"]["default_token_limit"] == foundation["query_cap"] * 1_000_000
     assert refreshed["policy"]["default_storage_bytes"] == foundation["storage_limit_gb"] * 1024 ** 3
     assert org_id == refreshed["org"]["org_id"]
 

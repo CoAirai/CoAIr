@@ -39,6 +39,8 @@ export function mapLiveSession(input: {
         projectId: input.projectId ?? null,
         username: input.user.username,
         needsCheckout: Boolean(input.org?.subscription?.needs_checkout),
+        subscriptionPlanId: input.org?.subscription?.plan_id,
+        subscriptionStatus: input.org?.subscription?.status,
         impersonator: input.impersonator,
         features: input.user.features ?? {},
     };
