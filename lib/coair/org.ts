@@ -233,6 +233,8 @@ export async function updateMyProfile(
     body: {
         display_name?: string;
         phone?: string;
+        /** data URL; empty string clears stored avatar */
+        avatar?: string;
         improve_model?: boolean;
         mfa_enabled?: boolean;
     }

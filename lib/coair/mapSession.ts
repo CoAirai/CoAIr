@@ -27,6 +27,13 @@ export function mapLiveSession(input: {
         input.org?.org?.org_id ??
         (role === "super_admin" ? null : `live:${input.user.username}`);
 
+    // Keep bulky avatar / phone prefs out of the persisted session blob.
+    const features: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(input.user.features ?? {})) {
+        if (key === "avatar" || key === "phone") continue;
+        if (typeof value === "boolean") features[key] = value;
+    }
+
     return {
         email: input.user.username,
         name: input.user.display_name || input.user.username,
@@ -43,6 +50,6 @@ export function mapLiveSession(input: {
         subscriptionPlanId: input.org?.subscription?.plan_id,
         subscriptionStatus: input.org?.subscription?.status,
         impersonator: input.impersonator,
-        features: input.user.features ?? {},
+        features,
     };
 }

@@ -659,8 +659,27 @@ async def update_my_notifications(
 class ProfileUpdateRequest(BaseModel):
     display_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
     phone: Optional[str] = Field(default=None, max_length=40)
+    # data:image/...;base64,... — compressed client-side; empty string clears.
+    avatar: Optional[str] = Field(default=None, max_length=350_000)
     improve_model: Optional[bool] = None
     mfa_enabled: Optional[bool] = None
+
+
+def _normalize_avatar(raw: str) -> Optional[str]:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if not value.startswith("data:image/") or ";base64," not in value:
+        raise HTTPException(400, "invalid_avatar")
+    header = value.split(";", 1)[0].lower()
+    if header not in (
+        "data:image/jpeg",
+        "data:image/jpg",
+        "data:image/png",
+        "data:image/webp",
+    ):
+        raise HTTPException(400, "invalid_avatar_type")
+    return value
 
 
 @router.patch("/auth/me")
@@ -681,6 +700,12 @@ async def update_my_profile(
         updates["display_name"] = name
     if req.phone is not None:
         features["phone"] = req.phone.strip()
+    if req.avatar is not None:
+        normalized = _normalize_avatar(req.avatar)
+        if normalized is None:
+            features.pop("avatar", None)
+        else:
+            features["avatar"] = normalized
     if req.improve_model is not None:
         features["improve_model"] = bool(req.improve_model)
     if req.mfa_enabled is not None:

@@ -21,6 +21,7 @@ import type {
     CoairProjectsResponse,
     CoairUserPayload,
 } from "./types";
+import { hydrateProfilePrefsFromFeatures } from "@/lib/settings/localPrefs";
 
 export type LiveLoginResult =
     | { ok: true; session: AuthSession }
@@ -166,6 +167,7 @@ export async function sessionFromAccessToken(
         readOrg(accessToken).catch(() => null),
         firstProjectId(accessToken).catch(() => null),
     ]);
+    hydrateProfilePrefsFromFeatures(user.features ?? null);
     return mapLiveSession({
         user,
         accessToken,

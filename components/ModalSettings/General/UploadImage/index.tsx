@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "@/components/Image";
 import Button from "@/components/Button";
 import Icon from "@/components/Icon";
+import { compressAvatarFile } from "@/lib/settings/compressAvatar";
 import { readAvatarPreview } from "@/lib/settings/localPrefs";
 
 type Props = {
@@ -12,25 +13,29 @@ type Props = {
 
 const UploadImage = ({ onChange }: Props) => {
     const [preview, setPreview] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         setPreview(readAvatarPreview() ?? "/images/avatar-1.png");
     }, []);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (file.size > 1024 * 1024) {
             return;
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-            const dataUrl = typeof reader.result === "string" ? reader.result : null;
+        setBusy(true);
+        try {
+            const dataUrl = await compressAvatarFile(file);
             setPreview(dataUrl);
             onChange?.(dataUrl);
-        };
-        reader.readAsDataURL(file);
+        } catch {
+            /* keep previous preview */
+        } finally {
+            setBusy(false);
+        }
     };
 
     const handleRemove = () => {
@@ -77,9 +82,10 @@ const UploadImage = ({ onChange }: Props) => {
                         type="file"
                         onChange={handleChange}
                         accept="image/jpeg,image/jpg,image/png"
+                        disabled={busy}
                     />
                     <Button type="button" className="!h-9 rounded-lg" isStroke>
-                        Upload image
+                        {busy ? "Uploading…" : "Upload image"}
                     </Button>
                 </div>
                 <Button
@@ -87,6 +93,7 @@ const UploadImage = ({ onChange }: Props) => {
                     className="!w-9 !h-9 !px-0 rounded-lg"
                     isStroke
                     onClick={handleRemove}
+                    disabled={busy}
                 >
                     <Image
                         className="size-6 opacity-100"

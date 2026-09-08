@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCompanyDataOptional } from "@/context/CompanyDataContext";
 import { patchOrg, readOrg, updateMyProfile } from "@/lib/coair/org";
 import {
+    readAvatarPreview,
     readPhoneLocal,
     writeAvatarPreview,
     writePhoneLocal,
@@ -132,6 +133,7 @@ const General = () => {
                 await updateMyProfile(token, {
                     display_name: name,
                     phone: phoneNumber.trim(),
+                    avatar: readAvatarPreview() ?? "",
                 });
             }
 
@@ -143,6 +145,17 @@ const General = () => {
         }
     };
 
+    const onAvatarChange = async (dataUrl: string | null) => {
+        writeAvatarPreview(dataUrl);
+        const token = session?.accessToken;
+        if (!token || session?.source !== "live") return;
+        try {
+            await updateMyProfile(token, { avatar: dataUrl ?? "" });
+        } catch {
+            setError("Could not save avatar. Try again.");
+        }
+    };
+
     return (
         <form className="-mt-5 max-md:mt-0" onSubmit={onSave}>
             <div className="flex items-center mb-3 pb-3 border-b border-stroke-soft-200 max-md:flex-col max-md:items-start max-md:gap-3">
@@ -150,9 +163,7 @@ const General = () => {
                     <div className="text-label-md">Avatar</div>
                     <div className="text-sub-600">Shown in your account menu</div>
                 </div>
-                <UploadImage
-                    onChange={(dataUrl) => writeAvatarPreview(dataUrl)}
-                />
+                <UploadImage onChange={(dataUrl) => void onAvatarChange(dataUrl)} />
             </div>
             <div className="mb-3 pb-3 border-b border-stroke-soft-200">
                 <div className="mb-3">

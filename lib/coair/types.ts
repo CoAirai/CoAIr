@@ -2,7 +2,7 @@ export type CoairUserPayload = {
     username: string;
     display_name: string;
     role: string;
-    features?: Record<string, boolean>;
+    features?: Record<string, unknown>;
 };
 
 export type CoairLoginResponse = {

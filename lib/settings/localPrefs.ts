@@ -33,6 +33,23 @@ export function writeAvatarPreview(dataUrl: string | null) {
     window.dispatchEvent(new Event(AVATAR_CHANGED_EVENT));
 }
 
+/** Restore prefs from /auth/me features after login (logout clears coair.* keys). */
+export function hydrateProfilePrefsFromFeatures(
+    features?: Record<string, unknown> | null
+) {
+    if (typeof window === "undefined" || !features) return;
+    const avatar = features.avatar;
+    if (typeof avatar === "string" && avatar.startsWith("data:image/")) {
+        writeAvatarPreview(avatar);
+    } else {
+        writeAvatarPreview(null);
+    }
+    const phone = features.phone;
+    if (typeof phone === "string") {
+        writePhoneLocal(phone);
+    }
+}
+
 export function readPhoneLocal(): string {
     if (typeof window === "undefined") return "";
     return localStorage.getItem(PHONE_KEY) ?? "";
