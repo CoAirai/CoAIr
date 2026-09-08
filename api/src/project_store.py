@@ -95,6 +95,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_org_members_username
 # with ALTER — otherwise every query against it fails on a deployed database.
 _MIGRATIONS = (
     ("projects", "org_id", "ALTER TABLE projects ADD COLUMN org_id TEXT"),
+    (
+        "organizations",
+        "industry",
+        "ALTER TABLE organizations ADD COLUMN industry TEXT NOT NULL DEFAULT ''",
+    ),
 )
 
 

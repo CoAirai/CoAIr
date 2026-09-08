@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import Image from "@/components/Image";
 import Icon from "@/components/Icon";
+import UserAvatar from "@/components/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
 import { authHref } from "@/lib/auth/hosts";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
@@ -12,6 +12,17 @@ import { homePathForRole } from "@/lib/auth/resolveLogin";
 
 const itemClassName =
     "flex w-full items-center rounded-lg px-3 py-2 text-left text-label-sm text-sub-600 outline-0 transition-colors data-focus:bg-weak-50 data-focus:text-strong-950";
+
+function initialsFrom(name: string) {
+    return (
+        name
+            .split(" ")
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase() ?? "")
+            .join("") || "U"
+    );
+}
 
 const User = () => {
     const router = useRouter();
@@ -23,15 +34,7 @@ const User = () => {
                 className="group flex items-center shrink-0 gap-2 mx-5 pt-3 px-3 pb-5 border-t border-stroke-soft-200"
                 href={authHref("/auth/sign-in")}
             >
-                <div className="">
-                    <Image
-                        className="size-10 rounded-full opacity-100"
-                        src="/images/avatar-1.png"
-                        width={40}
-                        height={40}
-                        alt="User"
-                    />
-                </div>
+                <UserAvatar initials="?" sizeClassName="size-10" />
                 <div className="text-label-sm">
                     <div className="">Sign in</div>
                     <div className="text-sub-600">Open your workspace</div>
@@ -44,18 +47,12 @@ const User = () => {
         );
     }
 
+    const initials = initialsFrom(session.name || session.email || "U");
+
     return (
         <Menu as="div" className="relative mx-5 shrink-0 border-t border-stroke-soft-200 pt-3 px-3 pb-5">
             <MenuButton className="group flex w-full items-center gap-2 outline-0">
-                <div className="">
-                    <Image
-                        className="size-10 rounded-full opacity-100"
-                        src="/images/avatar-1.png"
-                        width={40}
-                        height={40}
-                        alt="User"
-                    />
-                </div>
+                <UserAvatar initials={initials} sizeClassName="size-10" />
                 <div className="min-w-0 text-left text-label-sm">
                     <div className="truncate">{session.name}</div>
                     <div className="truncate text-sub-600">{session.email}</div>

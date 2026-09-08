@@ -33,6 +33,7 @@ export function mapLiveSession(input: {
         role,
         companyId,
         companyName: input.org?.org?.name,
+        companyIndustry: input.org?.org?.industry,
         userId: input.user.username,
         source: "live",
         accessToken: input.accessToken,

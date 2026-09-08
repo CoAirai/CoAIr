@@ -591,6 +591,18 @@ async def get_org_token_pool(
     return pool_snapshot(org.org_id, orgs=orgs, users=users)
 
 
+@router.post("/org/token-pool/rebalance")
+async def rebalance_org_token_pool(
+    org: OrgContext = Depends(require_org_owner),
+    orgs: OrgStore = Depends(get_org_store),
+    users: UserStore = Depends(get_user_store),
+):
+    """Split remaining company CA equally across active members (keeps usage)."""
+    from src.org_token_pool import rebalance_equal_remaining
+
+    return rebalance_equal_remaining(org.org_id, orgs=orgs, users=users)
+
+
 @router.get("/org/token-requests")
 async def list_member_token_requests(
     org: OrgContext = Depends(require_org),

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import Image from "@/components/Image";
 import PageEnter from "@/components/Motion/PageEnter";
+import UserAvatar from "@/components/UserAvatar";
 import UpgradePackageModal from "@/components/Workspace/UpgradePackageModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
@@ -143,10 +144,14 @@ const HubPage = () => {
                         <div className="flex min-w-40 items-center justify-end">
                             <Menu as="div" className="relative">
                                 <MenuButton
-                                    className="flex size-10 items-center justify-center rounded-xl border border-stroke-soft-200 bg-white-0 text-label-sm font-medium text-strong-950 outline-0 transition-colors hover:border-stroke-sub-300 hover:bg-weak-50"
+                                    className="rounded-xl outline-0 transition-opacity hover:opacity-90"
                                     aria-label="Open account menu"
                                 >
-                                    {initials || "U"}
+                                    <UserAvatar
+                                        initials={initials || "U"}
+                                        sizeClassName="size-10"
+                                        className="rounded-xl"
+                                    />
                                 </MenuButton>
                                 <MenuItems
                                     transition

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import UserAvatar from "@/components/UserAvatar";
 
 type Props = {
     initials: string;
@@ -26,10 +27,10 @@ const AvatarMenu = ({
     return (
         <Menu as="div" className="relative shrink-0">
             <MenuButton
-                className="flex size-10 items-center justify-center rounded-full border-2 border-stroke-soft-200 bg-weak-50 text-label-sm font-medium text-strong-950 outline-0 transition-colors hover:border-stroke-sub-300 hover:bg-soft-200 data-open:border-stroke-sub-300"
+                className="rounded-full outline-0 transition-opacity hover:opacity-90 data-open:opacity-90"
                 aria-label="Open account menu"
             >
-                {initials}
+                <UserAvatar initials={initials} sizeClassName="size-10" />
             </MenuButton>
             <MenuItems
                 transition

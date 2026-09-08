@@ -6,7 +6,7 @@ import Button from "@/components/Button";
 import UploadImage from "./UploadImage";
 import { useAuth } from "@/context/AuthContext";
 import { useCompanyDataOptional } from "@/context/CompanyDataContext";
-import { updateMyProfile } from "@/lib/coair/org";
+import { patchOrg, readOrg, updateMyProfile } from "@/lib/coair/org";
 import {
     readPhoneLocal,
     writeAvatarPreview,
@@ -17,15 +17,16 @@ const General = () => {
     const { session, updateSession } = useAuth();
     const companyData = useCompanyDataOptional();
     const isCompanyAdmin = session?.role === "company_admin";
+    const live = session?.source === "live" && Boolean(session?.accessToken);
 
     const [fullName, setFullName] = useState(session?.name ?? "");
     const [email, setEmail] = useState(session?.email ?? "");
     const [phoneNumber, setPhoneNumber] = useState("");
     const [companyName, setCompanyName] = useState(
-        companyData?.company.name ?? ""
+        session?.companyName ?? companyData?.company.name ?? ""
     );
     const [industry, setIndustry] = useState(
-        companyData?.company.industry ?? ""
+        session?.companyIndustry ?? companyData?.company.industry ?? ""
     );
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -35,26 +36,52 @@ const General = () => {
         setFullName(session?.name ?? "");
         setEmail(session?.email ?? "");
         setPhoneNumber(readPhoneLocal());
-    }, [session?.name, session?.email]);
+        if (session?.companyName) setCompanyName(session.companyName);
+        if (session?.companyIndustry) setIndustry(session.companyIndustry);
+    }, [
+        session?.name,
+        session?.email,
+        session?.companyName,
+        session?.companyIndustry,
+    ]);
 
     useEffect(() => {
         if (!companyData?.company) return;
-        setCompanyName(companyData.company.name);
-        setIndustry(companyData.company.industry);
+        if (!live) {
+            setCompanyName(companyData.company.name);
+            setIndustry(companyData.company.industry);
+        }
     }, [
         companyData?.company.name,
         companyData?.company.industry,
         companyData?.company,
+        live,
     ]);
+
+    useEffect(() => {
+        if (!live || !session?.accessToken || !isCompanyAdmin) return;
+        void readOrg(session.accessToken)
+            .then((payload) => {
+                if (payload.org?.name) setCompanyName(payload.org.name);
+                if (typeof payload.org?.industry === "string") {
+                    setIndustry(payload.org.industry);
+                }
+            })
+            .catch(() => {
+                /* keep session / local values */
+            });
+    }, [live, session?.accessToken, isCompanyAdmin]);
 
     const onDiscard = () => {
         setFullName(session?.name ?? "");
         setEmail(session?.email ?? "");
         setPhoneNumber(readPhoneLocal());
-        if (companyData) {
-            setCompanyName(companyData.company.name);
-            setIndustry(companyData.company.industry);
-        }
+        setCompanyName(
+            session?.companyName ?? companyData?.company.name ?? ""
+        );
+        setIndustry(
+            session?.companyIndustry ?? companyData?.company.industry ?? ""
+        );
         setMessage(null);
         setError(null);
     };
@@ -76,7 +103,7 @@ const General = () => {
             writePhoneLocal(phoneNumber.trim());
             updateSession({ name });
 
-            if (isCompanyAdmin && companyData) {
+            if (isCompanyAdmin) {
                 const nextCompany = companyName.trim();
                 const nextIndustry = industry.trim();
                 if (!nextCompany || !nextIndustry) {
@@ -84,7 +111,17 @@ const General = () => {
                     setSaving(false);
                     return;
                 }
-                companyData.updateCompanyProfile({
+                if (live && session?.accessToken) {
+                    await patchOrg(session.accessToken, {
+                        name: nextCompany,
+                        industry: nextIndustry,
+                    });
+                    updateSession({
+                        companyName: nextCompany,
+                        companyIndustry: nextIndustry,
+                    });
+                }
+                companyData?.updateCompanyProfile({
                     name: nextCompany,
                     industry: nextIndustry,
                 });
@@ -100,7 +137,7 @@ const General = () => {
 
             setMessage("Settings saved.");
         } catch {
-            setError("Could not save profile. Changes kept on this device.");
+            setError("Could not save profile. Try again.");
         } finally {
             setSaving(false);
         }
@@ -163,7 +200,7 @@ const General = () => {
                     isSmall
                 />
             </div>
-            {isCompanyAdmin && companyData ? (
+            {isCompanyAdmin ? (
                 <div className="mb-3 pb-3 border-b border-stroke-soft-200">
                     <div className="mb-3">
                         <div className="text-label-md">Company profile</div>

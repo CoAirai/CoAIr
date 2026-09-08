@@ -6,6 +6,7 @@ import AvatarMenu from "@/components/AvatarMenu";
 import Icon from "@/components/Icon";
 import Image from "@/components/Image";
 import ModalSettings from "@/components/ModalSettings";
+import UserAvatar from "@/components/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { useCompanyData } from "@/context/CompanyDataContext";
@@ -151,9 +152,11 @@ const CompanyLayout = ({ children }: Props) => {
                         aria-label="Open profile and settings"
                         title="Profile & settings"
                     >
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-weak-50 text-label-sm font-medium text-strong-950">
-                            {initials}
-                        </span>
+                        <UserAvatar
+                            initials={initials}
+                            sizeClassName="size-10"
+                            className="border-0"
+                        />
                         <span
                             className={`min-w-0 grow text-left ${
                                 collapsed ? "hidden max-lg:block" : "block"

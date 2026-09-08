@@ -17,6 +17,52 @@ export async function listProjects(token: string) {
     }>("/projects", { token });
 }
 
+export async function createProject(token: string, name: string) {
+    return coairFetch<CoairProject>("/projects", {
+        method: "POST",
+        token,
+        body: { name, embedding_profile: "local-bge-v1" },
+    });
+}
+
+export async function listOrgProjects(token: string) {
+    return coairFetch<{ projects: CoairProject[] }>("/org/projects", { token });
+}
+
+export async function listOrgProjectMembers(token: string, projectId: string) {
+    return coairFetch<{
+        members: Array<{
+            username: string;
+            display_name?: string;
+            role: string;
+            is_active?: boolean;
+        }>;
+    }>(`/org/projects/${encodeURIComponent(projectId)}/members`, { token });
+}
+
+export async function grantOrgProjectAccess(
+    token: string,
+    projectId: string,
+    username: string,
+    role: "owner" | "editor" | "viewer"
+) {
+    return coairFetch<{ ok?: boolean; members?: unknown[] }>(
+        `/org/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(username)}`,
+        { method: "PUT", token, body: { role } }
+    );
+}
+
+export async function revokeOrgProjectAccess(
+    token: string,
+    projectId: string,
+    username: string
+) {
+    return coairFetch<void>(
+        `/org/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(username)}`,
+        { method: "DELETE", token }
+    );
+}
+
 export async function listLibrary(token: string, projectId: string) {
     return coairFetch<CoairLibraryDoc[]>("/library", { token, projectId });
 }

@@ -4,6 +4,8 @@ const IMPROVE_KEY = "coair.settings.improveModel";
 const MFA_KEY = "coair.settings.mfaEnabled";
 const SHARED_LINKS_KEY = "coair.settings.sharedLinksCleared";
 
+export const AVATAR_CHANGED_EVENT = "coair:avatar-changed";
+
 function readBool(key: string, fallback: boolean): boolean {
     if (typeof window === "undefined") return fallback;
     const raw = localStorage.getItem(key);
@@ -25,9 +27,10 @@ export function writeAvatarPreview(dataUrl: string | null) {
     if (typeof window === "undefined") return;
     if (!dataUrl) {
         localStorage.removeItem(AVATAR_KEY);
-        return;
+    } else {
+        localStorage.setItem(AVATAR_KEY, dataUrl);
     }
-    localStorage.setItem(AVATAR_KEY, dataUrl);
+    window.dispatchEvent(new Event(AVATAR_CHANGED_EVENT));
 }
 
 export function readPhoneLocal(): string {

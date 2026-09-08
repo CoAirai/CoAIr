@@ -13,6 +13,7 @@ type NavLeaf = {
 const ITEMS: NavLeaf[] = [
     { href: "/company", label: "Dashboard", icon: "analytic" },
     { href: "/company/team", label: "Team", icon: "team" },
+    { href: "/company/projects", label: "Projects", icon: "folder" },
     { href: "/company/usage", label: "Usage", icon: "flash" },
     { href: "/company/billing", label: "Billing", icon: "gift" },
     { href: "/company/tickets", label: "Tickets", icon: "comment" },

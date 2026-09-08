@@ -21,6 +21,9 @@ export type CoairOrgResponse = {
         org_id?: string;
         name?: string;
         slug?: string;
+        industry?: string;
+        created_at?: string;
+        archived_at?: string | null;
     };
     role?: string;
     counts?: {

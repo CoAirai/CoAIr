@@ -33,7 +33,7 @@ export function liveCompanyFromSession(
     return {
         id,
         name: session.companyName || session.name,
-        industry: "Construction",
+        industry: session.companyIndustry || "General",
         planId: "pro",
         status: "active",
         usersCount: 1,

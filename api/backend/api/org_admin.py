@@ -130,12 +130,43 @@ async def read_org(
     record = orgs.get_org(org.org_id) or {}
     return {
         "org": {key: record.get(key) for key in
-                ("org_id", "name", "slug", "created_at", "archived_at")},
+                ("org_id", "name", "slug", "industry", "created_at", "archived_at")},
         "role": org.role,
         "policy": org.policy,
         "counts": orgs.summary(org.org_id),
         "subscription": commerce.get_subscription(org.org_id),
         "module_grants": ops.get_org_module_grants(org.org_id),
+    }
+
+
+class OrgProfileUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    industry: Optional[str] = Field(default=None, max_length=120)
+
+
+@router.patch("/org")
+async def update_org_profile(
+    req: OrgProfileUpdate,
+    org: OrgContext = Depends(require_org_owner),
+    orgs: OrgStore = Depends(get_org_store),
+):
+    """Company owner updates display name / industry."""
+    fields: Dict[str, Any] = {}
+    if req.name is not None:
+        fields["name"] = req.name.strip()
+    if req.industry is not None:
+        fields["industry"] = req.industry.strip()
+    if not fields:
+        raise HTTPException(400, "no_updates")
+    try:
+        updated = orgs.update_org(org.org_id, **fields)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not updated:
+        raise HTTPException(404, "organization_not_found")
+    return {
+        "org": {key: updated.get(key) for key in
+                ("org_id", "name", "slug", "industry", "created_at", "archived_at")},
     }
 
 

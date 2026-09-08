@@ -23,13 +23,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 
-from .database import DbIntegrityError, DbRow, connect, use_postgres
+from .database import DbIntegrityError, DbRow, connect, table_columns, use_postgres
 from .logger import logger
 from .project_store import ORG_ROLES, PROJECTS_DB, _now, _slug, ensure_schema
 
 
 _ORG_UPDATABLE = (
-    "name", "default_plan_type", "default_credits", "default_token_limit",
+    "name", "industry", "default_plan_type", "default_credits", "default_token_limit",
     "default_storage_bytes", "project_limit", "allow_member_projects",
 )
 
@@ -47,6 +47,21 @@ class OrgStore:
         if not use_postgres():
             with self._connect() as conn:
                 ensure_schema(conn)
+        self._ensure_industry_column()
+
+    def _ensure_industry_column(self) -> None:
+        with self._write_lock, self._connect() as conn:
+            cols = table_columns(conn, "organizations")
+            if "industry" in cols:
+                return
+            try:
+                conn.execute(
+                    "ALTER TABLE organizations ADD COLUMN industry TEXT NOT NULL DEFAULT ''"
+                )
+            except Exception:
+                conn.execute(
+                    "ALTER TABLE organizations ADD COLUMN industry TEXT DEFAULT ''"
+                )
 
     @classmethod
     def instance(cls) -> "OrgStore":
@@ -62,10 +77,15 @@ class OrgStore:
 
     @staticmethod
     def _row(row: DbRow) -> Dict[str, Any]:
+        keys = row.keys()
+        industry = ""
+        if "industry" in keys:
+            industry = str(row["industry"] or "")
         return {
             "org_id": row["org_id"],
             "name": row["name"],
             "slug": row["slug"],
+            "industry": industry,
             "default_plan_type": row["default_plan_type"],
             "default_credits": float(row["default_credits"]),
             "default_token_limit": int(row["default_token_limit"]),

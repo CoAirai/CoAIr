@@ -46,6 +46,7 @@ describe("companyForSession", () => {
         const company = companyForSession(session, mockCompanies);
         expect(company?.id).toBe("3fed7a1b1d0840db");
         expect(company?.name).toBe("Acme Construction");
+        expect(company?.industry).toBe("General");
         expect(company?.addOns).toEqual([]);
         expect(company?.planId).toBe("pro");
     });

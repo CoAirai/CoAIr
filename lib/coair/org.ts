@@ -44,6 +44,15 @@ export async function readOrg(token: string) {
     return coairFetch<CoairOrgResponse>("/org", { token });
 }
 
+export async function patchOrg(
+    token: string,
+    body: { name?: string; industry?: string }
+) {
+    return coairFetch<{
+        org?: { org_id?: string; name?: string; industry?: string; slug?: string };
+    }>("/org", { method: "PATCH", token, body });
+}
+
 export async function readOrgUsage(token: string) {
     return coairFetch<CoairOrgUsage>("/org/usage", { token });
 }
@@ -138,6 +147,16 @@ export type CoairMemberTokenRequest = {
 
 export async function readOrgTokenPool(token: string) {
     return coairFetch<CoairTokenPool>("/org/token-pool", { token });
+}
+
+export async function rebalanceOrgTokenPool(token: string) {
+    return coairFetch<{
+        org_id?: string;
+        pool?: number;
+        remaining?: number;
+        members?: number;
+        allocations?: Record<string, number>;
+    }>("/org/token-pool/rebalance", { method: "POST", token });
 }
 
 export async function listMemberTokenRequests(token: string) {

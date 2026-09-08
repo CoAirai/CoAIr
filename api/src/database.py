@@ -19,6 +19,11 @@ from .logger import logger
 MIGRATION_FILE = (
     Path(__file__).resolve().parents[1] / "migrations" / "supabase" / "001_core_schema.sql"
 )
+MIGRATION_EXTRA = sorted(
+    (
+        Path(__file__).resolve().parents[1] / "migrations" / "supabase"
+    ).glob("0*.sql")
+)
 
 _pool = None
 _pool_lock = threading.Lock()
@@ -152,23 +157,27 @@ def resolve_database_url() -> str:
     """Return Postgres URI from env (DATABASE_URL, SUPABASE_DB_URL, or composed)."""
     password = os.getenv("SUPABASE_DB_PASSWORD", "").strip()
     supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    host = os.getenv("SUPABASE_DB_HOST", "").strip()
 
     # Composed URL URL-encodes the password (handles @, #, etc.).
-    if password and supabase_url:
-        ref = urlparse(supabase_url).netloc.split(".")[0] or ""
-        if ref:
-            host = os.getenv("SUPABASE_DB_HOST", "").strip()
-            if not host:
-                host = (
-                    f"aws-0-{os.getenv('SUPABASE_DB_REGION', 'eu-central-1')}"
-                    ".pooler.supabase.com"
-                )
-            pooler = "pooler" in host
-            port = os.getenv("SUPABASE_DB_PORT", "6543" if pooler else "5432")
-            user = os.getenv("SUPABASE_DB_USER", "").strip() or (
-                f"postgres.{ref}" if pooler else "postgres"
+    # Prefer explicit host/user pieces when present so blank SUPABASE_URL does
+    # not force local DuckDB/SQLite for event indexing on the VPS.
+    if password and (supabase_url or host):
+        ref = ""
+        if supabase_url:
+            ref = urlparse(supabase_url).netloc.split(".")[0] or ""
+        if not host:
+            host = (
+                f"aws-0-{os.getenv('SUPABASE_DB_REGION', 'eu-central-1')}"
+                ".pooler.supabase.com"
             )
-            db_name = os.getenv("SUPABASE_DB_NAME", "postgres")
+        pooler = "pooler" in host
+        port = os.getenv("SUPABASE_DB_PORT", "6543" if pooler else "5432")
+        user = os.getenv("SUPABASE_DB_USER", "").strip() or (
+            f"postgres.{ref}" if (pooler and ref) else "postgres"
+        )
+        db_name = os.getenv("SUPABASE_DB_NAME", "postgres")
+        if user:
             return (
                 f"postgresql://{quote_plus(user)}:{quote_plus(password)}"
                 f"@{host}:{port}/{db_name}"
@@ -303,14 +312,18 @@ def apply_core_schema(force: bool = False) -> None:
             return
         if not MIGRATION_FILE.is_file():
             raise RuntimeError(f"core_schema_migration_missing:{MIGRATION_FILE}")
-        sql = MIGRATION_FILE.read_text(encoding="utf-8")
+        files = [MIGRATION_FILE] + [
+            path for path in MIGRATION_EXTRA if path.name != MIGRATION_FILE.name
+        ]
         pool = _get_pool()
         with pool.connection() as raw:
             wrapper = DbConnection(raw, "postgres")
-            for statement in _split_sql_statements(sql):
-                stmt = statement.strip()
-                if stmt:
-                    wrapper.execute(stmt)
+            for path in files:
+                sql = path.read_text(encoding="utf-8")
+                for statement in _split_sql_statements(sql):
+                    stmt = statement.strip()
+                    if stmt:
+                        wrapper.execute(stmt)
             raw.commit()
         _schema_applied = True
         logger.info("postgres_core_schema_applied")

@@ -31,6 +31,7 @@ import {
     denyMemberTokenRequest,
     listMemberTokenRequests,
     patchOrgUser,
+    rebalanceOrgTokenPool,
     type CoairMemberTokenRequest,
 } from "@/lib/coair/org";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
@@ -305,7 +306,29 @@ const LiveTeamPage = () => {
                 title="Team"
                 description="Invite teammates, change company role, and grant module rights. Token shares come from the company pool."
                 action={
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void (async () => {
+                                    if (!token) return;
+                                    try {
+                                        const result =
+                                            await rebalanceOrgTokenPool(token);
+                                        const members = result.members ?? 0;
+                                        setMessage(
+                                            `Rebalanced remaining CA across ${members} teammate${members === 1 ? "" : "s"}.`
+                                        );
+                                        await refresh();
+                                    } catch (err) {
+                                        setMessage(apiErrorMessage(err));
+                                    }
+                                })();
+                            }}
+                            className="h-10 rounded-full border border-stroke-soft-200 bg-white-0 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                        >
+                            Rebalance CA pool
+                        </button>
                         <button
                             type="button"
                             onClick={() => {

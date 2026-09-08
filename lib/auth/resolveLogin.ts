@@ -11,6 +11,7 @@ export type AuthSession = {
     projectId?: string | null;
     username?: string;
     companyName?: string;
+    companyIndustry?: string;
     needsCheckout?: boolean;
     /** Live org package id (e.g. demo) — used for upgrade/expiry UI. */
     subscriptionPlanId?: string;
