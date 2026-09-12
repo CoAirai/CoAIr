@@ -83,13 +83,13 @@ const LayoutLogin = ({ title, description, children }: Props) => (
                     <div className="text-label-sm text-sub-600">© COAir</div>
                     <a
                         className="group flex items-center gap-2 text-label-sm text-sub-600 transition-colors hover:text-strong-950"
-                        href="mailto:hello@coair.ai"
+                        href="mailto:help@coair.ai"
                     >
                         <Icon
                             className="!size-4.5 fill-sub-600 transition-colors group-hover:fill-strong-950"
                             name="envelope"
                         />
-                        hello@coair.ai
+                        help@coair.ai
                     </a>
                 </div>
             </div>
