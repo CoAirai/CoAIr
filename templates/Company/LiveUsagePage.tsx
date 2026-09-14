@@ -5,7 +5,11 @@ import PageHeader from "@/components/Admin/PageHeader";
 import QuotaBar from "@/components/Admin/QuotaBar";
 import { CompanyUsageSkeleton } from "@/components/Skeleton/sections";
 import { bytesToGb } from "@/lib/admin/liveHelpers";
-import { formatCa, microsToCa } from "@/lib/billing/tokenEconomics";
+import {
+    formatDisplayCa,
+    microsToCa,
+    realCaToDisplayCa,
+} from "@/lib/billing/tokenEconomics";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { readOrgTokenPool, type CoairTokenPool } from "@/lib/coair/org";
@@ -16,7 +20,7 @@ const numberFormatter = new Intl.NumberFormat("en-US");
 const LiveUsagePage = () => {
     const { session } = useAuth();
     const token = session?.accessToken ?? "";
-    const { me, orgUsage, users, error } = useLiveOrg();
+    const { me, org, orgUsage, users, error } = useLiveOrg();
     const { accountUsage } = useLiveWorkspace();
     const usage = accountUsage ?? me;
     const used = usage?.used_tokens ?? 0;
@@ -30,6 +34,11 @@ const LiveUsagePage = () => {
         (totals?.prompt_tokens ?? 0) + (totals?.completion_tokens ?? 0);
     const caFromSpend = totals?.provider_cost_usd ?? totals?.cost_usd;
     const [pool, setPool] = useState<CoairTokenPool | null>(null);
+    const sellRate =
+        org?.subscription?.sell_tokens_per_usd_override &&
+        org.subscription.sell_tokens_per_usd_override > 0
+            ? org.subscription.sell_tokens_per_usd_override
+            : 1.2;
 
     useEffect(() => {
         if (!token) return;
@@ -57,7 +66,7 @@ const LiveUsagePage = () => {
                                         Pool (CA)
                                     </p>
                                     <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
-                                        {formatCa(pool.pool)}
+                                        {formatDisplayCa(pool.pool, sellRate)}
                                     </p>
                                 </div>
                                 <div>
@@ -65,7 +74,7 @@ const LiveUsagePage = () => {
                                         Company used (CA)
                                     </p>
                                     <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
-                                        {formatCa(pool.total_used)}
+                                        {formatDisplayCa(pool.total_used, sellRate)}
                                     </p>
                                 </div>
                                 <div>
@@ -73,14 +82,22 @@ const LiveUsagePage = () => {
                                         Company remaining (CA)
                                     </p>
                                     <p className="mt-1 text-label-lg text-strong-950 tabular-nums">
-                                        {formatCa(pool.remaining)}
+                                        {formatDisplayCa(pool.remaining, sellRate)}
                                     </p>
                                 </div>
                             </div>
                             <QuotaBar
                                 label="Company pool used"
-                                used={microsToCa(pool.total_used)}
-                                limit={microsToCa(pool.pool) || 1}
+                                used={realCaToDisplayCa(
+                                    microsToCa(pool.total_used),
+                                    sellRate
+                                )}
+                                limit={
+                                    realCaToDisplayCa(
+                                        microsToCa(pool.pool),
+                                        sellRate
+                                    ) || 1
+                                }
                             />
                             {pool.members.length > 0 ? (
                                 <ul className="mt-4 divide-y divide-stroke-soft-200">
@@ -94,9 +111,21 @@ const LiveUsagePage = () => {
                                                     member.username}
                                             </span>
                                             <span className="text-sub-600 tabular-nums">
-                                                {formatCa(member.used_tokens)} /{" "}
-                                                {formatCa(member.token_limit)} ·{" "}
-                                                {formatCa(member.remaining)} left
+                                                {formatDisplayCa(
+                                                    member.used_tokens,
+                                                    sellRate
+                                                )}{" "}
+                                                /{" "}
+                                                {formatDisplayCa(
+                                                    member.token_limit,
+                                                    sellRate
+                                                )}{" "}
+                                                ·{" "}
+                                                {formatDisplayCa(
+                                                    member.remaining,
+                                                    sellRate
+                                                )}{" "}
+                                                left
                                             </span>
                                         </li>
                                     ))}
@@ -110,15 +139,24 @@ const LiveUsagePage = () => {
                                 Your CA tokens
                             </p>
                             <p className="mt-1 text-label-xl text-strong-950">
-                                {formatCa(used)} / {formatCa(limit)}
+                                {formatDisplayCa(used, sellRate)} /{" "}
+                                {formatDisplayCa(limit, sellRate)}
                             </p>
                             <p className="mt-1 text-label-xs text-sub-600">
-                                {formatCa(remaining)} remaining
+                                {formatDisplayCa(remaining, sellRate)} remaining
                             </p>
                             <QuotaBar
                                 label="CA tokens used"
-                                used={microsToCa(used)}
-                                limit={microsToCa(limit) || 1}
+                                used={realCaToDisplayCa(
+                                    microsToCa(used),
+                                    sellRate
+                                )}
+                                limit={
+                                    realCaToDisplayCa(
+                                        microsToCa(limit),
+                                        sellRate
+                                    ) || 1
+                                }
                             />
                         </div>
                         <div className="surface-panel p-5">

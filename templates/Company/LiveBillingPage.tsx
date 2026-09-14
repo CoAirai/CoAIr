@@ -15,7 +15,13 @@ import { getPlanById, PLAN_ORDER } from "@/lib/admin/plans";
 import { planLabel } from "@/lib/admin/liveHelpers";
 import type { Plan, PlanId } from "@/lib/admin/types";
 import type { Invoice } from "@/lib/admin/billingTypes";
-import { chargeUsdForCa, formatCa, microsToCa } from "@/lib/billing/tokenEconomics";
+import {
+    chargeUsdForDisplayCa,
+    formatDisplayCa,
+    microsToCa,
+    realCaToDisplayCa,
+    wholeRealCaFromDisplay,
+} from "@/lib/billing/tokenEconomics";
 import {
     apiErrorMessage,
     cancelOrgSubscription,
@@ -230,8 +236,13 @@ const LiveCompanyBillingPage = () => {
     const storageLimitGb = bytesToGb(me?.storage_limit_bytes);
     const storageUsedGb = bytesToGb(me?.storage_used_bytes);
 
-    const tokenAmount = Math.max(0, Math.floor(Number(tokenAmountInput) || 0));
-    const tokenPriceUsd = chargeUsdForCa(tokenAmount, sellRate);
+    // Company users buy in face CA ($1 = 1 CA shown); API credits real CA.
+    const displayCaAmount = Math.max(
+        0,
+        Math.floor(Number(tokenAmountInput) || 0)
+    );
+    const tokenAmount = wholeRealCaFromDisplay(displayCaAmount, sellRate);
+    const tokenPriceUsd = chargeUsdForDisplayCa(displayCaAmount);
     const storageGb = Math.max(0, Math.floor(Number(storageGbInput) || 0));
     const storagePriceUsd = storageGb * STORAGE_USD_PER_GB;
 
@@ -379,8 +390,8 @@ const LiveCompanyBillingPage = () => {
                     />
                     <StatCard
                         label="CA token limit"
-                        value={formatCa(tokenLimit)}
-                        hint={`${formatCa(tokensUsed)} used`}
+                        value={formatDisplayCa(tokenLimit, sellRate)}
+                        hint={`${formatDisplayCa(tokensUsed, sellRate)} used`}
                     />
                     <StatCard
                         label="Storage limit"
@@ -408,8 +419,16 @@ const LiveCompanyBillingPage = () => {
                 <div className="mt-5 grid gap-5 lg:grid-cols-2">
                     <QuotaBar
                         label="CA tokens"
-                        used={microsToCa(tokensUsed)}
-                        limit={microsToCa(tokenLimit) || 1}
+                        used={realCaToDisplayCa(
+                            microsToCa(tokensUsed),
+                            sellRate
+                        )}
+                        limit={
+                            realCaToDisplayCa(
+                                microsToCa(tokenLimit),
+                                sellRate
+                            ) || 1
+                        }
                     />
                     <QuotaBar
                         label="Storage"
@@ -570,19 +589,19 @@ const LiveCompanyBillingPage = () => {
                     </label>
                     <p className="mt-3 text-label-sm text-strong-950">
                         Estimated:{" "}
-                        {tokenAmount > 0
+                        {displayCaAmount > 0
                             ? currencyFormatter.format(tokenPriceUsd)
                             : "—"}
                     </p>
                     <button
                         type="button"
-                        disabled={tokenAmount < 1}
+                        disabled={displayCaAmount < 1}
                         onClick={() =>
                             setCheckout({
                                 kind: "tokens",
                                 amount: tokenAmount,
                                 priceUsd: tokenPriceUsd,
-                                label: `${numberFormatter.format(tokenAmount)} CA tokens`,
+                                label: `${numberFormatter.format(displayCaAmount)} CA credits`,
                             })
                         }
                         className="mt-4 h-9 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-50"

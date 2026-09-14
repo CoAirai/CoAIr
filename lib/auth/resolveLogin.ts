@@ -36,7 +36,8 @@ type LoginUser = {
 
 export function homePathForRole(role: SessionRole): string {
     if (role === "super_admin") return "/admin";
-    if (role === "company_admin") return "/company";
+    // Company admins use the same workspace hub as members; company
+    // management stays available at /company from the account menu.
     return "/workspace";
 }
 
@@ -49,7 +50,6 @@ export function homePathForSession(
         if (session.needsCheckout || company?.needsCheckout) {
             return "/onboarding/plans";
         }
-        if (session.role === "company_admin") return "/company";
         return "/workspace";
     }
     if (session.role === "super_admin") return "/admin";

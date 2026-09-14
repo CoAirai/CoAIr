@@ -2,8 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { formatCa } from "@/lib/billing/tokenEconomics";
-import { formatGeminiFromCaMicros } from "@/lib/chat/tokenMeter";
+import { formatDisplayCa } from "@/lib/billing/tokenEconomics";
 import {
     createMemberTokenRequest,
     listMemberTokenRequests,
@@ -18,7 +17,7 @@ const Tokens = () => {
     const { session } = useAuth();
     const token = session?.accessToken ?? "";
     const live = session?.source === "live" && Boolean(token);
-    const isCompanyAdmin = session?.role === "company_admin";
+    const sellRate = 1.2;
     const [used, setUsed] = useState(0);
     const [limit, setLimit] = useState(0);
     const [tokens, setTokens] = useState("10");
@@ -88,37 +87,22 @@ const Tokens = () => {
                 <div className="rounded-xl border border-stroke-soft-200 p-3">
                     <div className="text-label-xs text-sub-600">Used (CA)</div>
                     <div className="mt-1 text-label-lg tabular-nums">
-                        {formatCa(used)}
+                        {formatDisplayCa(used, sellRate)}
                     </div>
-                    {isCompanyAdmin ? (
-                        <div className="mt-1 text-label-xs text-soft-400 tabular-nums">
-                            ≈ {formatGeminiFromCaMicros(used)} Gemini
-                        </div>
-                    ) : null}
                 </div>
                 <div className="rounded-xl border border-stroke-soft-200 p-3">
                     <div className="text-label-xs text-sub-600">Limit (CA)</div>
                     <div className="mt-1 text-label-lg tabular-nums">
-                        {formatCa(limit)}
+                        {formatDisplayCa(limit, sellRate)}
                     </div>
-                    {isCompanyAdmin ? (
-                        <div className="mt-1 text-label-xs text-soft-400 tabular-nums">
-                            ≈ {formatGeminiFromCaMicros(limit)} Gemini
-                        </div>
-                    ) : null}
                 </div>
                 <div className="rounded-xl border border-stroke-soft-200 p-3">
                     <div className="text-label-xs text-sub-600">
                         Remaining (CA)
                     </div>
                     <div className="mt-1 text-label-lg tabular-nums">
-                        {formatCa(remaining)}
+                        {formatDisplayCa(remaining, sellRate)}
                     </div>
-                    {isCompanyAdmin ? (
-                        <div className="mt-1 text-label-xs text-soft-400 tabular-nums">
-                            ≈ {formatGeminiFromCaMicros(remaining)} Gemini
-                        </div>
-                    ) : null}
                 </div>
             </div>
 

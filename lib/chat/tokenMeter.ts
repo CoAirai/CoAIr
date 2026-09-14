@@ -1,6 +1,8 @@
 import {
     formatCa,
     microsToCa,
+    realCaToDisplayCa,
+    DEFAULT_USD_PER_CA_SELL,
 } from "@/lib/billing/tokenEconomics";
 import {
     userAllocation,
@@ -39,9 +41,12 @@ export function getTokenMeter(input: {
     return { used, allocation, remaining, remainingPercent };
 }
 
-/** Compact CA credit label from CA micros (1 CA = 1e6 micros). */
-export function formatCaCount(micros: number): string {
-    const ca = microsToCa(micros);
+/** Compact CA credit label from CA micros — company face units ($1 ≈ 1 CA). */
+export function formatCaCount(
+    micros: number,
+    sellRate = DEFAULT_USD_PER_CA_SELL
+): string {
+    const ca = realCaToDisplayCa(microsToCa(micros), sellRate);
     if (ca >= 1_000) {
         return `${(ca / 1_000).toFixed(ca >= 10_000 ? 0 : 1)}K`;
     }
@@ -51,7 +56,7 @@ export function formatCaCount(micros: number): string {
     if (ca >= 10) {
         return ca.toFixed(1);
     }
-    return formatCa(micros);
+    return formatCa(ca, false);
 }
 
 /** Legacy Gemini-scale display of the same micros balance (1 CA ≈ 1M Gemini units). */

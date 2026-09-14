@@ -76,7 +76,7 @@ describe("portal hosts", () => {
             userId: "owner@acme.com",
             source: "live",
         };
-        expect(homeUrlForSession(session)).toBe("https://user.coair.ai/company");
+        expect(homeUrlForSession(session)).toBe("https://user.coair.ai/workspace");
     });
 
     it("recognizes production hosts without complete env", () => {

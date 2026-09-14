@@ -44,7 +44,7 @@ describe("resolveLogin", () => {
         if (result.ok) {
             expect(result.session.role).toBe("company_admin");
             expect(result.session.companyId).toBe("co-001");
-            expect(homePathForRole(result.session.role)).toBe("/company");
+            expect(homePathForRole(result.session.role)).toBe("/workspace");
         }
     });
 
@@ -67,7 +67,7 @@ describe("resolveLogin", () => {
 });
 
 describe("homePathForSession", () => {
-    it("sends live company admins to the company portal", () => {
+    it("sends live company admins to the workspace hub", () => {
         const session = {
             email: "acme-admin",
             name: "Company SuperAdmin",
@@ -76,7 +76,7 @@ describe("homePathForSession", () => {
             userId: "acme-admin",
             source: "live" as const,
         };
-        expect(homePathForSession(session)).toBe("/company");
+        expect(homePathForSession(session)).toBe("/workspace");
     });
 
     it("sends live owners who still need a package to checkout", () => {
@@ -104,7 +104,7 @@ describe("homePathForSession", () => {
             "/onboarding/plans"
         );
         expect(homePathForSession(session, { needsCheckout: false })).toBe(
-            "/company"
+            "/workspace"
         );
     });
 });

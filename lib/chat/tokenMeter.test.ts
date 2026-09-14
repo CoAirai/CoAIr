@@ -23,8 +23,9 @@ describe("getTokenMeter", () => {
 });
 
 describe("formatCaCount", () => {
-    it("formats CA micros as CA credits", () => {
-        expect(formatCaCount(83_500_000)).toBe("83.5");
+    it("formats CA micros as customer-facing CA credits ($1 ≈ 1 CA)", () => {
+        // 83.5 real CA × 1.2 sell = 100.2 display CA
+        expect(formatCaCount(83_500_000)).toBe("100");
         expect(formatCaCount(0)).toBe("0");
     });
 });
