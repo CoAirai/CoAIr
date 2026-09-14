@@ -100,6 +100,11 @@ _MIGRATIONS = (
         "industry",
         "ALTER TABLE organizations ADD COLUMN industry TEXT NOT NULL DEFAULT ''",
     ),
+    (
+        "organizations",
+        "provider_key_ref",
+        "ALTER TABLE organizations ADD COLUMN provider_key_ref TEXT NOT NULL DEFAULT ''",
+    ),
 )
 
 

@@ -109,6 +109,18 @@ CREATE TABLE IF NOT EXISTS api_keys (
     revoked_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS provider_key_registry (
+    key_ref TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'gemini',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_provider_key_registry_status
+    ON provider_key_registry(status, created_at);
+
 CREATE TABLE IF NOT EXISTS password_resets (
     token_hash TEXT PRIMARY KEY,
     username TEXT NOT NULL,
@@ -316,6 +328,7 @@ class OpsStore:
         if not use_postgres():
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
+                self._ensure_provider_key_registry(conn)
                 self._migrate_columns(conn)
                 self._seed(conn)
         else:
@@ -470,8 +483,31 @@ class OpsStore:
                         ON trusted_devices(username, expires_at)
                     """
                 )
+                self._ensure_provider_key_registry(conn)
                 self._migrate_columns(conn)
                 self._seed(conn)
+
+    @staticmethod
+    def _ensure_provider_key_registry(conn) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS provider_key_registry (
+                key_ref TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT 'gemini',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL DEFAULT '',
+                revoked_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_provider_key_registry_status
+                ON provider_key_registry(status, created_at)
+            """
+        )
 
     @staticmethod
     def _migrate_columns(conn) -> None:
@@ -2150,6 +2186,88 @@ class OpsStore:
                 [status, resolved_at, resolved_by, request_id],
             )
         return self.get_module_unlock_request(request_id) or current
+
+    # ── Virtual Gemini provider keys (tracking aliases) ─────
+
+    @staticmethod
+    def _provider_key_row(row: DbRow) -> Dict[str, Any]:
+        return {
+            "key_ref": row["key_ref"],
+            "label": row["label"],
+            "provider": row["provider"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "created_by": row["created_by"] or "",
+            "revoked_at": row["revoked_at"],
+        }
+
+    def create_provider_key(
+        self, *, label: str, created_by: str = "", provider: str = "gemini"
+    ) -> Dict[str, Any]:
+        clean = (label or "").strip()
+        if not clean:
+            raise ValueError("label is required")
+        key_ref = f"gk_{uuid.uuid4().hex[:24]}"
+        created = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            self._ensure_provider_key_registry(conn)
+            conn.execute(
+                "INSERT INTO provider_key_registry "
+                "(key_ref,label,provider,status,created_at,created_by,revoked_at) "
+                "VALUES (?,?,?,?,?,?,NULL)",
+                [key_ref, clean[:160], (provider or "gemini").strip() or "gemini",
+                 "active", created, (created_by or "").strip()[:160]],
+            )
+        return self.get_provider_key(key_ref) or {
+            "key_ref": key_ref,
+            "label": clean[:160],
+            "provider": "gemini",
+            "status": "active",
+            "created_at": created,
+            "created_by": (created_by or "").strip()[:160],
+            "revoked_at": None,
+        }
+
+    def get_provider_key(self, key_ref: str) -> Optional[Dict[str, Any]]:
+        ref = (key_ref or "").strip()
+        if not ref:
+            return None
+        with self._connect() as conn:
+            self._ensure_provider_key_registry(conn)
+            row = conn.execute(
+                "SELECT * FROM provider_key_registry WHERE key_ref=?", [ref]
+            ).fetchone()
+        return self._provider_key_row(row) if row else None
+
+    def list_provider_keys(self, *, include_revoked: bool = True) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM provider_key_registry"
+        if not include_revoked:
+            sql += " WHERE status='active'"
+        sql += " ORDER BY created_at DESC, key_ref"
+        with self._connect() as conn:
+            self._ensure_provider_key_registry(conn)
+            rows = conn.execute(sql).fetchall()
+        return [self._provider_key_row(r) for r in rows]
+
+    def revoke_provider_key(self, key_ref: str) -> Optional[Dict[str, Any]]:
+        ref = (key_ref or "").strip()
+        if not ref:
+            raise ValueError("key_ref is required")
+        now = _now_iso()
+        with self._write_lock, self._connect() as conn:
+            self._ensure_provider_key_registry(conn)
+            cur = conn.execute(
+                "UPDATE provider_key_registry SET status='revoked', revoked_at=? "
+                "WHERE key_ref=? AND status='active'",
+                [now, ref],
+            )
+            if cur.rowcount == 0:
+                existing = conn.execute(
+                    "SELECT * FROM provider_key_registry WHERE key_ref=?", [ref]
+                ).fetchone()
+                if not existing:
+                    return None
+        return self.get_provider_key(ref)
 
 
 def get_ops_store() -> OpsStore:

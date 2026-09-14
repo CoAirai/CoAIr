@@ -67,12 +67,15 @@ CREATE TABLE IF NOT EXISTS billing_ledger (
     usage_source             TEXT NOT NULL DEFAULT 'provider',
     note                     TEXT,
     created_at               TEXT NOT NULL,
+    provider_key_ref         TEXT NOT NULL DEFAULT '',
     FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_billing_ledger_user_time
     ON billing_ledger(username, created_at);
 CREATE INDEX IF NOT EXISTS idx_billing_ledger_project_time
     ON billing_ledger(project_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_billing_ledger_provider_key
+    ON billing_ledger(provider_key_ref, created_at);
 CREATE TRIGGER IF NOT EXISTS billing_ledger_no_update
 BEFORE UPDATE ON billing_ledger
 BEGIN
@@ -148,6 +151,29 @@ class BillingStore:
                         "ALTER TABLE billing_accounts ADD COLUMN "
                         "provider_key_ref TEXT NOT NULL DEFAULT ''"
                     )
+        self._ensure_ledger_provider_key_ref()
+
+    def _ensure_ledger_provider_key_ref(self) -> None:
+        with self._lock, self._connect() as conn:
+            cols = table_columns(conn, "billing_ledger")
+            if "provider_key_ref" not in cols:
+                try:
+                    conn.execute(
+                        "ALTER TABLE billing_ledger ADD COLUMN "
+                        "provider_key_ref TEXT NOT NULL DEFAULT ''"
+                    )
+                except Exception:
+                    conn.execute(
+                        "ALTER TABLE billing_ledger ADD COLUMN "
+                        "provider_key_ref TEXT DEFAULT ''"
+                    )
+            try:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_billing_ledger_provider_key "
+                    "ON billing_ledger(provider_key_ref, created_at)"
+                )
+            except Exception:
+                pass
 
     @classmethod
     def instance(cls) -> "BillingStore":
@@ -348,9 +374,18 @@ class BillingStore:
         provider_cost_nanos: int = 0, usage_source: str = "provider",
         pricing_version: str = PRICING_VERSION, idempotency_key: str = "",
         event_type: str = "charge", debit: bool = True,
+        provider_key_ref: str | None = None,
     ) -> Dict[str, Any]:
         now = _now()
         key = idempotency_key or uuid.uuid4().hex
+        if provider_key_ref is None:
+            try:
+                from .provider_credentials import current_provider_key_ref
+                key_ref = current_provider_key_ref()
+            except Exception:
+                key_ref = ""
+        else:
+            key_ref = str(provider_key_ref or "").strip()
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             prior = conn.execute(
@@ -380,15 +415,35 @@ class BillingStore:
             else:
                 debited = 0
                 uncovered = 0
-            conn.execute(
-                "INSERT INTO billing_ledger VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [uuid.uuid4().hex, key, username, project_id or None, run_id or None,
-                 job_id or None, event_type, task_type, provider, model,
-                 max(0, int(prompt_tokens)), max(0, int(completion_tokens)),
-                 max(0, int(reasoning_tokens)), max(0, int(cached_tokens)),
-                 pricing_version, max(0, int(provider_cost_nanos)), retail, debited,
-                 uncovered, markup, usage_source, None, now],
-            )
+            ledger_cols = table_columns(conn, "billing_ledger")
+            if "provider_key_ref" in ledger_cols:
+                conn.execute(
+                    "INSERT INTO billing_ledger "
+                    "(event_id,idempotency_key,username,project_id,run_id,job_id,"
+                    "event_type,task_type,provider,model,prompt_tokens,"
+                    "completion_tokens,reasoning_tokens,cached_tokens,pricing_version,"
+                    "provider_cost_nanos,retail_credit_micros,debited_credit_micros,"
+                    "uncovered_credit_micros,markup_bps,usage_source,note,created_at,"
+                    "provider_key_ref) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [uuid.uuid4().hex, key, username, project_id or None, run_id or None,
+                     job_id or None, event_type, task_type, provider, model,
+                     max(0, int(prompt_tokens)), max(0, int(completion_tokens)),
+                     max(0, int(reasoning_tokens)), max(0, int(cached_tokens)),
+                     pricing_version, max(0, int(provider_cost_nanos)), retail, debited,
+                     uncovered, markup, usage_source, None, now, key_ref],
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO billing_ledger VALUES "
+                    "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [uuid.uuid4().hex, key, username, project_id or None, run_id or None,
+                     job_id or None, event_type, task_type, provider, model,
+                     max(0, int(prompt_tokens)), max(0, int(completion_tokens)),
+                     max(0, int(reasoning_tokens)), max(0, int(cached_tokens)),
+                     pricing_version, max(0, int(provider_cost_nanos)), retail, debited,
+                     uncovered, markup, usage_source, None, now],
+                )
             return self.summary(username, conn=conn)
 
     def adjust_credits(self, username: str, credits: Decimal | int | float | str,
@@ -625,6 +680,7 @@ class BillingStore:
         *,
         username: str = "",
         org_usernames: Sequence[str] = (),
+        provider_key_ref: str = "",
         since: str = "",
         until: str = "",
         limit: int = 100,
@@ -643,6 +699,10 @@ class BillingStore:
                 return {"entries": [], "total": 0}
             where.append(f"username IN ({','.join('?' * len(names))})")
             params.extend(names)
+        key_ref = (provider_key_ref or "").strip()
+        if key_ref:
+            where.append("provider_key_ref=?")
+            params.append(key_ref)
         if since:
             where.append("created_at>=?")
             params.append(since)
@@ -651,13 +711,18 @@ class BillingStore:
             params.append(until)
         clause = " AND ".join(where)
         with self._connect() as conn:
+            cols = table_columns(conn, "billing_ledger")
+            has_key = "provider_key_ref" in cols
+            if key_ref and not has_key:
+                return {"entries": [], "total": 0}
             total = int(conn.execute(
                 f"SELECT COUNT(*) FROM billing_ledger WHERE {clause}", params,
             ).fetchone()[0])
+            key_select = ",provider_key_ref" if has_key else ""
             rows = [dict(r) for r in conn.execute(
                 "SELECT event_id,username,created_at,project_id,run_id,job_id,"
                 "task_type,provider,model,prompt_tokens,completion_tokens,"
-                "reasoning_tokens,cached_tokens,provider_cost_nanos "
+                f"reasoning_tokens,cached_tokens,provider_cost_nanos{key_select} "
                 f"FROM billing_ledger WHERE {clause} "
                 "ORDER BY created_at DESC, event_id DESC LIMIT ? OFFSET ?",
                 [*params, max(1, min(int(limit), 500)), max(0, int(offset))],
@@ -666,6 +731,8 @@ class BillingStore:
         for row in rows:
             nanos = int(row.pop("provider_cost_nanos") or 0)
             cost = round(nanos / NANOUSD_PER_USD, 9)
+            if "provider_key_ref" not in row:
+                row["provider_key_ref"] = ""
             entries.append({
                 **row,
                 "provider_cost_usd": cost,
@@ -677,6 +744,63 @@ class BillingStore:
                 ),
             })
         return {"entries": entries, "total": total}
+
+    def usage_by_provider_keys(
+        self, key_refs: Sequence[str] = ()
+    ) -> Dict[str, Dict[str, Any]]:
+        """Roll up charge usage per virtual provider key_ref."""
+        refs = [r for r in key_refs if r]
+        with self._connect() as conn:
+            cols = table_columns(conn, "billing_ledger")
+            if "provider_key_ref" not in cols:
+                return {
+                    r: {
+                        "calls": 0,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "provider_cost_usd": 0.0,
+                        "ca_tokens": 0.0,
+                    }
+                    for r in refs
+                }
+            sql = (
+                "SELECT provider_key_ref,"
+                "COUNT(*) AS calls,"
+                "COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,"
+                "COALESCE(SUM(completion_tokens),0) AS completion_tokens,"
+                "COALESCE(SUM(reasoning_tokens),0) AS reasoning_tokens,"
+                "COALESCE(SUM(provider_cost_nanos),0) AS provider_cost_nanos "
+                "FROM billing_ledger WHERE event_type='charge' AND provider_key_ref<>''"
+            )
+            params: List[Any] = []
+            if refs:
+                sql += f" AND provider_key_ref IN ({','.join('?' * len(refs))})"
+                params.extend(refs)
+            sql += " GROUP BY provider_key_ref"
+            rows = conn.execute(sql, params).fetchall()
+        out: Dict[str, Dict[str, Any]] = {
+            r: {
+                "calls": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "provider_cost_usd": 0.0,
+                "ca_tokens": 0.0,
+            }
+            for r in refs
+        }
+        for row in rows:
+            nanos = int(row["provider_cost_nanos"] or 0)
+            cost = round(nanos / NANOUSD_PER_USD, 9)
+            out[str(row["provider_key_ref"])] = {
+                "calls": int(row["calls"] or 0),
+                "prompt_tokens": int(row["prompt_tokens"] or 0),
+                "completion_tokens": int(
+                    (row["completion_tokens"] or 0) + (row["reasoning_tokens"] or 0)
+                ),
+                "provider_cost_usd": cost,
+                "ca_tokens": cost,
+            }
+        return out
 
     def job_usage(self, job_id: str) -> Dict[str, Any]:
         """Admin-safe exact token/cost totals for one background report job."""

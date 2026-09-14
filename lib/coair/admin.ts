@@ -39,6 +39,7 @@ export type CoairAdminOrg = {
     default_storage_bytes?: number;
     project_limit?: number;
     allow_member_projects?: boolean;
+    provider_key_ref?: string;
     subscription?: CoairOrgSubscription;
     counts?: {
         members?: number;
@@ -448,6 +449,7 @@ export type CoairAdminQueryRow = {
     project_id?: string | null;
     model?: string;
     provider?: string;
+    provider_key_ref?: string;
     prompt_tokens: number;
     completion_tokens: number;
     reasoning_tokens?: number;
@@ -457,11 +459,30 @@ export type CoairAdminQueryRow = {
     ca_tokens: number;
 };
 
+export type CoairProviderKey = {
+    key_ref: string;
+    label: string;
+    provider: string;
+    status: string;
+    created_at: string;
+    created_by?: string;
+    revoked_at?: string | null;
+    assigned_org?: { org_id: string; name: string } | null;
+    usage?: {
+        calls: number;
+        prompt_tokens: number;
+        completion_tokens: number;
+        provider_cost_usd: number;
+        ca_tokens: number;
+    };
+};
+
 export async function listAdminQueries(
     token: string,
     filters: {
         username?: string;
         orgId?: string;
+        providerKeyRef?: string;
         dateFrom?: string;
         dateTo?: string;
         limit?: number;
@@ -471,6 +492,7 @@ export async function listAdminQueries(
     const params = new URLSearchParams();
     if (filters.username) params.set("username", filters.username);
     if (filters.orgId) params.set("org_id", filters.orgId);
+    if (filters.providerKeyRef) params.set("provider_key_ref", filters.providerKeyRef);
     if (filters.dateFrom) params.set("date_from", filters.dateFrom);
     if (filters.dateTo) params.set("date_to", filters.dateTo);
     if (filters.limit) params.set("limit", String(filters.limit));
@@ -479,6 +501,42 @@ export async function listAdminQueries(
     return coairFetch<{ entries: CoairAdminQueryRow[]; total: number }>(
         `/admin/queries${query}`,
         { token }
+    );
+}
+
+export async function listAdminProviderKeys(token: string) {
+    return coairFetch<{ keys: CoairProviderKey[] }>("/admin/provider-keys", {
+        token,
+    });
+}
+
+export async function createAdminProviderKey(token: string, label: string) {
+    return coairFetch<CoairProviderKey>("/admin/provider-keys", {
+        token,
+        method: "POST",
+        body: JSON.stringify({ label }),
+    });
+}
+
+export async function revokeAdminProviderKey(token: string, keyRef: string) {
+    return coairFetch<CoairProviderKey>(
+        `/admin/provider-keys/${encodeURIComponent(keyRef)}/revoke`,
+        { token, method: "POST" }
+    );
+}
+
+export async function assignAdminOrgProviderKey(
+    token: string,
+    orgId: string,
+    keyRef: string | null
+) {
+    return coairFetch<{ org: CoairAdminOrg }>(
+        `/admin/orgs/${encodeURIComponent(orgId)}/provider-key`,
+        {
+            token,
+            method: "PUT",
+            body: JSON.stringify({ key_ref: keyRef }),
+        }
     );
 }
 

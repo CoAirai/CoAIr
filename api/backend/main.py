@@ -28,6 +28,7 @@ from backend.api import (
     admin_jargon,
     admin_ops,
     admin_orgs,
+    admin_provider_keys,
     admin_users,
     auth,
     chat,
@@ -142,6 +143,9 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         admin_orgs.router, prefix="/api", tags=["admin"], dependencies=admin_dep,
+    )
+    app.include_router(
+        admin_provider_keys.router, prefix="/api", tags=["admin"], dependencies=admin_dep,
     )
     app.include_router(admin.router, prefix="/api", tags=["admin"], dependencies=admin_dep)
     app.include_router(

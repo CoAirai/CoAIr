@@ -29,8 +29,9 @@ from .project_store import ORG_ROLES, PROJECTS_DB, _now, _slug, ensure_schema
 
 
 _ORG_UPDATABLE = (
-    "name", "industry", "default_plan_type", "default_credits", "default_token_limit",
-    "default_storage_bytes", "project_limit", "allow_member_projects",
+    "name", "industry", "provider_key_ref", "default_plan_type", "default_credits",
+    "default_token_limit", "default_storage_bytes", "project_limit",
+    "allow_member_projects",
 )
 
 
@@ -48,6 +49,7 @@ class OrgStore:
             with self._connect() as conn:
                 ensure_schema(conn)
         self._ensure_industry_column()
+        self._ensure_provider_key_ref_column()
 
     def _ensure_industry_column(self) -> None:
         with self._write_lock, self._connect() as conn:
@@ -61,6 +63,22 @@ class OrgStore:
             except Exception:
                 conn.execute(
                     "ALTER TABLE organizations ADD COLUMN industry TEXT DEFAULT ''"
+                )
+
+    def _ensure_provider_key_ref_column(self) -> None:
+        with self._write_lock, self._connect() as conn:
+            cols = table_columns(conn, "organizations")
+            if "provider_key_ref" in cols:
+                return
+            try:
+                conn.execute(
+                    "ALTER TABLE organizations ADD COLUMN "
+                    "provider_key_ref TEXT NOT NULL DEFAULT ''"
+                )
+            except Exception:
+                conn.execute(
+                    "ALTER TABLE organizations ADD COLUMN "
+                    "provider_key_ref TEXT DEFAULT ''"
                 )
 
     @classmethod
@@ -81,11 +99,15 @@ class OrgStore:
         industry = ""
         if "industry" in keys:
             industry = str(row["industry"] or "")
+        provider_key_ref = ""
+        if "provider_key_ref" in keys:
+            provider_key_ref = str(row["provider_key_ref"] or "")
         return {
             "org_id": row["org_id"],
             "name": row["name"],
             "slug": row["slug"],
             "industry": industry,
+            "provider_key_ref": provider_key_ref,
             "default_plan_type": row["default_plan_type"],
             "default_credits": float(row["default_credits"]),
             "default_token_limit": int(row["default_token_limit"]),
@@ -300,10 +322,17 @@ class OrgStore:
         if not username:
             return None
         with self._connect() as conn:
+            cols = table_columns(conn, "organizations")
+            key_select = (
+                ", o.provider_key_ref"
+                if "provider_key_ref" in cols
+                else ", '' AS provider_key_ref"
+            )
             row = conn.execute(
                 "SELECT m.org_id, m.role, o.name AS org_name, o.slug, o.archived_at, "
                 "       o.default_plan_type, o.default_credits, o.default_token_limit, "
-                "       o.default_storage_bytes, o.project_limit, o.allow_member_projects "
+                "       o.default_storage_bytes, o.project_limit, o.allow_member_projects"
+                f"{key_select} "
                 "FROM org_members m JOIN organizations o ON o.org_id=m.org_id "
                 "WHERE m.username=?",
                 [username],
@@ -312,6 +341,7 @@ class OrgStore:
             return None
         record = dict(row)
         record["allow_member_projects"] = bool(record["allow_member_projects"])
+        record["provider_key_ref"] = str(record.get("provider_key_ref") or "")
         return record
 
     def membership_map(self, usernames: Sequence[str] = ()) -> Dict[str, Dict[str, Any]]:
@@ -368,6 +398,72 @@ class OrgStore:
                 bucket["projects"] = int(row["projects"])
                 bucket["archived_projects"] = int(row["archived_projects"])
         return out
+
+    def find_org_by_provider_key_ref(self, key_ref: str) -> Optional[Dict[str, Any]]:
+        ref = (key_ref or "").strip()
+        if not ref:
+            return None
+        with self._connect() as conn:
+            cols = table_columns(conn, "organizations")
+            if "provider_key_ref" not in cols:
+                return None
+            row = conn.execute(
+                "SELECT * FROM organizations WHERE provider_key_ref=? LIMIT 1", [ref]
+            ).fetchone()
+        return self._row(row) if row else None
+
+    def assign_provider_key(
+        self, org_id: str, key_ref: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Assign or clear a virtual Gemini sub-key for a company.
+
+        One key maps to at most one company: assigning moves it off any prior org.
+        """
+        if not self.get_org(org_id):
+            return None
+        clean = (key_ref or "").strip()
+        now = _now()
+        with self._write_lock, self._connect() as conn:
+            cols = table_columns(conn, "organizations")
+            if "provider_key_ref" not in cols:
+                try:
+                    conn.execute(
+                        "ALTER TABLE organizations ADD COLUMN "
+                        "provider_key_ref TEXT NOT NULL DEFAULT ''"
+                    )
+                except Exception:
+                    conn.execute(
+                        "ALTER TABLE organizations ADD COLUMN "
+                        "provider_key_ref TEXT DEFAULT ''"
+                    )
+            if clean:
+                conn.execute(
+                    "UPDATE organizations SET provider_key_ref='', updated_at=? "
+                    "WHERE provider_key_ref=? AND org_id<>?",
+                    [now, clean, org_id],
+                )
+            conn.execute(
+                "UPDATE organizations SET provider_key_ref=?, updated_at=? WHERE org_id=?",
+                [clean, now, org_id],
+            )
+        return self.get_org(org_id)
+
+    def clear_provider_key_assignments(self, key_ref: str) -> int:
+        """Clear org assignments for a revoked key. Returns rows updated."""
+        ref = (key_ref or "").strip()
+        if not ref:
+            return 0
+        now = _now()
+        with self._write_lock, self._connect() as conn:
+            cols = table_columns(conn, "organizations")
+            if "provider_key_ref" not in cols:
+                return 0
+            cur = conn.execute(
+                "UPDATE organizations SET provider_key_ref='', updated_at=? "
+                "WHERE provider_key_ref=?",
+                [now, ref],
+            )
+        return int(cur.rowcount or 0)
 
 
 def get_org_store() -> OrgStore:

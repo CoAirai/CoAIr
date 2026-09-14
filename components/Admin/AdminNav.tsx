@@ -88,6 +88,11 @@ const GROUPS: NavGroup[] = [
                 icon: "gift",
                 badgeKey: "packages",
             },
+            {
+                href: "/admin/provider-keys",
+                label: "Gemini keys",
+                icon: "security",
+            },
             { href: "/admin/security", label: "Security", icon: "security" },
             {
                 href: "/admin/tickets",

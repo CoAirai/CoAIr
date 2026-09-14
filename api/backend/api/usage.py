@@ -64,6 +64,7 @@ def billing_usage_series(weeks: int = Query(8, ge=1, le=52)) -> dict:
 def billing_queries(
     username: str = Query(""),
     org_id: str = Query(""),
+    provider_key_ref: str = Query(""),
     date_from: str = Query(""),
     date_to: str = Query(""),
     limit: int = Query(100, ge=1, le=500),
@@ -78,6 +79,7 @@ def billing_queries(
     return get_billing_store().list_queries(
         username=username.strip(),
         org_usernames=org_usernames,
+        provider_key_ref=provider_key_ref.strip(),
         since=date_from.strip(),
         until=date_to.strip(),
         limit=limit,

@@ -27,9 +27,11 @@ import {
     addAdminOrgMember,
     adjustAdminCredits,
     assignAdminOrgPlan,
+    assignAdminOrgProviderKey,
     createAdminUser,
     deleteAdminUser,
     forceLogoutAdminUser,
+    listAdminProviderKeys,
     listAdminUsers,
     patchAdminOrg,
     patchAdminUser,
@@ -40,6 +42,7 @@ import {
     type CoairAdminOrgDetail,
     type CoairAdminUser,
     type CoairLedgerEntry,
+    type CoairProviderKey,
 } from "@/lib/coair/admin";
 import { CoairApiError } from "@/lib/coair/client";
 import { startLiveImpersonation } from "@/lib/coair/impersonate";
@@ -113,6 +116,9 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     const [assignUsers, setAssignUsers] = useState("25");
     const [assignBusy, setAssignBusy] = useState(false);
     const [assignMessage, setAssignMessage] = useState<string | null>(null);
+    const [providerKeys, setProviderKeys] = useState<CoairProviderKey[]>([]);
+    const [geminiKeyBusy, setGeminiKeyBusy] = useState(false);
+    const [geminiKeyMessage, setGeminiKeyMessage] = useState<string | null>(null);
 
     const requestedTab = searchParams.get("tab");
     const activeTab: TabId = TABS.some((tab) => tab.id === requestedTab)
@@ -138,7 +144,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
         setError(null);
         setMissing(false);
         try {
-            const [detail, orgUsersPayload, invoiceRows, ticketRows] =
+            const [detail, orgUsersPayload, invoiceRows, ticketRows, keyPayload] =
                 await Promise.all([
                     readAdminOrg(token, id),
                     listAdminUsers(token, id).catch(() => ({
@@ -146,6 +152,9 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                     })),
                     listAdminInvoices(token).catch(() => [] as Invoice[]),
                     listAdminTickets(token).catch(() => [] as SupportTicket[]),
+                    listAdminProviderKeys(token).catch(() => ({
+                        keys: [] as CoairProviderKey[],
+                    })),
                 ]);
             setOrg(detail);
             setUsers(orgUsersPayload.users ?? []);
@@ -155,6 +164,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
             setTickets(
                 ticketRows.filter((ticket) => ticket.companyId === id)
             );
+            setProviderKeys(keyPayload.keys ?? []);
         } catch (err) {
             if (err instanceof CoairApiError && err.status === 404) {
                 setMissing(true);
@@ -202,6 +212,38 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
         setAssignCa(String(selected.queryCap));
         setAssignStorageGb(String(selected.storageLimitGb));
         setAssignUsers(String(selected.usersIncluded));
+    };
+
+    const onAssignGeminiKey = async (keyRef: string) => {
+        if (!token || !org) return;
+        setGeminiKeyBusy(true);
+        try {
+            const result = await assignAdminOrgProviderKey(
+                token,
+                org.org_id,
+                keyRef || null
+            );
+            setOrg((prev) =>
+                prev
+                    ? {
+                          ...prev,
+                          provider_key_ref: result.org?.provider_key_ref ?? "",
+                      }
+                    : prev
+            );
+            setGeminiKeyMessage(
+                keyRef ? "Gemini sub-key assigned" : "Gemini sub-key cleared"
+            );
+            setActionError(null);
+            await load();
+        } catch (err) {
+            setGeminiKeyMessage(null);
+            setActionError(
+                err instanceof Error ? err.message : "Unable to assign Gemini key"
+            );
+        } finally {
+            setGeminiKeyBusy(false);
+        }
     };
 
     const onAssignPlan = async () => {
@@ -562,6 +604,63 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                 </dd>
                             </div>
                         </dl>
+                    </section>
+                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                        <h2 className="text-label-lg text-strong-950">
+                            Gemini sub-key
+                        </h2>
+                        <p className="mt-1 text-label-xs text-sub-600">
+                            Tracking alias under the platform VPS key. Usage and
+                            queries are stamped with this ref.
+                        </p>
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                            <label className="block flex-1">
+                                <span className="mb-1.5 block text-label-xs text-sub-600">
+                                    Assigned key
+                                </span>
+                                <select
+                                    className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm"
+                                    value={org.provider_key_ref || ""}
+                                    disabled={geminiKeyBusy}
+                                    onChange={(e) =>
+                                        void onAssignGeminiKey(e.target.value)
+                                    }
+                                >
+                                    <option value="">Unassigned</option>
+                                    {providerKeys
+                                        .filter(
+                                            (key) =>
+                                                key.status === "active" ||
+                                                key.key_ref ===
+                                                    org.provider_key_ref
+                                        )
+                                        .map((key) => (
+                                            <option
+                                                key={key.key_ref}
+                                                value={key.key_ref}
+                                            >
+                                                {key.label} ({key.key_ref})
+                                                {key.status !== "active"
+                                                    ? " · revoked"
+                                                    : ""}
+                                            </option>
+                                        ))}
+                                </select>
+                            </label>
+                            {org.provider_key_ref ? (
+                                <Link
+                                    href={`/admin/queries?provider_key_ref=${encodeURIComponent(org.provider_key_ref)}`}
+                                    className="inline-flex h-10 items-center justify-center rounded-full border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                >
+                                    View queries
+                                </Link>
+                            ) : null}
+                        </div>
+                        {geminiKeyMessage ? (
+                            <p className="mt-2 text-label-xs text-green-600">
+                                {geminiKeyMessage}
+                            </p>
+                        ) : null}
                     </section>
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                         <h2 className="text-label-lg text-strong-950">

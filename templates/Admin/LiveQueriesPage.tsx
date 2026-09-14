@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import PageHeader from "@/components/Admin/PageHeader";
 import { useAuth } from "@/context/AuthContext";
@@ -27,14 +28,23 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 const LiveQueriesPage = () => {
     const { session } = useAuth();
     const token = session?.accessToken ?? "";
+    const searchParams = useSearchParams();
     const [rows, setRows] = useState<CoairAdminQueryRow[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [username, setUsername] = useState("");
     const [orgId, setOrgId] = useState("");
+    const [providerKeyRef, setProviderKeyRef] = useState(
+        () => searchParams.get("provider_key_ref") ?? ""
+    );
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
+
+    useEffect(() => {
+        const fromUrl = searchParams.get("provider_key_ref") ?? "";
+        setProviderKeyRef(fromUrl);
+    }, [searchParams]);
 
     const refresh = useCallback(async () => {
         if (!token) {
@@ -48,6 +58,7 @@ const LiveQueriesPage = () => {
             const payload = await listAdminQueries(token, {
                 username: username.trim() || undefined,
                 orgId: orgId.trim() || undefined,
+                providerKeyRef: providerKeyRef.trim() || undefined,
                 dateFrom: dateFrom.trim() || undefined,
                 dateTo: dateTo.trim() || undefined,
                 limit: 200,
@@ -60,7 +71,7 @@ const LiveQueriesPage = () => {
         } finally {
             setLoading(false);
         }
-    }, [token, username, orgId, dateFrom, dateTo]);
+    }, [token, username, orgId, providerKeyRef, dateFrom, dateTo]);
 
     useEffect(() => {
         void refresh();
@@ -83,7 +94,7 @@ const LiveQueriesPage = () => {
 
             <form
                 onSubmit={onFilter}
-                className="surface-panel grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-5"
+                className="surface-panel grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-6"
             >
                 <label className="block">
                     <span className="mb-1.5 block text-label-xs text-sub-600">
@@ -105,6 +116,17 @@ const LiveQueriesPage = () => {
                         onChange={(e) => setOrgId(e.target.value)}
                         className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
                         placeholder="optional"
+                    />
+                </label>
+                <label className="block">
+                    <span className="mb-1.5 block text-label-xs text-sub-600">
+                        Gemini key ref
+                    </span>
+                    <input
+                        value={providerKeyRef}
+                        onChange={(e) => setProviderKeyRef(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm outline-none focus:border-blue-500"
+                        placeholder="gk_…"
                     />
                 </label>
                 <label className="block">
@@ -146,11 +168,12 @@ const LiveQueriesPage = () => {
                     </h2>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1100px] text-left">
+                    <table className="w-full min-w-[1200px] text-left">
                         <thead className="bg-weak-50 text-label-xs text-sub-600">
                             <tr>
                                 <th className="px-5 py-3 font-medium">When</th>
                                 <th className="px-5 py-3 font-medium">Customer</th>
+                                <th className="px-5 py-3 font-medium">Key</th>
                                 <th className="px-5 py-3 font-medium">Model</th>
                                 <th className="px-5 py-3 font-medium">
                                     Gemini in
@@ -175,29 +198,28 @@ const LiveQueriesPage = () => {
                                     <td className="px-5 py-4 text-strong-950">
                                         {row.username}
                                     </td>
+                                    <td className="px-5 py-4 font-mono text-sub-600">
+                                        {row.provider_key_ref || "—"}
+                                    </td>
                                     <td className="px-5 py-4 text-sub-600">
                                         {row.model || "—"}
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
                                         {numberFormatter.format(
-                                            row.gemini_input_tokens ??
-                                                row.prompt_tokens ??
-                                                0
+                                            row.gemini_input_tokens
                                         )}
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
                                         {numberFormatter.format(
-                                            row.gemini_output_tokens ??
-                                                row.completion_tokens ??
-                                                0
+                                            row.gemini_output_tokens
                                         )}
                                     </td>
-                                    <td className="px-5 py-4 text-sub-600">
-                                        {caFormatter.format(row.ca_tokens ?? 0)}
+                                    <td className="px-5 py-4 text-strong-950">
+                                        {caFormatter.format(row.ca_tokens)}
                                     </td>
                                     <td className="px-5 py-4 text-sub-600">
                                         {currencyFormatter.format(
-                                            row.provider_cost_usd ?? 0
+                                            row.provider_cost_usd
                                         )}
                                     </td>
                                 </tr>
@@ -205,10 +227,10 @@ const LiveQueriesPage = () => {
                             {!loading && rows.length === 0 ? (
                                 <tr>
                                     <td
+                                        colSpan={8}
                                         className="px-5 py-8 text-center text-label-sm text-sub-600"
-                                        colSpan={7}
                                     >
-                                        No query charges yet.
+                                        No queries matched these filters.
                                     </td>
                                 </tr>
                             ) : null}
