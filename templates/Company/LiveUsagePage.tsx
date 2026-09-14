@@ -40,10 +40,7 @@ const LiveUsagePage = () => {
 
     return (
         <div className="page-stack">
-            <PageHeader
-                title="Usage"
-                description="Company CA token pool, equal shares, and storage."
-            />
+            <PageHeader title="Usage" />
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
@@ -54,12 +51,6 @@ const LiveUsagePage = () => {
                             <h2 className="text-label-lg text-strong-950">
                                 Company CA token pool
                             </h2>
-                            <p className="mt-1 text-label-xs text-sub-600">
-                                Package pool is split equally across active
-                                members. Equal share snapshot:{" "}
-                                {formatCa(pool.equal_share)} CA each (
-                                {pool.member_count} members).
-                            </p>
                             <div className="mt-4 grid gap-4 sm:grid-cols-3">
                                 <div>
                                     <p className="text-label-xs text-sub-600">
@@ -148,9 +139,6 @@ const LiveUsagePage = () => {
                         <h2 className="text-label-lg text-strong-950">
                             Company spend
                         </h2>
-                        <p className="mt-1 text-label-xs text-sub-600">
-                            Aggregated usage across company projects.
-                        </p>
                         <div className="mt-4 grid gap-4 sm:grid-cols-3">
                             <div>
                                 <p className="text-label-xs text-sub-600">Calls</p>

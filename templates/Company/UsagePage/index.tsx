@@ -89,10 +89,7 @@ const UsagePage = () => {
 
     return (
         <div className="page-stack">
-            <PageHeader
-                title="Usage"
-                description="Company quotas, per-user token shares, and overflow pool."
-            />
+            <PageHeader title="Usage" />
 
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">Company quotas</h2>
@@ -128,10 +125,6 @@ const UsagePage = () => {
                         <h2 className="text-label-lg text-strong-950">
                             Token shares
                         </h2>
-                        <p className="mt-1 text-label-xs text-sub-600">
-                            Allocate your company token limit across team members.
-                            Shares must total 100%.
-                        </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                         <span

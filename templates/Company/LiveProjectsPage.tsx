@@ -136,10 +136,7 @@ const LiveProjectsPage = () => {
 
     return (
         <div className="page-stack">
-            <PageHeader
-                title="Projects"
-                description="Create company projects and assign teammates as owner, editor, or viewer."
-            />
+            <PageHeader title="Projects" />
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
@@ -207,9 +204,6 @@ const LiveProjectsPage = () => {
                             <h2 className="text-label-lg text-strong-950">
                                 {selected.name}
                             </h2>
-                            <p className="mt-1 text-label-xs text-sub-600">
-                                Team members only see projects they are assigned to.
-                            </p>
 
                             <form
                                 onSubmit={(event) => void onAssign(event)}

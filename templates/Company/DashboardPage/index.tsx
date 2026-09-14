@@ -25,10 +25,7 @@ const DashboardPage = () => {
 
     return (
         <PageEnter className="page-stack">
-            <PageHeader
-                title="Dashboard"
-                description={`Plan, team size, and quota overview for ${company.name}.`}
-            />
+            <PageHeader title="Dashboard" />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <StatCard

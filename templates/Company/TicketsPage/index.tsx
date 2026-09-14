@@ -59,7 +59,6 @@ const TicketsPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Tickets"
-                description="Open a support ticket and track its status."
                 action={
                     <button
                         type="button"
@@ -83,9 +82,6 @@ const TicketsPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         New ticket
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Our team will get back to you as soon as possible.
-                    </p>
                     <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,2fr)_140px]">
                         <label className="block">
                             <span className="mb-1.5 block text-label-xs text-sub-600">

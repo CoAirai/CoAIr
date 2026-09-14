@@ -94,7 +94,6 @@ const TeamPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Team"
-                description="Invite teammates, manage roles and module rights, and suspend access."
                 action={
                     <button
                         type="button"
@@ -118,10 +117,6 @@ const TeamPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         Invite user
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        New members receive a mock invite email and start as
-                        pending. Token shares rebalance equally across the team.
-                    </p>
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                         <label className="block">
                             <span className="mb-1.5 block text-label-xs text-sub-600">

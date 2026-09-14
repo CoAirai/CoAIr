@@ -127,10 +127,7 @@ const BillingPage = () => {
 
     return (
         <div className="page-stack">
-            <PageHeader
-                title="Billing"
-                description="View invoices, purchase capacity, or upgrade your plan."
-            />
+            <PageHeader title="Billing" />
 
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">Current plan</h2>
@@ -174,9 +171,6 @@ const BillingPage = () => {
             <section className="surface-panel overflow-hidden">
                 <div className="surface-panel-header">
                     <h2 className="text-label-lg text-strong-950">Invoices</h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        View-only billing history for your company.
-                    </p>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="surface-table w-full min-w-[720px] text-left">
@@ -257,10 +251,6 @@ const BillingPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         Extra tokens
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Enter the tokens you need. Priced at {sellRate} tokens
-                        per $1.
-                    </p>
                     <label className="mt-4 block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
                             Tokens needed
@@ -303,10 +293,6 @@ const BillingPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         Extra storage
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Enter how much storage you need ($
-                        {STORAGE_USD_PER_GB}/GB).
-                    </p>
                     <label className="mt-4 block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
                             Storage needed (GB)
@@ -348,10 +334,6 @@ const BillingPage = () => {
 
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">Upgrade plan</h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    Move to a higher tier. Blocked if current usage exceeds the
-                    new plan limits.
-                </p>
                 {upgradePlans.length === 0 ? (
                     <p className="mt-4 text-label-sm text-sub-600">
                         You are on the highest available plan.

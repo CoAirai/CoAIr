@@ -29,18 +29,12 @@ const SettingsPage = () => {
 
     return (
         <div className="page-stack">
-            <PageHeader
-                title="Settings"
-                description="Manage your company profile."
-            />
+            <PageHeader title="Settings" />
 
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">
                     Company profile
                 </h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    Display name and industry shown across the company admin.
-                </p>
 
                 <form
                     onSubmit={onSubmit}
@@ -93,16 +87,6 @@ const SettingsPage = () => {
                         Save changes
                     </button>
                 </form>
-            </section>
-
-            <section className="surface-panel p-5">
-                <h2 className="text-label-lg text-strong-950">
-                    Password
-                </h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    Change your password from the profile menu in the sidebar
-                    or header (click your avatar → Security).
-                </p>
             </section>
         </div>
     );

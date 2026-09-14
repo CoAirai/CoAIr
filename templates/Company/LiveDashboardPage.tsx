@@ -4,14 +4,12 @@ import PageEnter from "@/components/Motion/PageEnter";
 import PageHeader from "@/components/Admin/PageHeader";
 import StatCard from "@/components/Admin/StatCard";
 import { CompanyDashboardSkeleton } from "@/components/Skeleton/sections";
-import { useAuth } from "@/context/AuthContext";
 import { useLiveOrg } from "@/lib/coair/useLiveOrg";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
 const LiveCompanyDashboardPage = () => {
-    const { session } = useAuth();
     const { users, org, me, error, loading } = useLiveOrg();
     const { projects, accountUsage } = useLiveWorkspace();
     const usage = accountUsage ?? me;
@@ -20,10 +18,7 @@ const LiveCompanyDashboardPage = () => {
 
     return (
         <PageEnter className="page-stack">
-            <PageHeader
-                title="Dashboard"
-                description={`Live overview for ${session?.companyName || "your company"}.`}
-            />
+            <PageHeader title="Dashboard" />
             {error ? (
                 <p className="text-label-sm text-red-500">{error}</p>
             ) : null}
@@ -32,12 +27,10 @@ const LiveCompanyDashboardPage = () => {
                     <StatCard
                         label="Team members"
                         value={numberFormatter.format(memberCount)}
-                        hint="From GET /org"
                     />
                     <StatCard
                         label="Projects"
                         value={numberFormatter.format(projectCount)}
-                        hint="Company projects"
                     />
                     <StatCard
                         label="Tokens used"

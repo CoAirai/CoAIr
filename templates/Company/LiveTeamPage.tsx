@@ -304,7 +304,6 @@ const LiveTeamPage = () => {
         <div className="page-stack">
             <PageHeader
                 title="Team"
-                description="Invite teammates, change company role, and grant module rights. Token shares come from the company pool."
                 action={
                     <div className="flex flex-wrap gap-2">
                         <button
@@ -360,11 +359,6 @@ const LiveTeamPage = () => {
             {showInvite ? (
                 <form onSubmit={(event) => void onInvite(event)} className="surface-panel p-5">
                     <h2 className="text-label-lg text-strong-950">Invite user</h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Username is the email address. They set a password from
-                        the invite email. New members rebalance remaining pool
-                        tokens equally.
-                    </p>
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                         <input
                             required
@@ -394,10 +388,6 @@ const LiveTeamPage = () => {
                 <h2 className="text-label-lg text-strong-950">
                     Company module unlock
                 </h2>
-                <p className="mt-1 text-label-xs text-sub-600">
-                    Chronology and Forensic must be unlocked by Super Admin
-                    before you can grant them to teammates.
-                </p>
                 <div className="mt-4 flex flex-wrap gap-3">
                     {(["chronology", "forensic"] as ModuleAccessModule[]).map(
                         (module) => {
@@ -448,11 +438,6 @@ const LiveTeamPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         Access requests
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Members asking for Chronology or Forensic. Approve only
-                        works after Super Admin unlocks the module for the
-                        company.
-                    </p>
                     <ul className="mt-4 divide-y divide-stroke-soft-200">
                         {accessRequests.map((request) => (
                             <li
@@ -507,10 +492,6 @@ const LiveTeamPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         Token requests
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Approve by moving unused tokens from another member, or
-                        buy more for the requester.
-                    </p>
                     <ul className="mt-4 space-y-4">
                         {tokenRequests.map((request) => (
                             <li

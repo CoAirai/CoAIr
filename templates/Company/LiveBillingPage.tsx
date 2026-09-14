@@ -322,8 +322,8 @@ const LiveCompanyBillingPage = () => {
     const checkoutSummary =
         checkout?.kind === "upgrade"
             ? checkout.action === "downgrade" || checkout.priceUsd <= 0
-                ? `Switch to ${checkout.planName}. Unused tokens and storage transfer now; from the next renewal you get ${checkout.planName} limits only.`
-                : `Upgrade to ${checkout.planName}. Unused tokens and storage transfer now; from the next renewal you get ${checkout.planName} limits only. Pay securely via Stripe.`
+                ? `Switch to ${checkout.planName}.`
+                : `Upgrade to ${checkout.planName}.`
             : checkout?.kind === "tokens"
               ? `Add ${checkout.label} to your company token pool.`
               : checkout?.kind === "storage"
@@ -357,10 +357,7 @@ const LiveCompanyBillingPage = () => {
 
     return (
         <div className="page-stack">
-            <PageHeader
-                title="Billing"
-                description="Invoices, token and storage purchases, and package changes. Unused tokens and storage transfer when you change package; the next renewal uses clean package limits."
-            />
+            <PageHeader title="Billing" />
             {cancelled ? (
                 <p className="text-label-sm text-amber-600">
                     Checkout was cancelled. No charge was made.
@@ -472,9 +469,6 @@ const LiveCompanyBillingPage = () => {
             <section className="surface-panel overflow-hidden">
                 <div className="surface-panel-header">
                     <h2 className="text-label-lg text-strong-950">Invoices</h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Billing history for your company.
-                    </p>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="surface-table w-full min-w-[720px] text-left">
@@ -558,10 +552,6 @@ const LiveCompanyBillingPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         Extra CA tokens
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Enter the CA tokens you need. Priced at $
-                        {sellRate} per CA.
-                    </p>
                     <label className="mt-4 block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
                             CA tokens needed
@@ -605,10 +595,6 @@ const LiveCompanyBillingPage = () => {
                     <h2 className="text-label-lg text-strong-950">
                         Extra storage
                     </h2>
-                    <p className="mt-1 text-label-xs text-sub-600">
-                        Enter how much storage you need. Listed at $
-                        {STORAGE_USD_PER_GB}/GB.
-                    </p>
                     <label className="mt-4 block">
                         <span className="mb-1.5 block text-label-xs text-sub-600">
                             Storage needed (GB)
@@ -651,11 +637,6 @@ const LiveCompanyBillingPage = () => {
 
             <section className="surface-panel p-5">
                 <h2 className="text-label-lg text-strong-950">Change package</h2>
-                <p className="mt-2 text-label-sm text-sub-600">
-                    Upgrades can be paid here. Downgrades need Super Admin
-                    approval — request below and wait for review. Demo is not
-                    available for self-serve.
-                </p>
                 {requestMessage ? (
                     <p className="mt-3 text-label-sm text-green-600">
                         {requestMessage}
