@@ -12,11 +12,43 @@ import {
 } from "./mapCommerce";
 import type { Plan } from "@/lib/admin/types";
 
+function formatApiDetail(detail: unknown): string | null {
+    if (detail == null) return null;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+        const parts = detail
+            .map((item) => {
+                if (typeof item === "string") return item;
+                if (item && typeof item === "object") {
+                    const row = item as { msg?: unknown; loc?: unknown };
+                    const msg = typeof row.msg === "string" ? row.msg : null;
+                    if (!msg) return null;
+                    const loc = Array.isArray(row.loc)
+                        ? row.loc.filter((part) => typeof part === "string").join(".")
+                        : "";
+                    return loc ? `${loc}: ${msg}` : msg;
+                }
+                return null;
+            })
+            .filter(Boolean);
+        if (parts.length) return parts.join("; ");
+    }
+    if (typeof detail === "object") {
+        try {
+            return JSON.stringify(detail);
+        } catch {
+            return null;
+        }
+    }
+    return String(detail);
+}
+
 function apiErrorMessage(error: unknown) {
     if (error instanceof CoairApiError) {
         try {
-            const parsed = JSON.parse(error.body) as { detail?: string };
-            if (parsed.detail) return String(parsed.detail);
+            const parsed = JSON.parse(error.body) as { detail?: unknown };
+            const formatted = formatApiDetail(parsed.detail);
+            if (formatted) return formatted;
         } catch {
             /* body is plain text */
         }

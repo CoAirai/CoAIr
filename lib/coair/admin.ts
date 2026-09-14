@@ -514,7 +514,7 @@ export async function createAdminProviderKey(token: string, label: string) {
     return coairFetch<CoairProviderKey>("/admin/provider-keys", {
         token,
         method: "POST",
-        body: JSON.stringify({ label }),
+        body: { label },
     });
 }
 
@@ -535,7 +535,7 @@ export async function assignAdminOrgProviderKey(
         {
             token,
             method: "PUT",
-            body: JSON.stringify({ key_ref: keyRef }),
+            body: { key_ref: keyRef },
         }
     );
 }
