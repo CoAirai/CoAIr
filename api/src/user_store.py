@@ -506,9 +506,9 @@ class UserStore:
                 INSERT INTO user_usage (username, prompt_tokens, completion_tokens, total_calls, updated_at)
                 VALUES (?, ?, ?, 1, ?)
                 ON CONFLICT(username) DO UPDATE SET
-                    prompt_tokens     = prompt_tokens + excluded.prompt_tokens,
-                    completion_tokens = completion_tokens + excluded.completion_tokens,
-                    total_calls       = total_calls + 1,
+                    prompt_tokens     = user_usage.prompt_tokens + excluded.prompt_tokens,
+                    completion_tokens = user_usage.completion_tokens + excluded.completion_tokens,
+                    total_calls       = user_usage.total_calls + 1,
                     updated_at        = excluded.updated_at
                 """,
                 (
