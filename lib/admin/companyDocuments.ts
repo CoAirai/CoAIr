@@ -7,6 +7,8 @@ export type CompanyDocument = {
     kind: CompanyDocumentKind;
     addedByUserId: string;
     addedAt: string;
+    /** live registry status: completed | processing | error */
+    status?: string;
 };
 
 export type DocumentActorRole = "super_admin" | "company_admin" | "member";

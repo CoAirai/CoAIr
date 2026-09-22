@@ -169,6 +169,16 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             if (!session?.accessToken || !session.projectId) {
                 return { ok: false, error: "No project selected" };
             }
+            if (
+                file.name.startsWith("._") ||
+                file.name === ".DS_Store" ||
+                file.name === "Thumbs.db"
+            ) {
+                const message =
+                    "That file is macOS metadata (._…), not the real document. Upload the PDF without the ._ prefix.";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
             try {
                 await uploadProjectFile(
                     session.accessToken,
@@ -179,8 +189,12 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 pushToast(`Uploaded ${file.name}`, "success");
                 return { ok: true };
             } catch (err) {
-                const message =
+                const raw =
                     err instanceof Error ? err.message : "Upload failed";
+                const message = raw
+                    .replace(/^mac_sidecar:\s*/i, "")
+                    .replace(/^invalid_pdf:\s*/i, "")
+                    .replace(/^unsupported_file_type:\s*/i, "Unsupported file type: ");
                 pushToast(message, "error");
                 return {
                     ok: false,

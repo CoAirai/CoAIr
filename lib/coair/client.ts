@@ -87,7 +87,25 @@ async function once<T>(
 
         if (!response.ok) {
             const text = await response.text().catch(() => "");
-            const clean = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+            let clean = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+            try {
+                const parsed = JSON.parse(text) as { detail?: unknown };
+                if (typeof parsed?.detail === "string") {
+                    clean = parsed.detail;
+                } else if (Array.isArray(parsed?.detail)) {
+                    clean = parsed.detail
+                        .map((d) =>
+                            typeof d === "string"
+                                ? d
+                                : typeof d === "object" && d && "msg" in d
+                                  ? String((d as { msg: unknown }).msg)
+                                  : JSON.stringify(d)
+                        )
+                        .join("; ");
+                }
+            } catch {
+                /* keep stripped text */
+            }
             throw new CoairApiError(
                 clean || response.statusText || "Request failed",
                 response.status,

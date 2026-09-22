@@ -155,7 +155,9 @@ async def list_library(
 
     # All newly created projects use project_id as the authoritative boundary.
     # Legacy corpus tags remain below only for pre-project data migration.
-    project_records = registry.get_completed(project_id=project.project_id)
+    # Include processing/error so a successful upload toast doesn't leave the
+    # Knowledge Base empty while indexing fails (e.g. macOS ._ sidecars).
+    project_records = registry.get_all(project_id=project.project_id)
     if project_records:
         return [_build_library_doc(r) for r in project_records]
     project_chunks = _vectors_only_library_docs(set(), project.project_id)

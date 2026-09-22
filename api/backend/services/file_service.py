@@ -23,6 +23,34 @@ EXTENSION_MAP = {
     ".csv": ("data", TABLES_DIR),
 }
 
+# macOS AppleDouble / resource-fork sidecars (often named ._File.pdf).
+_APPLEDOUBLE_MAGIC = b"\x00\x05\x16\x07"
+
+
+def _reject_mac_sidecar(safe_name: str) -> None:
+    base = Path(safe_name).name
+    if base.startswith("._") or base in {".DS_Store", "Thumbs.db"}:
+        raise ValueError(
+            "mac_sidecar: This is a macOS metadata file (._…), not the real "
+            "document. Upload the PDF/XLS without the ._ prefix."
+        )
+
+
+def _validate_uploaded_bytes(safe_name: str, path: Path) -> None:
+    """Reject AppleDouble / non-PDF payloads that would otherwise toast-success then vanish."""
+    _reject_mac_sidecar(safe_name)
+    head = path.read_bytes()[:8]
+    if head.startswith(_APPLEDOUBLE_MAGIC):
+        raise ValueError(
+            "mac_sidecar: File content is macOS AppleDouble metadata, not a "
+            "real document. Re-upload the original PDF/XLS."
+        )
+    ext = Path(safe_name).suffix.lower()
+    if ext == ".pdf" and not head.startswith(b"%PDF"):
+        raise ValueError(
+            "invalid_pdf: File is not a valid PDF (missing %PDF header)."
+        )
+
 
 class FileService:
 
@@ -38,6 +66,7 @@ class FileService:
         from src.document_rag import generate_doc_id
 
         safe_name = Path(file.filename or "upload.bin").name
+        _reject_mac_sidecar(safe_name)
         ext = Path(safe_name).suffix.lower()
         if ext not in EXTENSION_MAP:
             raise ValueError(f"unsupported_file_type:{ext or 'none'}")
@@ -49,13 +78,18 @@ class FileService:
         # batch capable of exhausting even the upgraded 8 GB host.
         temp = target_dir / f".{uuid.uuid4().hex}.upload"
         total = 0
-        with temp.open("wb") as handle:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                handle.write(chunk)
-                total += len(chunk)
+        try:
+            with temp.open("wb") as handle:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    total += len(chunk)
+            _validate_uploaded_bytes(safe_name, temp)
+        except Exception:
+            temp.unlink(missing_ok=True)
+            raise
         file_size_kb = total // 1024
 
         # Check for duplicate (same name + same size)

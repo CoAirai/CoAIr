@@ -94,7 +94,23 @@ const DocumentGroup = ({
                                         className="shrink-0 fill-strong-950"
                                         name={icon}
                                     />
-                                    <span className="truncate">{doc.name}</span>
+                                    <span className="min-w-0 grow truncate">
+                                        {doc.name}
+                                    </span>
+                                    {doc.status &&
+                                        doc.status !== "completed" && (
+                                            <span
+                                                className={`shrink-0 text-label-xs ${
+                                                    doc.status === "error"
+                                                        ? "text-red-500"
+                                                        : "text-soft-400"
+                                                }`}
+                                            >
+                                                {doc.status === "error"
+                                                    ? "failed"
+                                                    : doc.status}
+                                            </span>
+                                        )}
                                 </button>
                                 {canRemove && (
                                     <button
