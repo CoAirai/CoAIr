@@ -65,8 +65,8 @@ const LiveTeamPage = () => {
     );
     const [moduleGrants, setModuleGrants] = useState<OrgModuleGrants>({
         org_id: "",
-        chronology: false,
-        forensic: false,
+        chronology: Boolean(session?.moduleGrants?.chronology),
+        forensic: Boolean(session?.moduleGrants?.forensic),
     });
     const [donorByRequest, setDonorByRequest] = useState<Record<string, string>>(
         {}
@@ -97,31 +97,31 @@ const LiveTeamPage = () => {
 
     const loadRequests = useCallback(async () => {
         if (!token) return;
-        try {
-            const listed = await listMemberTokenRequests(token);
+        const [tokenListed, accessListed, unlockListed] = await Promise.all([
+            listMemberTokenRequests(token).catch(() => null),
+            listOrgModuleAccessRequests(token).catch(() => null),
+            listOrgModuleUnlockRequests(token).catch(() => null),
+        ]);
+        if (tokenListed) {
             setTokenRequests(
-                (listed.requests ?? []).filter((row) => row.status === "pending")
+                (tokenListed.requests ?? []).filter(
+                    (row) => row.status === "pending"
+                )
             );
-        } catch {
-            /* non-blocking */
         }
-        try {
-            const access = await listOrgModuleAccessRequests(token);
-            setAccessRequests(
-                access.filter((row) => row.status === "pending")
-            );
-        } catch {
-            setAccessRequests([]);
-        }
-        try {
-            const unlock = await listOrgModuleUnlockRequests(token);
+        setAccessRequests(
+            (accessListed ?? []).filter((row) => row.status === "pending")
+        );
+        if (unlockListed) {
             setUnlockRequests(
-                (unlock.requests ?? []).filter((row) => row.status === "pending")
+                (unlockListed.requests ?? []).filter(
+                    (row) => row.status === "pending"
+                )
             );
-            if (unlock.module_grants) {
-                setModuleGrants(unlock.module_grants);
+            if (unlockListed.module_grants) {
+                setModuleGrants(unlockListed.module_grants);
             }
-        } catch {
+        } else {
             setUnlockRequests([]);
         }
     }, [token]);

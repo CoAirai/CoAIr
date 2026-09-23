@@ -52,30 +52,28 @@ const LivePackagesPage = () => {
             setUnlockRequests([]);
             return;
         }
-        try {
-            const changes = await listAdminPackageChangeRequests(
-                token,
-                "pending"
-            );
-            setChangeRequests(changes);
-        } catch (err) {
-            setChangeRequests([]);
-            setError(apiErrorMessage(err));
-        }
-        try {
-            const unlocks = await listAdminModuleUnlockRequests(
-                token,
-                "pending"
-            );
-            setUnlockRequests(unlocks);
-        } catch (err) {
-            setUnlockRequests([]);
-            setError(
-                (prev) =>
-                    prev ||
-                    `Module unlock requests: ${apiErrorMessage(err)}`
-            );
-        }
+        const [changesResult, unlocksResult] = await Promise.all([
+            listAdminPackageChangeRequests(token, "pending").catch(
+                (err) => {
+                    setError(apiErrorMessage(err));
+                    return [] as Awaited<
+                        ReturnType<typeof listAdminPackageChangeRequests>
+                    >;
+                }
+            ),
+            listAdminModuleUnlockRequests(token, "pending").catch((err) => {
+                setError(
+                    (prev) =>
+                        prev ||
+                        `Module unlock requests: ${apiErrorMessage(err)}`
+                );
+                return [] as Awaited<
+                    ReturnType<typeof listAdminModuleUnlockRequests>
+                >;
+            }),
+        ]);
+        setChangeRequests(changesResult);
+        setUnlockRequests(unlocksResult);
     }, [token]);
 
     useEffect(() => {

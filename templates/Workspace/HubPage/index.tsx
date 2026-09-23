@@ -13,7 +13,7 @@ import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
-import { companyForSession, addOnsFromModuleGrants } from "@/lib/workspace/companyForSession";
+import { companyForSession, resolveLiveAddOns } from "@/lib/workspace/companyForSession";
 import { planForCompany } from "@/lib/admin/plans";
 import type { ModuleId } from "@/lib/admin/types";
 import {
@@ -48,15 +48,17 @@ const HubPage = () => {
     );
     const isCompanyAdmin = session?.role === "company_admin";
 
-    const company = useMemo(() => {
-        const seeded =
-            liveEnabled && moduleAddOns.length === 0 && session?.moduleGrants
-                ? addOnsFromModuleGrants(session.moduleGrants)
-                : liveEnabled
-                  ? moduleAddOns
-                  : undefined;
-        return companyForSession(session, companies, { addOns: seeded });
-    }, [companies, liveEnabled, moduleAddOns, session]);
+    const company = useMemo(
+        () =>
+            companyForSession(session, companies, {
+                addOns: resolveLiveAddOns(
+                    liveEnabled,
+                    moduleAddOns,
+                    session?.moduleGrants
+                ),
+            }),
+        [companies, liveEnabled, moduleAddOns, session]
+    );
     const plan = planForCompany(company, plans);
     const initials = (session?.name ?? "U")
         .split(" ")
@@ -72,29 +74,23 @@ const HubPage = () => {
             return;
         }
         const token = session.accessToken;
-        const username = session.username || session.email || "";
         void (async () => {
             const pending = new Set<string>();
-            try {
-                const access = await listOrgModuleAccessRequests(token);
-                for (const row of access) {
-                    if (row.status === "pending" && row.username === username) {
-                        pending.add(String(row.module));
-                    }
+            const username = session.username || session.email || "";
+            const [accessResult, unlockResult] = await Promise.all([
+                listOrgModuleAccessRequests(token).catch(() => null),
+                isCompanyAdmin
+                    ? listOrgModuleUnlockRequests(token).catch(() => null)
+                    : Promise.resolve(null),
+            ]);
+            for (const row of accessResult ?? []) {
+                if (row.status === "pending" && row.username === username) {
+                    pending.add(String(row.module));
                 }
-            } catch {
-                /* ignore */
             }
-            if (isCompanyAdmin) {
-                try {
-                    const unlock = await listOrgModuleUnlockRequests(token);
-                    for (const row of unlock.requests ?? []) {
-                        if (row.status === "pending") {
-                            pending.add(String(row.module));
-                        }
-                    }
-                } catch {
-                    /* ignore */
+            for (const row of unlockResult?.requests ?? []) {
+                if (row.status === "pending") {
+                    pending.add(String(row.module));
                 }
             }
             setPendingModules(pending);

@@ -20,6 +20,29 @@ export function addOnsFromModuleGrants(grants?: {
     return addOns;
 }
 
+/** Prefer LiveWorkspace grants; fall back to session-seeded org grants so pages don't flash Locked. */
+export function resolveLiveAddOns(
+    liveEnabled: boolean,
+    moduleAddOns: ModuleId[],
+    sessionGrants?: { chronology?: boolean; forensic?: boolean } | null
+): ModuleId[] | undefined {
+    if (!liveEnabled) return undefined;
+    if (moduleAddOns.length > 0) return moduleAddOns;
+    return addOnsFromModuleGrants(sessionGrants);
+}
+
+/** True while live grants are still unknown — do not treat as Locked yet. */
+export function liveModuleGrantsPending(input: {
+    liveEnabled: boolean;
+    liveLoading: boolean;
+    moduleAddOns: ModuleId[];
+    sessionGrants?: { chronology?: boolean; forensic?: boolean } | null;
+}): boolean {
+    if (!input.liveEnabled) return false;
+    if (input.moduleAddOns.length > 0 || input.sessionGrants) return false;
+    return input.liveLoading;
+}
+
 export function liveCompanyFromSession(
     session: AuthSession,
     options?: { addOns?: ModuleId[] }

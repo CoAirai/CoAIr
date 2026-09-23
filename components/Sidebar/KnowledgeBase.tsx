@@ -20,6 +20,7 @@ type GroupProps = {
     items: CompanyDocument[];
     canRemove: boolean;
     defaultOpen?: boolean;
+    loading?: boolean;
     onOpen: (name: string) => void;
     onRemove: (id: string) => void;
 };
@@ -30,6 +31,7 @@ const DocumentGroup = ({
     items,
     canRemove,
     defaultOpen = false,
+    loading = false,
     onOpen,
     onRemove,
 }: GroupProps) => {
@@ -72,7 +74,7 @@ const DocumentGroup = ({
                 <div className="mt-1 flex flex-col gap-0.5">
                     {items.length === 0 && (
                         <div className="px-3 py-2 text-label-xs text-soft-400">
-                            No files yet
+                            {loading ? "Loading…" : "No files yet"}
                         </div>
                     )}
                     <AnimatePresence initial={false}>
@@ -166,6 +168,7 @@ const KnowledgeBase = () => {
     );
     const sheets = documents.filter((doc) => doc.kind === "spreadsheet");
     const canRemove = session?.role === "company_admin";
+    const docsLoading = live.enabled && live.libraryLoading;
     const tokenMeter = useMemo(() => {
         if (live.enabled) {
             const selected = live.orgUsers.find(
@@ -260,6 +263,7 @@ const KnowledgeBase = () => {
                     items={files}
                     canRemove={canRemove}
                     defaultOpen
+                    loading={docsLoading}
                     onOpen={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
                 />
@@ -268,6 +272,7 @@ const KnowledgeBase = () => {
                     icon="comment"
                     items={communications}
                     canRemove={canRemove}
+                    loading={docsLoading}
                     onOpen={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
                 />
@@ -276,6 +281,7 @@ const KnowledgeBase = () => {
                     icon="analytic"
                     items={sheets}
                     canRemove={canRemove}
+                    loading={docsLoading}
                     onOpen={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
                 />

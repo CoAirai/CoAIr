@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { planForCompany } from "@/lib/admin/plans";
-import { companyForSession } from "@/lib/workspace/companyForSession";
+import { companyForSession, resolveLiveAddOns, liveModuleGrantsPending } from "@/lib/workspace/companyForSession";
 import {
     canCreateProgrammeWorkspace,
     MAX_PROGRAMME_SET_MB,
@@ -67,11 +67,21 @@ const ForensicHomePage = () => {
     const { activeWorkspaceUserId } = useChat();
     const live = useLiveWorkspace();
     const company = companyForSession(session, companies, {
-        addOns: live.enabled ? live.moduleAddOns : undefined,
+        addOns: resolveLiveAddOns(
+            live.enabled,
+            live.moduleAddOns,
+            session?.moduleGrants
+        ),
     });
     const plan = planForCompany(company, plans);
+    const grantsPending = liveModuleGrantsPending({
+        liveEnabled: live.enabled,
+        liveLoading: live.loading,
+        moduleAddOns: live.moduleAddOns,
+        sessionGrants: session?.moduleGrants,
+    });
     const gate =
-        company && plan
+        company && plan && !grantsPending
             ? getModuleGate(plan, company, "forensic", {
                   features: session?.features,
                   role: session?.role,

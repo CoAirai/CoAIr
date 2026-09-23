@@ -53,6 +53,7 @@ type ModuleGrants = {
 type LiveWorkspaceValue = {
     enabled: boolean;
     loading: boolean;
+    libraryLoading: boolean;
     error: string | null;
     projects: CoairProject[];
     documents: CompanyDocument[];
@@ -110,6 +111,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const canListTeammates =
         enabled && session?.role === "company_admin" && Boolean(session.companyId);
     const [loading, setLoading] = useState(false);
+    const [libraryLoading, setLibraryLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [projects, setProjects] = useState<CoairProject[]>(
         () => readBootstrap()?.projects ?? []
@@ -205,8 +207,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const refreshLibrary = useCallback(async () => {
         if (!enabled || !session?.accessToken || !session.projectId) {
             setDocuments([]);
+            setLibraryLoading(false);
             return;
         }
+        setLibraryLoading(true);
         try {
             const library = await listLibrary(
                 session.accessToken,
@@ -217,6 +221,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             );
         } catch {
             setDocuments([]);
+        } finally {
+            setLibraryLoading(false);
         }
     }, [
         enabled,
@@ -226,8 +232,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     ]);
 
     const refresh = useCallback(async () => {
-        await refreshCore();
-        await refreshLibrary();
+        await Promise.all([refreshCore(), refreshLibrary()]);
     }, [refreshCore, refreshLibrary]);
 
     useEffect(() => {
@@ -347,6 +352,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         () => ({
             enabled,
             loading,
+            libraryLoading,
             error,
             projects,
             documents,
@@ -365,6 +371,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             documents,
             enabled,
             error,
+            libraryLoading,
             loading,
             moduleAddOns,
             moduleGrants,

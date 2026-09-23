@@ -44,13 +44,12 @@ async function refreshLiveAdminCache(token: string) {
             }
         }
 
-        const orgList = await settled(() => listAdminOrgs(token));
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        const userList = await settled(() => listAdminUsers(token));
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        const snapshot = await settled(() => readPlatformUsage(token));
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        const billing = await settled(() => listAdminUsage(token));
+        const [orgList, userList, snapshot, billing] = await Promise.all([
+            settled(() => listAdminOrgs(token)),
+            settled(() => listAdminUsers(token)),
+            settled(() => readPlatformUsage(token)),
+            settled(() => listAdminUsage(token)),
+        ]);
         const failures: string[] = [];
         const nextOrgs =
             orgList.status === "fulfilled"
