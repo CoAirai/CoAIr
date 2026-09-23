@@ -51,5 +51,11 @@ export function mapLiveSession(input: {
         subscriptionStatus: input.org?.subscription?.status,
         impersonator: input.impersonator,
         features,
+        moduleGrants: input.org?.module_grants
+            ? {
+                  chronology: Boolean(input.org.module_grants.chronology),
+                  forensic: Boolean(input.org.module_grants.forensic),
+              }
+            : undefined,
     };
 }

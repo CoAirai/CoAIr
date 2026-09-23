@@ -47,9 +47,22 @@ async function readOrg(token: string): Promise<CoairOrgResponse | null> {
 
 async function firstProjectId(token: string): Promise<string | null> {
     try {
-        const payload = await coairFetch<CoairProjectsResponse>("/projects", {
-            token,
-        });
+        const payload = await coairFetch<
+            CoairProjectsResponse & {
+                account_usage?: Record<string, unknown>;
+            }
+        >("/projects", { token });
+        try {
+            sessionStorage.setItem(
+                "coair.live.bootstrap",
+                JSON.stringify({
+                    projects: payload.projects ?? [],
+                    accountUsage: payload.account_usage ?? null,
+                })
+            );
+        } catch {
+            /* ignore quota */
+        }
         return payload.projects?.[0]?.project_id ?? null;
     } catch (error) {
         if (error instanceof CoairApiError && (error.status === 403 || error.status === 404)) {

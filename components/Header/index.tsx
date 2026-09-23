@@ -43,6 +43,7 @@ const Header = ({ onOpenSidebar }: Props) => {
     const { activeWorkspaceUserId, setActiveWorkspaceUserId } = useChat();
     const {
         enabled: liveEnabled,
+        loading: liveLoading,
         projects,
         selectProject,
         teammates: liveTeammates,
@@ -157,6 +158,12 @@ const Header = ({ onOpenSidebar }: Props) => {
                             ))}
                         </select>
                     )}
+                    {liveEnabled && liveLoading && projects.length === 0 && (
+                        <div
+                            aria-hidden
+                            className="h-10 w-36 animate-pulse rounded-xl border border-stroke-soft-200 bg-weak-50"
+                        />
+                    )}
                     {session?.role === "company_admin" && (
                         <label className="sr-only" htmlFor="workspace-user">
                             Switch user
@@ -178,6 +185,15 @@ const Header = ({ onOpenSidebar }: Props) => {
                             ))}
                         </select>
                     )}
+                    {session?.role === "company_admin" &&
+                        liveEnabled &&
+                        liveLoading &&
+                        liveTeammates.length === 0 && (
+                            <div
+                                aria-hidden
+                                className="h-10 w-32 animate-pulse rounded-xl border border-stroke-soft-200 bg-weak-50"
+                            />
+                        )}
                     <AvatarMenu
                         initials={initials(session?.name ?? "U") || "U"}
                         name={session?.name}

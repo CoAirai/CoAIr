@@ -19,6 +19,11 @@ export type AuthSession = {
     impersonator?: string;
     /** Per-user module rights from the API (chronology, forensic, …). */
     features?: Record<string, boolean>;
+    /** Org-level module unlocks from GET /org — seed hub gates before LiveWorkspace refresh. */
+    moduleGrants?: {
+        chronology?: boolean;
+        forensic?: boolean;
+    };
 };
 
 export const SUPER_ADMIN_EMAIL = "admin@coair.ai";

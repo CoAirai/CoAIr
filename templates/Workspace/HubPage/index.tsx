@@ -13,7 +13,7 @@ import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
-import { companyForSession } from "@/lib/workspace/companyForSession";
+import { companyForSession, addOnsFromModuleGrants } from "@/lib/workspace/companyForSession";
 import { planForCompany } from "@/lib/admin/plans";
 import type { ModuleId } from "@/lib/admin/types";
 import {
@@ -48,13 +48,15 @@ const HubPage = () => {
     );
     const isCompanyAdmin = session?.role === "company_admin";
 
-    const company = useMemo(
-        () =>
-            companyForSession(session, companies, {
-                addOns: liveEnabled ? moduleAddOns : undefined,
-            }),
-        [companies, liveEnabled, moduleAddOns, session]
-    );
+    const company = useMemo(() => {
+        const seeded =
+            liveEnabled && moduleAddOns.length === 0 && session?.moduleGrants
+                ? addOnsFromModuleGrants(session.moduleGrants)
+                : liveEnabled
+                  ? moduleAddOns
+                  : undefined;
+        return companyForSession(session, companies, { addOns: seeded });
+    }, [companies, liveEnabled, moduleAddOns, session]);
     const plan = planForCompany(company, plans);
     const initials = (session?.name ?? "U")
         .split(" ")

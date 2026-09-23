@@ -17,7 +17,6 @@ import { createConversation, sendLiveChat } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
 import { buildMockAnswer, buildMockReply } from "@/lib/chat/mockReply";
 import {
-    appendChatTurn,
     messagesForUser,
     recentsForUser,
     resolveActiveWorkspaceUserId,
@@ -236,6 +235,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setSelectedQueryId(null);
             setIsReplying(true);
 
+            const userMessageId = makeId("u");
+            const assistantMessageId = makeId("a");
+            const queryId = makeId("q");
+            const now = new Date().toISOString();
+
+            // Show the user message immediately; assistant fills in when the API returns.
+            setThreadsByUserId((prev) => ({
+                ...prev,
+                [activeWorkspaceUserId]: [
+                    ...(prev[activeWorkspaceUserId] ?? []),
+                    {
+                        id: userMessageId,
+                        role: "user",
+                        content: trimmed,
+                        createdAt: now,
+                        authorUserId: session.userId!,
+                        authorName: session.name,
+                        threadUserId: activeWorkspaceUserId,
+                    },
+                ],
+            }));
+
             try {
                 let assistantText: string;
                 let citations: Citation[] | undefined;
@@ -280,22 +301,47 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 }
 
                 setThreadsByUserId((prevThreads) => {
-                    const next = appendChatTurn({
-                        threadsByUserId: prevThreads,
-                        recentsByUserId,
-                        threadUserId: activeWorkspaceUserId,
-                        authorUserId: session.userId!,
-                        authorName: session.name,
-                        userText: trimmed,
-                        assistantText,
-                        citations,
-                        now: new Date().toISOString(),
-                        userMessageId: makeId("u"),
-                        assistantMessageId: makeId("a"),
-                        queryId: makeId("q"),
-                    });
-                    setRecentsByUserId(next.recentsByUserId);
-                    return next.threadsByUserId;
+                    const thread = prevThreads[activeWorkspaceUserId] ?? [];
+                    const withoutDup = thread.some((m) => m.id === userMessageId)
+                        ? thread
+                        : [
+                              ...thread,
+                              {
+                                  id: userMessageId,
+                                  role: "user" as const,
+                                  content: trimmed,
+                                  createdAt: now,
+                                  authorUserId: session.userId!,
+                                  authorName: session.name,
+                                  threadUserId: activeWorkspaceUserId,
+                              },
+                          ];
+                    const nextThread = [
+                        ...withoutDup,
+                        {
+                            id: assistantMessageId,
+                            role: "assistant" as const,
+                            content: assistantText,
+                            createdAt: new Date().toISOString(),
+                            threadUserId: activeWorkspaceUserId,
+                            citations,
+                        },
+                    ];
+                    setRecentsByUserId((prevRecents) => ({
+                        ...prevRecents,
+                        [activeWorkspaceUserId]: [
+                            {
+                                id: queryId,
+                                title: trimmed,
+                                messages: nextThread.slice(-2),
+                            },
+                            ...(prevRecents[activeWorkspaceUserId] ?? []),
+                        ].slice(0, 8),
+                    }));
+                    return {
+                        ...prevThreads,
+                        [activeWorkspaceUserId]: nextThread,
+                    };
                 });
             } catch (error) {
                 setSendError(
@@ -314,7 +360,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             companyWorkspaces,
             consumeUserTokens,
             liveConversationId,
-            recentsByUserId,
             session,
         ]
     );

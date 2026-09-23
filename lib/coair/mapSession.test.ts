@@ -26,10 +26,18 @@ describe("mapLiveSession", () => {
                 role: "user",
             },
             accessToken: "token",
-            org: { org: { org_id: "org-1", name: "Acme" }, role: "owner" },
+            org: {
+                org: { org_id: "org-1", name: "Acme" },
+                role: "owner",
+                module_grants: { chronology: true, forensic: true },
+            },
             projectId: "proj-1",
         });
         expect(session.needsCheckout).toBe(false);
+        expect(session.moduleGrants).toEqual({
+            chronology: true,
+            forensic: true,
+        });
     });
 
     it("flags approved owners who still need to choose a package", () => {

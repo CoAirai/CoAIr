@@ -6,6 +6,7 @@ import {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from "react";
@@ -69,6 +70,37 @@ type LiveWorkspaceValue = {
 
 const EMPTY_GRANTS: ModuleGrants = { chronology: false, forensic: false };
 
+function grantsFromSession(session: {
+    moduleGrants?: { chronology?: boolean; forensic?: boolean };
+} | null): ModuleGrants {
+    if (!session?.moduleGrants) return EMPTY_GRANTS;
+    return {
+        chronology: Boolean(session.moduleGrants.chronology),
+        forensic: Boolean(session.moduleGrants.forensic),
+    };
+}
+
+function readBootstrap(): {
+    projects: CoairProject[];
+    accountUsage: AccountUsage | null;
+} | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = sessionStorage.getItem("coair.live.bootstrap");
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as {
+            projects?: CoairProject[];
+            accountUsage?: AccountUsage | null;
+        };
+        return {
+            projects: parsed.projects ?? [],
+            accountUsage: parsed.accountUsage ?? null,
+        };
+    } catch {
+        return null;
+    }
+}
+
 const LiveWorkspaceContext = createContext<LiveWorkspaceValue | null>(null);
 
 export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
@@ -79,66 +111,85 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         enabled && session?.role === "company_admin" && Boolean(session.companyId);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [projects, setProjects] = useState<CoairProject[]>([]);
+    const [projects, setProjects] = useState<CoairProject[]>(
+        () => readBootstrap()?.projects ?? []
+    );
     const [documents, setDocuments] = useState<CompanyDocument[]>([]);
-    const [accountUsage, setAccountUsage] = useState<AccountUsage | null>(null);
+    const [accountUsage, setAccountUsage] = useState<AccountUsage | null>(
+        () => readBootstrap()?.accountUsage ?? null
+    );
     const [orgUsers, setOrgUsers] = useState<CoairOrgUser[]>([]);
-    const [moduleGrants, setModuleGrants] =
-        useState<ModuleGrants>(EMPTY_GRANTS);
+    const [moduleGrants, setModuleGrants] = useState<ModuleGrants>(() =>
+        grantsFromSession(session)
+    );
+    const lastProjectId = useRef<string | null | undefined>(undefined);
 
-    const refresh = useCallback(async () => {
-        if (!enabled || !session?.accessToken) {
-            setProjects([]);
-            setDocuments([]);
-            setAccountUsage(null);
-            setOrgUsers([]);
+    // After login, reuse the /projects payload already fetched for session seeding.
+    useEffect(() => {
+        if (!enabled) return;
+        const boot = readBootstrap();
+        if (!boot) return;
+        setProjects((prev) => (prev.length > 0 ? prev : boot.projects));
+        setAccountUsage((prev) => prev ?? boot.accountUsage);
+    }, [enabled]);
+
+    // Keep hub gates correct as soon as login seeds moduleGrants on the session.
+    useEffect(() => {
+        if (!enabled) {
             setModuleGrants(EMPTY_GRANTS);
             return;
         }
+        if (session?.moduleGrants) {
+            setModuleGrants(grantsFromSession(session));
+        }
+    }, [
+        enabled,
+        session?.moduleGrants?.chronology,
+        session?.moduleGrants?.forensic,
+    ]);
+
+    const refreshCore = useCallback(async () => {
+        if (!enabled || !session?.accessToken) {
+            setProjects([]);
+            setAccountUsage(null);
+            setOrgUsers([]);
+            setModuleGrants(EMPTY_GRANTS);
+            setDocuments([]);
+            lastProjectId.current = undefined;
+            return;
+        }
+        const token = session.accessToken;
         setLoading(true);
         setError(null);
         try {
-            const listed = await listProjects(session.accessToken);
+            const teammatesPromise = canListTeammates
+                ? listOrgUsers(token).catch(() => ({ users: [] as CoairOrgUser[] }))
+                : Promise.resolve({ users: [] as CoairOrgUser[] });
+
+            const [listed, meResult, orgResult, teamResult] = await Promise.all([
+                listProjects(token),
+                readAuthMe(token).catch(() => null),
+                readOrg(token).catch(() => null),
+                teammatesPromise,
+            ]);
+
             setProjects(listed.projects ?? []);
             setAccountUsage(listed.account_usage ?? null);
-            try {
-                const me = await readAuthMe(session.accessToken);
-                if (me.user?.features) {
-                    updateSession({ features: me.user.features });
-                }
-            } catch {
-                /* keep existing session features */
+
+            if (meResult?.user?.features) {
+                updateSession({ features: meResult.user.features });
             }
-            try {
-                const org = await readOrg(session.accessToken);
-                setModuleGrants({
-                    chronology: Boolean(org.module_grants?.chronology),
-                    forensic: Boolean(org.module_grants?.forensic),
-                });
-            } catch {
-                setModuleGrants(EMPTY_GRANTS);
+
+            if (orgResult) {
+                const nextGrants = {
+                    chronology: Boolean(orgResult.module_grants?.chronology),
+                    forensic: Boolean(orgResult.module_grants?.forensic),
+                };
+                setModuleGrants(nextGrants);
+                updateSession({ moduleGrants: nextGrants });
             }
-            if (session.projectId) {
-                const library = await listLibrary(
-                    session.accessToken,
-                    session.projectId
-                );
-                setDocuments(
-                    mapLibraryDocuments(library, session.companyId ?? "live")
-                );
-            } else {
-                setDocuments([]);
-            }
-            if (canListTeammates) {
-                try {
-                    const team = await listOrgUsers(session.accessToken);
-                    setOrgUsers(team.users ?? []);
-                } catch {
-                    setOrgUsers([]);
-                }
-            } else {
-                setOrgUsers([]);
-            }
+
+            setOrgUsers(canListTeammates ? teamResult.users ?? [] : []);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Unable to load project");
         } finally {
@@ -148,14 +199,50 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         canListTeammates,
         enabled,
         session?.accessToken,
-        session?.companyId,
-        session?.projectId,
         updateSession,
     ]);
 
+    const refreshLibrary = useCallback(async () => {
+        if (!enabled || !session?.accessToken || !session.projectId) {
+            setDocuments([]);
+            return;
+        }
+        try {
+            const library = await listLibrary(
+                session.accessToken,
+                session.projectId
+            );
+            setDocuments(
+                mapLibraryDocuments(library, session.companyId ?? "live")
+            );
+        } catch {
+            setDocuments([]);
+        }
+    }, [
+        enabled,
+        session?.accessToken,
+        session?.companyId,
+        session?.projectId,
+    ]);
+
+    const refresh = useCallback(async () => {
+        await refreshCore();
+        await refreshLibrary();
+    }, [refreshCore, refreshLibrary]);
+
     useEffect(() => {
-        void refresh();
-    }, [refresh]);
+        void refreshCore();
+    }, [refreshCore]);
+
+    useEffect(() => {
+        const projectId = session?.projectId ?? null;
+        // Always load library when project is set; skip only duplicate same-id remounts.
+        if (lastProjectId.current === projectId && lastProjectId.current !== undefined) {
+            return;
+        }
+        lastProjectId.current = projectId;
+        void refreshLibrary();
+    }, [refreshLibrary, session?.projectId]);
 
     const selectProject = useCallback(
         (projectId: string) => {
@@ -185,7 +272,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     session.projectId,
                     file
                 );
-                await refresh();
+                await refreshLibrary();
                 pushToast(`Uploaded ${file.name}`, "success");
                 return { ok: true };
             } catch (err) {
@@ -202,7 +289,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 };
             }
         },
-        [pushToast, refresh, session?.accessToken, session?.projectId]
+        [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
     );
 
     const removeFile = useCallback(
@@ -216,7 +303,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     session.projectId,
                     fileId
                 );
-                await refresh();
+                await refreshLibrary();
                 pushToast("Document removed", "info");
                 return { ok: true };
             } catch (err) {
@@ -229,7 +316,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 };
             }
         },
-        [pushToast, refresh, session?.accessToken, session?.projectId]
+        [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
     );
 
     const teammates = useMemo(() => {
