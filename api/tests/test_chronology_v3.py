@@ -615,3 +615,64 @@ def test_normal_report_contract_redacts_research_and_cost_diagnostics():
     assert "pack" not in public["result"]
     # Unknown monetary fields must not leak even if a future pipeline adds one.
     assert "provider_cost_usd" not in public["result"]
+
+
+@pytest.mark.parametrize('overview_words,event_words', [(60, 12), (200, 180), (260, 260)])
+def test_evidence_led_narrative_accepts_variable_lengths(overview_words, event_words):
+    assert _style_valid({
+        'overview_claims': [{'text': ' '.join(['contract'] * overview_words)}],
+        'entries': [{'event_date': '2025-01-01',
+                     'claims': [{'text': ' '.join(['notice'] * event_words)}]}],
+    })
+
+
+@pytest.mark.parametrize('overview_words,event_words', [(59, 30), (261, 30), (90, 11), (90, 261)])
+def test_evidence_led_narrative_rejects_degenerate_lengths(overview_words, event_words):
+    assert not _style_valid({
+        'overview_claims': [{'text': ' '.join(['contract'] * overview_words)}],
+        'entries': [{'event_date': '2025-01-01',
+                     'claims': [{'text': ' '.join(['notice'] * event_words)}]}],
+    })
+
+
+def test_repair_preserves_split_claims_and_later_counter_evidence(monkeypatch):
+    from src.chronology_v3 import verify_and_repair
+
+    evidence = [
+        EvidenceItem('s1', 'd1', 'notice.pdf', excerpt=(
+            '14 March 2025 Engineer issued notice. Contractor received notice. '
+            'Engineer requested action. Contractor acknowledged receipt.')),
+        EvidenceItem('s2', 'd2', 'reply.pdf', excerpt='Contractor disputed the notice.'),
+    ]
+    texts = ['Engineer issued notice and Contractor received notice.',
+             'Engineer requested action.', 'Contractor acknowledged receipt.',
+             'Contractor disputed the notice.']
+    claims = [{'text': text, 'source_ids': ['s1' if i < 3 else 's2'],
+               'counter_source_ids': [] if i < 3 else ['s1']}
+              for i, text in enumerate(texts)]
+    chronology = {
+        'overview_claims': [{'text': 'Engineer issued notice', 'source_ids': ['s1']}],
+        'entries': [{'event_date': '2025-03-14', 'date_source': 'content_header',
+                     'date_evidence': '14 March 2025', 'claims': claims}],
+    }
+
+    def fake(prompt, **kwargs):
+        if kwargs['schema_name'] == 'chronology_v3_repair':
+            return SimpleNamespace(raw={'repairs': [{
+                'claim_ref': 'event:0:0',
+                'texts': ['Engineer issued notice.', 'Contractor received notice.'],
+            }]})
+        return SimpleNamespace(raw={'decisions': [
+            {'claim_ref': ref, 'decision': 'SPLIT' if ref == 'event:0:0' else 'PASS',
+             'reason_code': 'supported'}
+            for ref in ['overview:0', *[f'event:0:{i}' for i in range(4)]]
+        ]})
+
+    monkeypatch.setattr('src.llm_client.generate_response_json', fake)
+    prepared = PreparedChronologyQuery('q', 'q', (), (), (), (), (), ('q',))
+    result, _ = verify_and_repair(chronology, evidence, prepared, cache_context='c')
+    repaired = result['entries'][0]['claims']
+    assert len(repaired) == 5
+    assert repaired[-1] == claims[-1]
+    assert [c['text'] for c in repaired[:2]] == [
+        'Engineer issued notice.', 'Contractor received notice.']

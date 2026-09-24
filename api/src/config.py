@@ -22,6 +22,15 @@ ZAI_MODEL = os.getenv("ZAI_MODEL", "glm-4.7-flash")
 ZAI_MODEL_LITE = os.getenv("ZAI_MODEL_LITE", "glm-4.5-flash")
 LLM_PRIMARY_PROVIDER = os.getenv("LLM_PRIMARY_PROVIDER", "gemini").strip().lower()
 
+# Local appliance: no cloud fallback when enabled.
+DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "cloud").strip().lower()
+LOCAL_LLM = DEPLOYMENT_MODE == "local" or LLM_PRIMARY_PROVIDER == "vllm"
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").rstrip("/")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_MODEL = os.getenv("LLM_MODEL", "qwen3-8b")
+LLM_CONTEXT_TOKENS = int(os.getenv("LLM_CONTEXT_TOKENS", "32768"))
+LLM_LOCAL_OUTPUT_TOKENS = int(os.getenv("LLM_LOCAL_OUTPUT_TOKENS", "4096"))
+
 # Model settings
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 # Upload-only cheap tier for metadata, clustering and selective OCR fallback.
@@ -451,7 +460,17 @@ def validate_config() -> tuple[bool, list[str]]:
     errors = []
 
     primary = LLM_PRIMARY_PROVIDER if LLM_PRIMARY_PROVIDER in ("gemini", "zai") else "gemini"
-    if primary == "zai":
+    if LOCAL_LLM:
+        try:
+            from .openai_compatible import validate_endpoint
+            validate_endpoint(LLM_BASE_URL, LLM_API_KEY)
+        except ValueError as exc:
+            errors.append(str(exc))
+        if EMBEDDING_PROVIDER not in ("fastembed", "local"):
+            errors.append("Local deployment requires local embeddings")
+        if VECTOR_STORE_BACKEND != "qdrant":
+            errors.append("Local deployment requires Qdrant")
+    elif primary == "zai":
         if not ZAI_API_KEY:
             errors.append(
                 "ZAI_API_KEY is not set. Required when LLM_PRIMARY_PROVIDER=zai."

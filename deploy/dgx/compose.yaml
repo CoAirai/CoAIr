@@ -1,0 +1,129 @@
+name: coair-local
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: coair
+      POSTGRES_USER: coair
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run setup first}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U coair -d coair']
+      interval: 5s
+      retries: 20
+    networks: [data]
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?Run setup first}
+      QDRANT__TELEMETRY_DISABLED: 'true'
+    volumes:
+      - qdrant:/qdrant/storage
+    networks: [data]
+  api:
+    image: coair-api:dgx-local
+    build:
+      context: ../../api
+      dockerfile: ../deploy/dgx/Dockerfile.api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_MODE: api
+      PORT: '8080'
+      DEPLOYMENT_MODE: local
+      AUTH_PROVIDER: local
+      DATABASE_URL: postgresql://coair:${POSTGRES_PASSWORD}@db:5432/coair
+      VECTOR_STORE_BACKEND: qdrant
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      EMBEDDING_PROVIDER: fastembed
+      LLM_PRIMARY_PROVIDER: vllm
+      LLM_BASE_URL: http://model-proxy:8081/v1
+      OCR_VISION_FALLBACK_ENABLED: 'false'
+      INGEST_EXTRACT_TABLES: 'false'
+      INGEST_MAX_CONCURRENCY: '2'
+      LOCAL_METADATA_CONCURRENCY: '2'
+      LOCAL_METADATA_MAX_CHARS: '24000'
+      OCR_MAX_WORKERS: '2'
+      OCR_LANG: eng+tur
+      OMP_THREAD_LIMIT: '1'
+      EMBEDDING_THREADS: '2'
+      EVENT_INDEX_MAX_CONCURRENCY: '1'
+      S3_BUCKET_NAME: ''
+      GCS_BUCKET_NAME: ''
+      AWS_EC2_METADATA_DISABLED: 'true'
+      HF_HUB_OFFLINE: '1'
+      TOKENIZERS_PARALLELISM: 'false'
+      OMP_NUM_THREADS: '2'
+      GOOGLE_API_KEY: ''
+      OPENAI_API_KEY: ''
+      ANTHROPIC_API_KEY: ''
+      ZAI_API_KEY: ''
+      SUPABASE_URL: ''
+      SUPABASE_DB_URL: ''
+      CHRONOLOGY_PIPELINE_VERSION: v3
+    volumes:
+      - storage:/app/storage
+      - documents:/app/data
+      - cache:/app/cache
+      - logs:/app/logs
+      - ${IMPORT_DIRECTORY:-./inbox}:/import:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8080/api/health']
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    networks: [data, service]
+  model-proxy:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    environment:
+      MODEL_UPSTREAM: ${MODEL_UPSTREAM:?Set model upstream origin}
+    volumes:
+      - ./model-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+    networks: [service, model]
+  web:
+    image: coair-web:dgx-local
+    build:
+      context: ../..
+      dockerfile: deploy/dgx/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      COAIR_API_ORIGIN: http://api:8080
+      NEXT_TELEMETRY_DISABLED: '1'
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [service]
+  gateway:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:80'
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [web]
+    networks: [service, edge]
+networks:
+  data:
+    internal: true
+  service:
+    internal: true
+  edge: {}
+  model: {}
+volumes:
+  postgres: {}
+  qdrant: {}
+  documents: {}
+  storage: {}
+  cache: {}
+  logs: {}

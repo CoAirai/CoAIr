@@ -23,13 +23,18 @@ from .report_errors import classify_report_error
 
 
 PIPELINE_VERSION = "chronology-v3"
-PIPELINE_CONTRACT_REVISION = "full-events-v1"
-EVIDENCE_BATCH_CHARS = 80_000
-SYNTHESIS_BATCH_EVENTS = 12
-VERIFICATION_BATCH_CLAIMS = 30
+PIPELINE_CONTRACT_REVISION = "evidence-led-narrative-v2"
+from .config import LOCAL_LLM
+
+EVIDENCE_BATCH_CHARS = 24_000 if LOCAL_LLM else 80_000
+SYNTHESIS_BATCH_EVENTS = 3 if LOCAL_LLM else 12
+VERIFICATION_BATCH_CLAIMS = 6 if LOCAL_LLM else 30
 REPAIR_BATCH_CLAIMS = 20
 TARGET_DOCUMENTS = 12
 MAX_DOCUMENTS = 20
+# Allow independently sourced sentences without forcing compound claims.
+MAX_EVENT_CLAIMS = 4
+MAX_OVERVIEW_CLAIMS = 5
 ALLOWED_DATE_SOURCES = {"content_header", "content_body", "table_period", "unresolved"}
 
 
@@ -94,19 +99,19 @@ class FinalEventModel(BaseModel):
     date_precision: str = "exact"
     date_source: DateSource
     date_evidence: str
-    claims: List[FinalClaimModel] = Field(min_length=1, max_length=2)
+    claims: List[FinalClaimModel] = Field(min_length=1, max_length=MAX_EVENT_CLAIMS)
     parties: List[str] = Field(default_factory=list, max_length=20)
     event_type: str = "event"
     conflicting_positions: List[str] = Field(default_factory=list, max_length=10)
 
 
 class ChronologyModel(BaseModel):
-    overview_claims: List[FinalClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[FinalClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
     entries: List[FinalEventModel] = Field(default_factory=list)
 
 
 class OverviewModel(BaseModel):
-    overview_claims: List[FinalClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[FinalClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
 
 
 class EventSynthesisModel(BaseModel):
@@ -713,6 +718,7 @@ def _synthesis_batches(
     events: Sequence[Dict], evidence: Sequence[EvidenceItem], *, max_chars: int = 180_000,
 ) -> List[List[Dict]]:
     by_id = {item.source_id: item for item in evidence}
+    max_chars = min(max_chars, 32_000) if LOCAL_LLM else max_chars
     batches: List[List[Dict]] = []
     current: List[Dict] = []
     current_ids: set[str] = set()
@@ -744,7 +750,8 @@ def _style_valid(value: Dict) -> bool:
         len(re.findall(r"\b\w+[’'-]?\w*\b", str(claim.get("text") or "")))
         for claim in value.get("overview_claims", [])
     )
-    if not 90 <= overview_words <= 160:
+    # Broad guardrails reject degenerate output; prompts guide normal length.
+    if not 60 <= overview_words <= 260:
         return False
     entries = list(value.get("entries", []))
     if not entries:
@@ -757,7 +764,7 @@ def _style_valid(value: Dict) -> bool:
             len(re.findall(r"\b\w+[’'-]?\w*\b", str(claim.get("text") or "")))
             for claim in event.get("claims", [])
         )
-        if not 30 <= words <= 120:
+        if not 12 <= words <= 260:
             return False
     return True
 
@@ -1105,7 +1112,9 @@ def verify_and_repair(
             texts = repairs_by_ref.get(ref, [claim["text"]])
             for text in texts:
                 output.append({**claim, "text": text})
-        return output[:3 if prefix == "overview" else 2]
+        # Repairs can split a verified claim into two supported sentences.
+        # Do not silently discard those sentences to fit generation limits.
+        return output
 
     result = dict(chronology)
     result["overview_claims"] = apply_claims(chronology.get("overview_claims", []), "overview")

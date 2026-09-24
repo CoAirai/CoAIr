@@ -8,7 +8,7 @@ reports to use the model they are actually paying for.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict
 
 
@@ -115,7 +115,15 @@ def get_task_profile(task_type: str) -> TaskProfile:
         "answer_synthesis": "chat_answer",
         "document_synthesis": "chat_answer",
     }.get(key, key)
-    return TASK_PROFILES.get(key, TASK_PROFILES["generation"])
+    profile = TASK_PROFILES.get(key, TASK_PROFILES["generation"])
+    from .config import LOCAL_LLM, LLM_CONTEXT_TOKENS, LLM_LOCAL_OUTPUT_TOKENS
+    if LOCAL_LLM:
+        output = min(profile.max_output_tokens, LLM_LOCAL_OUTPUT_TOKENS)
+        profile = replace(profile, max_output_tokens=output,
+                          max_input_tokens=min(profile.max_input_tokens,
+                                               LLM_CONTEXT_TOKENS - output - 1024),
+                          thinking_level="minimal", timeout_seconds=max(180, profile.timeout_seconds))
+    return profile
 
 
 def clamp_output_tokens(model: str, requested: int, profile: TaskProfile) -> int:

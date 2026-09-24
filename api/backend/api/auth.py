@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import timedelta
 from typing import Any, Dict, Literal, Optional
 
@@ -212,7 +213,8 @@ async def login(
     # Platform super admins always complete email MFA. Company admins/members
     # may skip MFA for 30 days on a remembered device.
     device_token = (req.device_token or "").strip()
-    if (
+    local_password_auth = os.getenv("DEPLOYMENT_MODE") == "local" and not use_supabase_auth()
+    if local_password_auth or (
         record["role"] != SUPERADMIN_ROLE
         and device_token
         and ops.consume_trusted_device(record["username"], device_token)
@@ -235,7 +237,7 @@ async def login(
             "mfa_required": False,
             "session_timeout_minutes": timeout_minutes,
             "user": _user_payload(record, usage),
-            "trusted_device": True,
+            "trusted_device": not local_password_auth,
         }
 
     # Email MFA is required for every successful password login (users,

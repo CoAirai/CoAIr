@@ -384,7 +384,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     error: live.error,
                 };
             }
-            if (!isSupabaseAuthConfigured()) {
+            if (process.env.NEXT_PUBLIC_DEPLOYMENT_MODE !== "local" && !isSupabaseAuthConfigured()) {
                 const mock = resolveLogin(email, password, users);
                 if (mock.ok) {
                     clearSignedOutFlag();

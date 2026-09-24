@@ -1901,6 +1901,7 @@ class QueryRouter:
         seen_keys = {
             (s.get("file_name"), s.get("page_number"))
             for s in metadata_sources
+            if s.get("type") != "notice"
         }
         for rs in rag_sources:
             key = (rs.get("file_name"), rs.get("page_number"))
@@ -3608,6 +3609,14 @@ class QueryRouter:
                 result = self._dispatch_query(QueryType.DOCUMENT, query, expanded, doc_ids)
                 logger.info(f"Query complete (selected context) - {len(result.get('sources', []))} sources")
                 return result
+
+            from .config import LOCAL_LLM
+            if LOCAL_LLM and doc_ids:
+                from .document_registry import get_document_registry
+                selected = [get_document_registry().get(doc_id) for doc_id in doc_ids]
+                if all(record and record.file_type in ("document", "email") for record in selected):
+                    trace.route = "DOCUMENT_SELECTED_LOCAL"
+                    return self._dispatch_query(QueryType.DOCUMENT, query, expanded, doc_ids)
 
             # Check if this is a complex multi-step query → ReAct agent (if on),
             # else the fixed hybrid executor. The agent failing falls through here.

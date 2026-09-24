@@ -154,6 +154,7 @@ def _index_document_metadata(
 ) -> None:
     """Persist the generic document-level research record after extraction."""
     try:
+        from .config import LOCAL_LLM
         from .document_index import get_document_index, infer_document_record
         from .document_rag import generate_doc_id
         enriched = enriched or {}; notice = notice_summary or {}
@@ -171,7 +172,7 @@ def _index_document_metadata(
             title=str(enriched.get("title") or notice.get("subject") or ""),
             metadata_date=str(notice.get("date") or ""),
             metadata_date_source="content_header" if notice.get("date") else "unknown",
-            ocr_pages=ocr_pages, total_pages=len(page_texts),
+            ocr_pages=ocr_pages, total_pages=len(page_texts), infer_date=not LOCAL_LLM,
         )
         get_document_index().upsert(record)
     except Exception as exc:
@@ -307,6 +308,32 @@ def _process_document(
             file_path, project_id=project_id, file_id=file_id,
         )
 
+        enriched = {}
+        from .config import LOCAL_LLM
+        if LOCAL_LLM and new_docs:
+            from .local_metadata import extract_metadata
+            from .document_review import ReviewStore
+            report("metadata", 0.40)
+            pages = {int(doc.metadata.get("page_number", 1)): doc.text for doc in new_docs}
+            enriched = extract_metadata(project_id=project_id, file_id=file_id,
+                                        file_name=filename, pages=pages)
+            review = ReviewStore().get(project_id, file_id)
+            if review and review['version'] > 0:
+                enriched.update(review['metadata'])
+                for key in ('people', 'organizations'):
+                    if isinstance(enriched.get(key), str):
+                        enriched[key] = enriched[key].splitlines()
+                enriched['parties'] = enriched.get('people', []) + enriched.get('organizations', [])
+            for doc in new_docs:
+                doc.metadata.update({
+                    "document_title": enriched.get('title', ''),
+                    "date": enriched.get('date', ''),
+                    "doc_type": enriched.get('doc_type', 'other'),
+                    "people": enriched.get('people', []),
+                    "summary": enriched.get('summary', ''),
+                    "metadata_status": enriched.get('status', ''),
+                })
+
         if new_docs:
             report("embedding", 0.55)        # chunk + local embed + Qdrant upsert + lexical
             rag.insert_documents(new_docs, project_id=project_id, file_id=file_id)
@@ -331,7 +358,7 @@ def _process_document(
                         page_num = doc.metadata.get("page_number", 1)
                         doc_text_by_page[page_num] = doc.text
 
-                from .config import INGEST_EXTRACT_NOTICES
+                from .config import INGEST_EXTRACT_NOTICES, LOCAL_LLM
                 if doc_text_by_page and INGEST_EXTRACT_NOTICES:
                     doc_id = generate_doc_id(file_path)
                     notice_summary = extract_document_notice(
@@ -339,6 +366,7 @@ def _process_document(
                         file_path=file_path,
                         doc_text_by_page=doc_text_by_page,
                         use_llm=False,
+                        project_id=project_id,
                     )
                     if notice_summary:
                         result.notice_extracted = True
@@ -346,13 +374,33 @@ def _process_document(
             except Exception as e:
                 logger.warning(f"[FileRouter] Notice extraction error: {e}")
 
+            if LOCAL_LLM and doc_text_by_page:
+                from .document_review import ReviewStore
+                if enriched:
+                    result.notice_summary = result.notice_summary or {}
+                    for key in ('date', 'doc_type', 'summary'):
+                        result.notice_summary[key] = enriched.get(key, '')
+                    result.notice_summary['subject'] = enriched.get('subject', enriched.get('title', ''))
+                    from .notice_extractor import get_notice_extractor
+                    extractor = get_notice_extractor()
+                    notice = extractor.load_notice(file_id)
+                    if notice:
+                        for key in ('date', 'doc_type', 'subject'):
+                            setattr(notice, key, result.notice_summary.get(key) or None)
+                        extractor.save_notice(notice)
+                        from .light_graph import add_document_to_graph
+                        add_document_to_graph(notice)
+                baseline_metadata = dict(result.notice_summary or {}, **{
+                    key: enriched.get(key, '') for key in ('title', 'summary', 'people', 'organizations')})
+                ReviewStore().baseline(project_id, file_id, doc_text_by_page, baseline_metadata, enriched)
+
             # Quick truncation summary (no LLM — fast)
             doc_full_text = ""
             if doc_text_by_page:
                 doc_full_text = "\n".join(
                     doc_text_by_page[p] for p in sorted(doc_text_by_page.keys())
                 ).strip()
-            if doc_full_text and result.notice_summary:
+            if doc_full_text and result.notice_summary and not enriched.get("summary"):
                 result.notice_summary["summary"] = (
                     doc_full_text[:200].strip() + "..." if len(doc_full_text) > 200 else doc_full_text
                 )
@@ -362,7 +410,7 @@ def _process_document(
             report("metadata", 0.90)
             _index_document_metadata(
                 file_path, project_id=project_id, page_texts=doc_text_by_page,
-                notice_summary=result.notice_summary, enriched={},
+                notice_summary=result.notice_summary, enriched=enriched,
                 ocr_pages=result.ocr_pages,
             )
             from .document_rag import generate_doc_id
@@ -627,6 +675,7 @@ def _process_data_file(
     Fallback to raw ingestion if no schema matches.
     """
     from .data_analyzer_sql import get_data_analyzer
+    from .excel_table_extractor import EncryptedWorkbookError
 
     result = ProcessingResult(success=False, file_path=file_path, file_type="data")
     filename = Path(file_path).name
@@ -774,6 +823,8 @@ def _process_data_file(
                 logger.info(f"[FileRouter] Data file loaded directly: {filename}")
             else:
                 result.error = "No tables extracted and direct load failed"
+    except EncryptedWorkbookError as e:
+        result.error = str(e)
     except Exception as e:
         # Last resort: direct load
         try:

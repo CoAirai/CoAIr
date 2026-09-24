@@ -484,7 +484,12 @@ class OCRPipeline:
             doc = fitz.open(pdf_path)
             page = doc[page_number - 1]
 
-            mat = fitz.Matrix(self.dpi / 72, self.dpi / 72)
+            # Bound raster memory for large engineering sheets.
+            import math
+            scale = min(self.dpi / 72, math.sqrt(25_000_000 / max(1, page.rect.width * page.rect.height)))
+            if scale < self.dpi / 72:
+                warnings.append("Large page rendered at reduced DPI (25 MP pixel budget)")
+            mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat)
             img_data = pix.tobytes("png")
             img = Image.open(BytesIO(img_data))
@@ -594,7 +599,9 @@ class OCRPipeline:
         for page_num in range(total_pages):
             page = doc[page_num]
             page_number = page_num + 1
-            native_text = page.get_text().strip()
+            # PDF content streams can store all header labels before their
+            # values. Restore reading order so From/To/Subject retain values.
+            native_text = page.get_text(sort=True).strip()
             if self.mode == "off":
                 do_ocr = False
             elif self.mode == "force":

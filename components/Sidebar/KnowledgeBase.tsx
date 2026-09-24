@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import Icon from "@/components/Icon";
 import TokenUsage from "./TokenUsage";
@@ -229,6 +230,9 @@ const KnowledgeBase = () => {
 
     return (
         <div className="mb-6">
+            {process.env.NEXT_PUBLIC_DEPLOYMENT_MODE === "local" && (
+                <Link href="/workspace/documents" className="mb-3 block rounded-xl border p-3 text-label-sm">Belge aktarımı ve OCR inceleme</Link>
+            )}
             <div className="mb-2 px-3 text-label-xs text-soft-400">
                 Knowledge Base
             </div>

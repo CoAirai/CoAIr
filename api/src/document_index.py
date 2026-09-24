@@ -133,6 +133,7 @@ def infer_document_record(
     parties: Sequence[str] = (), reference: str = "", title: str = "",
     metadata_date: str = "", metadata_date_source: str = "unknown",
     ocr_pages: int = 0, total_pages: int = 0, sheet_names: Sequence[str] = (),
+    infer_date: bool = True,
 ) -> DocumentIndexRecord:
     pages = page_texts or {}
     ordered = [str(pages[key] or "") for key in sorted(pages)]
@@ -146,7 +147,7 @@ def infer_document_record(
     found_title = title.strip() or _plausible_title(lines, file_name)
     found_date = metadata_date.strip()
     found_date_source = metadata_date_source.strip() or "unknown"
-    if not found_date:
+    if not found_date and infer_date:
         match = DATE_RE.search(head[:4_000])
         if match:
             found_date = match.group(0)

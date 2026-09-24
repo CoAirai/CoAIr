@@ -256,28 +256,33 @@ class DocumentRAG:
         # google.generativeai SDK, which is fragile on newer Pythons. It's only
         # needed for LlamaIndex query_engine synthesis; embeddings are independent
         # (and now local by default), and provider answers go through llm_client.
-        try:
-            from llama_index.llms.gemini import Gemini
-
-            def _mk_gemini(m: str):
-                return Gemini(api_key=GOOGLE_API_KEY, model=m,
-                              system_prompt=self.DOCUMENT_SYSTEM_PROMPT)
-
-            # Robust to the "Model names should start with `models/`" wrapper
-            # check (see llm_client.create_llm). Getting a WORKING Settings.llm
-            # here matters: when it's unset, LlamaIndex's dense query_engine
-            # silently falls back to its OpenAI default — which, on a dead OpenAI
-            # quota, just burns retries/timeouts.
+        from .config import LOCAL_LLM
+        if LOCAL_LLM:
+            from .local_llama import LocalLLM
+            Settings.llm = LocalLLM()
+        else:
             try:
-                Settings.llm = _mk_gemini(GEMINI_MODEL)
+                from llama_index.llms.gemini import Gemini
+
+                def _mk_gemini(m: str):
+                    return Gemini(api_key=GOOGLE_API_KEY, model=m,
+                                  system_prompt=self.DOCUMENT_SYSTEM_PROMPT)
+
+                # Robust to the "Model names should start with `models/`" wrapper
+                # check (see llm_client.create_llm). Getting a WORKING Settings.llm
+                # here matters: when it's unset, LlamaIndex's dense query_engine
+                # silently falls back to its OpenAI default — which, on a dead OpenAI
+                # quota, just burns retries/timeouts.
+                try:
+                    Settings.llm = _mk_gemini(GEMINI_MODEL)
+                except Exception as e:
+                    if "models/" in str(e) and not GEMINI_MODEL.startswith(("models/", "tunedModels/")):
+                        Settings.llm = _mk_gemini(f"models/{GEMINI_MODEL}")
+                    else:
+                        raise
             except Exception as e:
-                if "models/" in str(e) and not GEMINI_MODEL.startswith(("models/", "tunedModels/")):
-                    Settings.llm = _mk_gemini(f"models/{GEMINI_MODEL}")
-                else:
-                    raise
-        except Exception as e:
-            logger.warning(f"   Gemini LLM unavailable ({e}); Settings.llm unset "
-                           f"(provider llm_client synthesis still works)")
+                logger.warning(f"   Gemini LLM unavailable ({e}); Settings.llm unset "
+                               f"(provider llm_client synthesis still works)")
         Settings.embed_model = self._build_embed_model()
         Settings.node_parser = SentenceSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
@@ -728,6 +733,17 @@ class DocumentRAG:
             logger.warning(f"   Unsupported file type: {extension}")
             return None
 
+        from .config import LOCAL_LLM
+        if LOCAL_LLM and new_docs:
+            from .document_review import ReviewStore
+            review = ReviewStore().get(project_id, file_id)
+            if review and review['version'] > 0:
+                for doc in new_docs:
+                    page = str(doc.metadata.get('page_number', 1))
+                    if page in review['pages']:
+                        doc.set_content(review['pages'][page])
+                        doc.metadata['extraction_method'] = 'reviewed'
+
         if new_docs:
             for doc in new_docs:
                 # Reserved identity is stamped last so extractor/user metadata
@@ -949,7 +965,7 @@ class DocumentRAG:
                 for node in nodes:
                     meta = node.metadata or {}
                     rows.append({
-                        "doc_id": meta.get("doc_id", ""),
+                        "doc_id": meta.get("file_id") or meta.get("doc_id", ""),
                         "file_name": meta.get("file_name", "Unknown"),
                         "page_number": meta.get("page_number", 1),
                         "text": node.get_content(),
@@ -1299,7 +1315,7 @@ class DocumentRAG:
                 highlight += '...'
 
             sources.append({
-                "doc_id": meta.get("doc_id", generate_doc_id(file_path)) if file_path else "",
+                "doc_id": meta.get("file_id") or (meta.get("doc_id", generate_doc_id(file_path)) if file_path else ""),
                 "file_name": file_name,
                 "file_path": file_path,
                 "page_number": page_num,
@@ -1430,6 +1446,10 @@ class DocumentRAG:
         )
         doc_file_specs = []
         if doc_ids:
+            # Qdrant/LlamaIndex uses doc_id for the parent page UUID. file_id is
+            # our immutable registry identity; retain doc_id for legacy vectors.
+            doc_file_specs.append(
+                MetadataFilter(key="file_id", value=doc_ids, operator=FilterOperator.IN))
             doc_file_specs.append(
                 MetadataFilter(key="doc_id", value=doc_ids, operator=FilterOperator.IN))
         if file_names:
@@ -1516,7 +1536,7 @@ class DocumentRAG:
                 total = 1
             out.append({
                 "key": f"{fname}::{page}",
-                "doc_id": meta.get("doc_id", ""),
+                "doc_id": meta.get("file_id") or meta.get("doc_id", ""),
                 "file_name": fname,
                 "file_path": meta.get("file_path", ""),
                 "page_number": page,
@@ -1685,7 +1705,7 @@ class DocumentRAG:
                 highlight += '...'
 
             sources.append({
-                "doc_id": meta.get("doc_id", generate_doc_id(file_path)) if file_path else "",
+                "doc_id": meta.get("file_id") or (meta.get("doc_id", generate_doc_id(file_path)) if file_path else ""),
                 "file_name": file_name,
                 "file_path": file_path,
                 "page_number": page_num,
@@ -1793,7 +1813,7 @@ class DocumentRAG:
             if len(sentences) > 3:
                 highlight += '...'
             sources.append({
-                "doc_id": meta.get("doc_id", ""),
+                "doc_id": meta.get("file_id") or meta.get("doc_id", ""),
                 "file_name": file_name,
                 "file_path": meta.get("file_path", ""),
                 "page_number": page_num,

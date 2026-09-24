@@ -168,6 +168,8 @@ def create_app() -> FastAPI:
         conversations.router, prefix="/api", tags=["conversations"], dependencies=auth_dep + project_dep,
     )
     app.include_router(feedback.router, prefix="/api", tags=["feedback"], dependencies=auth_dep + project_dep)
+    from backend.api import local_documents
+    app.include_router(local_documents.router, prefix="/api", tags=["local"], dependencies=auth_dep + project_dep)
     app.include_router(files.router, prefix="/api", tags=["files"], dependencies=auth_dep + project_dep)
     app.include_router(
         documents.router, prefix="/api", tags=["documents"], dependencies=auth_dep + project_dep,
@@ -186,6 +188,8 @@ def create_app() -> FastAPI:
     app.include_router(usage.router, prefix="/api", tags=["usage"], dependencies=admin_dep)
 
     # Pre-warm UserStore so the SQLite schema is created at startup.
+    from src.database import apply_core_schema
+    apply_core_schema()
     get_user_store()
 
     @app.exception_handler(BudgetExceededError)

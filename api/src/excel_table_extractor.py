@@ -24,6 +24,10 @@ from .logger import logger
 from .catalog import get_catalog, TableMetadata
 
 
+class EncryptedWorkbookError(ValueError):
+    """The workbook needs an unlocked copy before it can be indexed."""
+
+
 @dataclass
 class ExtractedTable:
     """Represents an extracted table from Excel."""
@@ -194,6 +198,11 @@ class ExcelTableExtractor:
             try:
                 tables = self._extract_via_pandas(file_path)
             except Exception as e2:
+                if "workbook is encrypted" in str(e2).lower():
+                    raise EncryptedWorkbookError(
+                        "encrypted_workbook: This spreadsheet is password-protected. "
+                        "Upload an unlocked copy to process its contents."
+                    ) from e2
                 logger.error(f"[ExcelExtractor] Pandas fallback also failed: {e2}")
 
         logger.info(f"[ExcelExtractor] Total tables extracted: {len(tables)}")

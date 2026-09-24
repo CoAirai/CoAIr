@@ -48,7 +48,8 @@ class LexicalIndex:
                 return True
             con = cs.connection()
             try:
-                con.execute("INSTALL fts; LOAD fts;")
+                from .config import LOCAL_LLM
+                con.execute("LOAD fts;" if LOCAL_LLM else "INSTALL fts; LOAD fts;")
                 con.execute(
                     "PRAGMA create_fts_index('chunks', 'chunk_id', 'text', overwrite=1)"
                 )

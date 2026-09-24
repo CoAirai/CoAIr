@@ -539,6 +539,11 @@ class ChatOrchestrator:
         post-OCR chunk text), ordered by page. Emails are skipped here — they are
         handled by _build_email_context.
         """
+        from src.config import LOCAL_LLM
+        if LOCAL_LLM:
+            # The 32K local model retrieves only within the selected document
+            # IDs; never prepend entire documents to its routing question.
+            return ""
         if not doc_ids:
             return ""
         try:

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from .config import (
     GEMINI_MODEL, GEMINI_MODEL_LITE, GEMINI_INGESTION_MODEL,
+    LOCAL_LLM, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_CONTEXT_TOKENS,
     OPENAI_API_KEY, OPENAI_MODEL,
     ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
     ZAI_API_KEY, ZAI_BASE_URL, ZAI_MODEL, ZAI_MODEL_LITE,
@@ -499,6 +500,9 @@ def create_llm(provider: str, temperature: float = 0.1, max_tokens: int = 2048,
     Returns:
         Tuple of (llm_instance, model_name)
     """
+    if LOCAL_LLM:
+        from .local_llama import LocalLLM
+        return LocalLLM(max_tokens=max_tokens, temperature=temperature), LLM_MODEL
     if provider == "openai":
         from llama_index.llms.openai import OpenAI
         model = model or OPENAI_MODEL
@@ -571,6 +575,8 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int,
 def estimate_cost_nanos(model: str, prompt_tokens: int, completion_tokens: int,
                         cached_tokens: int = 0) -> int:
     """Price a call using the explicit catalog; unknown models fail closed."""
+    if LOCAL_LLM and model == LLM_MODEL:
+        return 0
     pricing = LLM_PRICING.get(model)
     if not pricing:
         raise ValueError(f"No pricing configured for model: {model}")
@@ -643,6 +649,8 @@ def _is_ingestion_task(task_type: str) -> bool:
 
 def primary_llm_provider() -> str:
     """Return the active text provider: gemini (default) or zai when configured."""
+    if LOCAL_LLM:
+        return "vllm"
     preferred = LLM_PRIMARY_PROVIDER if LLM_PRIMARY_PROVIDER in ("gemini", "zai") else "gemini"
     if preferred == "zai" and ZAI_API_KEY:
         return "zai"
@@ -656,6 +664,8 @@ def primary_llm_provider() -> str:
 
 def _model_for_task(task_type: str, provider: Optional[str] = None) -> str:
     """Keep user research on the quality model; reserve the lite model for ingestion."""
+    if LOCAL_LLM:
+        return LLM_MODEL
     active = provider or primary_llm_provider()
     if active == "zai":
         return ZAI_MODEL_LITE if _is_ingestion_task(task_type) else ZAI_MODEL
@@ -746,7 +756,7 @@ def generate_text(
         else:
             model = GEMINI_MODEL
 
-    if model not in LLM_PRICING:
+    if model not in LLM_PRICING and not (LOCAL_LLM and model == LLM_MODEL):
         raise ValueError(f"No pricing configured for model: {model}")
 
     max_tokens = clamp_output_tokens(model, max_tokens or profile.max_output_tokens, profile)
@@ -872,7 +882,7 @@ def generate_text(
         pass
 
     # ── Create LLM (skipped for the native gemini-thinking path) ──
-    if use_native_gemini or use_gemini_thinking:
+    if provider == "vllm" or use_native_gemini or use_gemini_thinking:
         llm = None
     else:
         llm, model = create_llm(
@@ -898,7 +908,20 @@ def generate_text(
             native_prompt_tok = 0
             native_cached_tok = 0
 
-            if use_native_gemini or use_gemini_thinking:
+            if provider == "vllm":
+                from .openai_compatible import generate, visible_text
+                response = generate(
+                    base_url=LLM_BASE_URL, api_key=LLM_API_KEY, model=LLM_MODEL,
+                    prompt=prompt, system=system, max_tokens=max_tokens,
+                    max_input_tokens=profile.max_input_tokens,
+                    context_tokens=LLM_CONTEXT_TOKENS, temperature=temperature,
+                    timeout_seconds=timeout_seconds, thinking=False,
+                    json_mode=json_mode, response_schema=response_schema,
+                )
+                text = visible_text(response.choices[0].message.content)
+                native_prompt_tok = response.usage.prompt_tokens if response.usage else 0
+                native_comp_tok = response.usage.completion_tokens if response.usage else 0
+            elif use_native_gemini or use_gemini_thinking:
                 text, native_prompt_tok, native_comp_tok, thoughts_tok, native_cached_tok, response = _gemini_generate_native(
                     prompt=prompt, system=system, max_tokens=max_tokens,
                     model=model, thinking_level=thinking_level,
@@ -986,6 +1009,10 @@ def generate_text(
                     finish_reason = finish_reason.rsplit(".", 1)[-1]
             except Exception:
                 pass
+            if provider == "vllm":
+                finish_reason = str(response.choices[0].finish_reason or "").upper()
+                if finish_reason == "LENGTH":
+                    finish_reason = "MAX_TOKENS"
             usage.finish_reason = finish_reason or "STOP"
 
             cacheable = bool(text)
@@ -1015,7 +1042,7 @@ def generate_text(
             # Gemini 3 draws reasoning tokens from max_output_tokens, so a tight
             # budget can return zero visible text with finish_reason=MAX_TOKENS.
             # Retry once with thinking off and a wider budget before failing.
-            if (not text and finish_reason == "MAX_TOKENS"
+            if (provider != "vllm" and not text and finish_reason == "MAX_TOKENS"
                     and not thinking_degraded and attempt < retry_count):
                 thinking_degraded = True
                 widened = clamp_output_tokens(model, max_tokens * 4, profile)
@@ -1050,7 +1077,8 @@ def generate_text(
             last_error = e
             # Check for non-retryable errors (content policy, auth)
             _non_retryable = False
-            if isinstance(e, BillingRecordingError):
+            from .openai_compatible import ContextLimitError
+            if isinstance(e, (BillingRecordingError, ContextLimitError)):
                 _non_retryable = True
             if isinstance(e, LLMIncompleteResponseError):
                 _non_retryable = True
@@ -1203,12 +1231,14 @@ def generate_multimodal_text(
     max_tokens: int = 8192, task_type: str = "ocr",
 ) -> LLMResponse:
     """Metered Gemini multimodal generation used by selective OCR."""
+    if LOCAL_LLM:
+        raise RuntimeError("Local text model cannot process images; use local OCR")
     enforce_budget(); _enforce_user_quota()
     from google import genai
     from google.genai import types
 
     model = _model_for_task(task_type)
-    if model not in LLM_PRICING:
+    if model not in LLM_PRICING and not (LOCAL_LLM and model == LLM_MODEL):
         raise ValueError(f"No pricing configured for model: {model}")
     started = time.time()
     client = genai.Client(api_key=_google_api_key())

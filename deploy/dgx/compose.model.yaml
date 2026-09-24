@@ -1,0 +1,39 @@
+# Optional: for a second DGX with no existing inference service.
+# Pre-download Qwen3-8B into MODEL_DIRECTORY, then include this override.
+services:
+  llm:
+    image: vllm/vllm-openai@sha256:c2914767605584b6d8f45686b82de173ecc99e781897aa3d0a66dacd72c51ae1
+    restart: unless-stopped
+    gpus: all
+    shm_size: 8gb
+    environment:
+      VLLM_API_KEY: ${LLM_API_KEY:?Run setup first}
+      HF_HUB_OFFLINE: '1'
+    volumes:
+      - ${MODEL_DIRECTORY:?Path to downloaded Qwen3-8B}:/models/qwen:ro
+    command:
+      - --model
+      - /models/qwen
+      - --served-model-name
+      - qwen3-8b
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8000'
+      - --max-model-len
+      - '32768'
+      - --max-num-seqs
+      - '4'
+      - --gpu-memory-utilization
+      - '0.70'
+      - --dtype
+      - bfloat16
+      - --reasoning-parser
+      - qwen3
+      - --no-enable-log-requests
+    networks: [service]
+  model-proxy:
+    environment:
+      MODEL_UPSTREAM: http://llm:8000
+    depends_on: [llm]
+    networks: !override [service]

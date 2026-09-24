@@ -565,6 +565,11 @@ class JargonManager:
         if not query:
             return query
 
+        from .config import LOCAL_LLM
+        if LOCAL_LLM:
+            prepared = self.prepare_query(query)
+            return prepared.retrieval_queries[min(1, len(prepared.retrieval_queries) - 1)]
+
         replaced = query
         for abbr, meaning in sorted(
             self._abbr_to_meaning.items(), key=lambda kv: len(kv[0]), reverse=True
@@ -616,6 +621,12 @@ class JargonManager:
         Returns:
             Expanded query with abbreviation meanings
         """
+        from .config import LOCAL_LLM
+        if LOCAL_LLM:
+            # Compact, single-pass interpretation: expanded definitions must
+            # never themselves be expanded again inside evidence bundles.
+            return query
+
         expanded = query
         words = re.findall(r'\b[A-Z][A-Z0-9&/]{1,10}\b', query)
 
