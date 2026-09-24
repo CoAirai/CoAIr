@@ -1622,7 +1622,7 @@ class ExcelTableExtractor:
                 # Check types present in the column
                 types_present = set()
                 has_datetime = False
-                for v in df[col].dropna().head(50):
+                for v in df[col].dropna():
                     if isinstance(v, (dt_type, date_type)):
                         has_datetime = True
                         types_present.add('datetime')
@@ -1630,6 +1630,8 @@ class ExcelTableExtractor:
                         types_present.add('numeric')
                     elif isinstance(v, str):
                         types_present.add('string')
+                    else:
+                        types_present.add(type(v).__name__)
 
                 if has_datetime or len(types_present) > 1:
                     # Mixed types or datetime: convert all to string. Datetime/date
@@ -1757,7 +1759,14 @@ class ExcelTableExtractor:
             # Preserve sheet name as a column for period filtering
             if table.sheet_name and '_sheet_name' not in df.columns:
                 df['_sheet_name'] = table.sheet_name
-            df.to_parquet(parquet_path, index=False)
+            # A failed Arrow conversion must not leave a truncated final file
+            # that other parallel workers can discover in the catalog.
+            temporary = parquet_path.with_suffix('.parquet.tmp')
+            try:
+                df.to_parquet(temporary, index=False)
+                temporary.replace(parquet_path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
             logger.info(f"[ExcelExtractor] Saved parquet: {parquet_path.name}")
 

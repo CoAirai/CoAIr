@@ -231,7 +231,7 @@ const KnowledgeBase = () => {
     return (
         <div className="mb-6">
             {process.env.NEXT_PUBLIC_DEPLOYMENT_MODE === "local" && (
-                <Link href="/workspace/documents" className="mb-3 block rounded-xl border p-3 text-label-sm">Belge aktarımı ve OCR inceleme</Link>
+                <Link href="/workspace/documents" className="mb-3 block rounded-xl border p-3 text-label-sm">Document import and OCR review</Link>
             )}
             <div className="mb-2 px-3 text-label-xs text-soft-400">
                 Knowledge Base

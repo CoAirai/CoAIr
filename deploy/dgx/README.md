@@ -18,6 +18,7 @@ From the repository root:
 python3 deploy/dgx/setup.py --model-url http://MODEL-IP:8000/v1 \
   --bind DEVICE-IP --port 8080 --import-directory /absolute/document/inbox
 # Enter the existing model API key at the prompt.
+./deploy/dgx/download_embedding.sh
 docker compose -f deploy/dgx/compose.yaml build
 docker compose -f deploy/dgx/compose.yaml up -d --wait --wait-timeout 300
 docker compose -f deploy/dgx/compose.yaml exec api python scripts/bootstrap_local.py
@@ -39,7 +40,7 @@ certificate is created automatically.
 
 ## Documents
 
-Use the sidebar's **Belge aktarımı ve OCR inceleme** link or
+Use the sidebar's **Document import and OCR review** link or
 `/workspace/documents`. Owners can select up to 100 inbox files per import;
 project editors can upload and review project documents. Original files are
 copied into project storage, never moved or edited. PDF/DOCX/TXT extraction can
@@ -48,21 +49,30 @@ and saving queues reindexing. Excel uses the existing table pipeline; spreadshee
 cell editing is not implemented by this review screen. Encrypted Excel reports
 an explicit error. The document list polls processing progress every five seconds.
 
+The appliance sets `OCR_MAX_PAGES=0` (all pages); native text is retained when
+available and image pages pass through OCR. Excel/CSV cells are extracted directly
+and embedded with sheet/row references in addition to the existing SQL tables.
+
 Large PDF pages are limited to a 25-million-pixel OCR raster. This bounds memory
 but can reduce fine-print quality; check those pages manually.
 
 ## Local extraction and search
 
-Two durable ingestion workers process documents concurrently. Each can OCR two
-pages concurrently using Tesseract (English + Turkish); native PDF text is used
-when available. Embeddings use the image-bundled `BAAI/bge-base-en-v1.5` ONNX
-model, with 768-dimensional vectors in local Qdrant. This embedding model is
-English-focused, matching the Edinburgh pilot corpus; Turkish retrieval quality
-needs a separate multilingual-model evaluation and complete reindex before use.
+Four durable ingestion workers process documents concurrently. Each can OCR two
+pages concurrently using Tesseract (English); native PDF text is used
+when available. Embeddings use an authenticated GPU service on the internal Docker network,
+with image-bundled `BAAI/bge-base-en-v1.5` weights and 768-dimensional vectors
+in local Qdrant. The service uses FP16 CLS pooling and normalized float32 outputs.
+It processes eight texts at a time under a serialized GPU lock; measured peak
+tensor memory was 329 MB, with a hard PyTorch allocator limit of 0.6% of device
+memory. It has no published host port and no WAN route. CPU fastembed remains
+available as an explicit alternative, never an implicit fallback. This embedding model is English-focused, matching the English-only application
+and Edinburgh corpus. UI labels and generated metadata are in English.
 
 The existing Qwen3-8B instance extracts title, summary, document type, explicit
 header date, people, organizations and topics using a JSON schema. Two metadata
-requests can run concurrently. Named entities must appear literally in their
+requests can run concurrently. Metadata extraction errors are marked for review
+and do not block OCR text from reaching the vector index. Named entities must appear literally in their
 source page; uncertain dates are blank and marked for review. People mean names
 mentioned in the document, not application accounts. Metadata is stored locally
 with model/version, text hash, coverage and supporting quotations. Page chunks
@@ -106,7 +116,9 @@ Transfer that directory to another ARM64 device, run `setup.py`, then
 `./install.sh`. It validates the image archive checksum and loads the images
 without a registry. To include the optional model, separately export/load its
 pinned Docker image and copy the model snapshot; then `./install.sh --with-model`.
-The application archive deliberately excludes all customer data and secrets.
+The application archive includes the GPU embedding runtime and BGE weights,
+so it is larger than the original CPU-only pilot archive. It deliberately
+excludes all customer data, secrets and Qwen LLM weights.
 
 ## Operation
 
@@ -121,3 +133,27 @@ upgrade workflow are still required before commercial delivery.
 
 Implementation references: [Docker Compose override rules](https://docs.docker.com/reference/compose-file/merge/)
 and [vLLM serving arguments](https://docs.vllm.ai/en/latest/cli/serve/).
+
+## Entire-inbox ingestion
+
+On the DGX host, run `api/scripts/dgx_import_all.py --credentials /path/to/access.json
+--report /path/to/application-ingestion.json` using Python 3 (the command is one
+line). The credential file contains `url`, `username`, `password`, `project_id`
+and must be owner-readable only. The script imports all inbox paths in batches
+of 25, then monitors the durable queue. Its JSON report maps every source path
+to its application file ID and processing status, accounting for deduplicated
+files. `submission_complete` means queued; only `all_sources_ready` means every
+source completed. Password-protected workbooks remain explicit failures until
+unlocked. Neither empty nor failed documents are counted as fully processed.
+
+PDF coverage audits are persisted in `storage/ocr_audits`. The full-inbox monitor
+runs `python -m scripts.dgx_ingestion_audit` inside the API container at completion
+to verify vector presence and page coverage, and saves a separate final report.
+Metadata failures are listed independently. See
+[the BGE model card](https://huggingface.co/BAAI/bge-base-en-v1.5) for the English
+embedding model and its query instruction.
+
+The BGE GPU benchmark processed 128 padded 512-token texts in 0.73 seconds
+while the existing LLM was running. Four CPU/GPU comparison vectors had cosine
+similarity above 0.99996. This is an embedding-only microbenchmark, not overall
+OCR/metadata throughput.

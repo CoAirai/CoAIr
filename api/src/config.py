@@ -466,7 +466,12 @@ def validate_config() -> tuple[bool, list[str]]:
             validate_endpoint(LLM_BASE_URL, LLM_API_KEY)
         except ValueError as exc:
             errors.append(str(exc))
-        if EMBEDDING_PROVIDER not in ("fastembed", "local"):
+        appliance_embedding_api = (
+            EMBEDDING_PROVIDER == "api"
+            and EMBEDDING_API_URL == "http://embedding:8082/v1/embeddings"
+            and len(EMBEDDING_API_KEY) >= 24
+        )
+        if EMBEDDING_PROVIDER not in ("fastembed", "local") and not appliance_embedding_api:
             errors.append("Local deployment requires local embeddings")
         if VECTOR_STORE_BACKEND != "qdrant":
             errors.append("Local deployment requires Qdrant")

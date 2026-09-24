@@ -590,7 +590,8 @@ class OCRPipeline:
         file_hash = self._get_file_hash(pdf_path)
         doc = fitz.open(pdf_path)
         total_pages = len(doc)
-        if total_pages > self.max_pages:
+        source_total_pages = total_pages
+        if self.max_pages > 0 and total_pages > self.max_pages:
             logger.warning(f"   PDF has {total_pages} pages, limiting to {self.max_pages}")
             total_pages = self.max_pages
 
@@ -686,6 +687,25 @@ class OCRPipeline:
         logger.info(f"   ----------------------------------------")
         logger.info(f"   Extraction summary: native={native_count}, ocr={ocr_count}, "
                     f"failed={failed_count}")
+        # Keep coverage evidence even for blank/unreadable pages that cannot
+        # produce an embedding. Never mistake a page cap for full extraction.
+        from .config import DEPLOYMENT_MODE, STORAGE_DIR
+        if DEPLOYMENT_MODE == 'local':
+            import json
+            from pathlib import Path
+            folder = Path(STORAGE_DIR) / 'ocr_audits'
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / f'{file_hash}-{self.language}-{self.mode}.json'
+            audit = {'file_name': Path(pdf_path).name, 'content_cache_key': file_hash,
+                     'source_pages': source_total_pages, 'processed_pages': len(results),
+                     'all_pages_processed': len(results) == source_total_pages,
+                     'language': self.language, 'mode': self.mode,
+                     'pages': [{'page': p.page_number, 'characters': p.char_count,
+                                'method': p.extraction_method, 'warnings': p.warnings,
+                                'confidence': p.ocr_confidence} for p in results]}
+            temporary = target.with_suffix('.tmp')
+            temporary.write_text(json.dumps(audit, ensure_ascii=False))
+            temporary.replace(target)
         return results
 
     def detect_table_like_structure(self, text: str) -> bool:

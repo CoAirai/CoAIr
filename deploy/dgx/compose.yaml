@@ -39,16 +39,19 @@ services:
       VECTOR_STORE_BACKEND: qdrant
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
-      EMBEDDING_PROVIDER: fastembed
+      EMBEDDING_PROVIDER: api
+      EMBEDDING_API_URL: http://embedding:8082/v1/embeddings
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:?Run setup first}
       LLM_PRIMARY_PROVIDER: vllm
       LLM_BASE_URL: http://model-proxy:8081/v1
       OCR_VISION_FALLBACK_ENABLED: 'false'
       INGEST_EXTRACT_TABLES: 'false'
-      INGEST_MAX_CONCURRENCY: '2'
+      INGEST_MAX_CONCURRENCY: '4'
       LOCAL_METADATA_CONCURRENCY: '2'
       LOCAL_METADATA_MAX_CHARS: '24000'
       OCR_MAX_WORKERS: '2'
-      OCR_LANG: eng+tur
+      OCR_LANG: eng
+      OCR_MAX_PAGES: '0'
       OMP_THREAD_LIMIT: '1'
       EMBEDDING_THREADS: '2'
       EVENT_INDEX_MAX_CONCURRENCY: '1'
@@ -76,6 +79,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+      embedding:
+        condition: service_healthy
     healthcheck:
       test: [CMD, curl, -fsS, 'http://localhost:8080/api/health']
       interval: 20s
@@ -83,6 +88,26 @@ services:
       retries: 10
       start_period: 120s
     networks: [data, service]
+  embedding:
+    image: coair-embedding:dgx-local
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+      additional_contexts:
+        embedding-model: ${EMBEDDING_MODEL_DIRECTORY:-./embedding-model}
+    restart: unless-stopped
+    gpus: all
+    mem_limit: 3g
+    environment:
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:?Run setup first}
+      HF_HUB_OFFLINE: '1'
+    healthcheck:
+      test: [CMD, python3, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8082/health", timeout=3)']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks: [service]
   model-proxy:
     image: nginx:1.28-alpine
     restart: unless-stopped

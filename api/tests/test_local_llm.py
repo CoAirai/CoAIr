@@ -63,3 +63,17 @@ def test_profiles_fit_local_context(monkeypatch):
     for task in model_profiles.TASK_PROFILES:
         profile = model_profiles.get_task_profile(task)
         assert profile.max_input_tokens + profile.max_output_tokens < config.LLM_CONTEXT_TOKENS
+
+
+def test_local_mode_accepts_only_appliance_embedding_service(monkeypatch):
+    from src import config
+    monkeypatch.setattr(config, 'LOCAL_LLM', True)
+    monkeypatch.setattr(config, 'LLM_BASE_URL', 'http://model-proxy:8081/v1')
+    monkeypatch.setattr(config, 'LLM_API_KEY', 'local-key')
+    monkeypatch.setattr(config, 'VECTOR_STORE_BACKEND', 'qdrant')
+    monkeypatch.setattr(config, 'EMBEDDING_PROVIDER', 'api')
+    monkeypatch.setattr(config, 'EMBEDDING_API_KEY', 'a' * 32)
+    monkeypatch.setattr(config, 'EMBEDDING_API_URL', 'http://embedding:8082/v1/embeddings')
+    assert 'Local deployment requires local embeddings' not in config.validate_config()[1]
+    monkeypatch.setattr(config, 'EMBEDDING_API_URL', 'https://external.example/v1/embeddings')
+    assert 'Local deployment requires local embeddings' in config.validate_config()[1]

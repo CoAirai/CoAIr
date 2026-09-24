@@ -72,3 +72,5 @@ deploy/render.env.paste
 # DGX runtime configuration
 deploy/dgx/.env
 deploy/dgx/inbox/
+
+deploy/dgx/embedding-model/

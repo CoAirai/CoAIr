@@ -61,3 +61,25 @@ def test_explicit_header_recovers_model_missing_date(tmp_path, monkeypatch):
         pages={1:'From: Jason\nSent: 08 March 2011 23:46\nProject started 1 January 2010.'})
     assert result['date']=='2011-03-08'
     assert result['evidence']['document_date']['quote']=='Sent: 08 March 2011 23:46'
+
+
+def test_metadata_failure_remains_visible_without_blocking_text_ingestion(tmp_path, monkeypatch):
+    from src import local_metadata
+    monkeypatch.setattr(local_metadata, 'STORAGE_DIR', tmp_path)
+    def fail(**kwargs):
+        raise RuntimeError('model_output_incomplete')
+    monkeypatch.setattr(local_metadata, 'extract_metadata', fail)
+    result = local_metadata.extract_metadata_for_ingestion(project_id='p', file_id='f',
+        file_name='source.pdf', pages={1:'The original extracted text.'})
+    assert result['status'] == 'needs_review'
+    assert result['review_reasons'] == ['metadata_extraction_failed']
+    assert result['summary'] == '' and result['date'] == ''
+    assert (tmp_path/'document_metadata/p/f/metadata-failure.json').exists()
+
+
+def test_metadata_schema_bounds_expensive_generated_strings():
+    import pytest
+    from pydantic import ValidationError
+    from src.local_metadata import EvidenceField
+    with pytest.raises(ValidationError):
+        EvidenceField(value='Jason Chandler', quote='x' * 161)

@@ -15,6 +15,7 @@ parser.add_argument('--import-directory', default='./inbox')
 args = parser.parse_args()
 key = os.environ.get('LLM_API_KEY') or getpass.getpass('Local model API key: ')
 values = dict(POSTGRES_PASSWORD=secrets.token_hex(24), QDRANT_API_KEY=secrets.token_hex(32),
+              EMBEDDING_API_KEY=secrets.token_hex(32),
               JWT_SECRET=secrets.token_hex(48), LLM_BASE_URL=args.model_url,
               LLM_API_KEY=key, LLM_MODEL=args.model, MODEL_UPSTREAM=args.model_url.rstrip("/").removesuffix("/v1"), LLM_CONTEXT_TOKENS='32768',
               LLM_LOCAL_OUTPUT_TOKENS='4096', BIND_ADDRESS=args.bind,

@@ -112,19 +112,29 @@ def route_file(
 
     # Update registry with result
     if result.success:
+        if file_type == "data":
+            _index_data_document(
+                file_path, project_id=project_id, doc_id=doc_id, result=result,
+            )
+            from .config import LOCAL_LLM
+            if LOCAL_LLM:
+                try:
+                    from .local_spreadsheets import index_spreadsheet
+                    index_spreadsheet(file_path, project_id=project_id, file_id=file_id)
+                except Exception as exc:
+                    result.success = False
+                    result.error = f"spreadsheet_embedding_failed: {exc}"
+                    registry.mark_error(doc_id, result.error)
+                    return result
+            _prepare_event_artifact(
+                result, file_path=file_path, project_id=project_id, doc_id=doc_id,
+                file_name=Path(file_path).name, source_kind="data",
+            )
         registry.mark_completed(
             doc_id,
             table_names=list(result.table_names),
             notice_extracted=result.notice_extracted,
         )
-        if file_type == "data":
-            _index_data_document(
-                file_path, project_id=project_id, doc_id=doc_id, result=result,
-            )
-            _prepare_event_artifact(
-                result, file_path=file_path, project_id=project_id, doc_id=doc_id,
-                file_name=Path(file_path).name, source_kind="data",
-            )
         # Topic clustering assignment — fire-and-forget; needs the freshly
         # upserted chunks in Pinecone, which is why we run it after
         # mark_completed and off the request thread. Data-only files don't
@@ -311,11 +321,11 @@ def _process_document(
         enriched = {}
         from .config import LOCAL_LLM
         if LOCAL_LLM and new_docs:
-            from .local_metadata import extract_metadata
+            from .local_metadata import extract_metadata_for_ingestion
             from .document_review import ReviewStore
             report("metadata", 0.40)
             pages = {int(doc.metadata.get("page_number", 1)): doc.text for doc in new_docs}
-            enriched = extract_metadata(project_id=project_id, file_id=file_id,
+            enriched = extract_metadata_for_ingestion(project_id=project_id, file_id=file_id,
                                         file_name=filename, pages=pages)
             review = ReviewStore().get(project_id, file_id)
             if review and review['version'] > 0:
@@ -336,7 +346,8 @@ def _process_document(
 
         if new_docs:
             report("embedding", 0.55)        # chunk + local embed + Qdrant upsert + lexical
-            rag.insert_documents(new_docs, project_id=project_id, file_id=file_id)
+            if not rag.insert_documents(new_docs, project_id=project_id, file_id=file_id):
+                raise RuntimeError('document_embedding_failed')
             result.success = True
             report("searchable", 0.78)       # ← document is now queryable; tail is enrichment only
 
@@ -665,7 +676,18 @@ def _enrich_table_metadata(
     )
 
 
-def _process_data_file(
+from threading import RLock
+_data_ingestion_lock = RLock()
+
+
+def _process_data_file(file_path: str, *, project_id: str, file_id: str) -> ProcessingResult:
+    # The legacy table loader shares one DuckDB connection. Serialize this
+    # short SQL phase; OCR, metadata and embeddings remain concurrent.
+    with _data_ingestion_lock:
+        return _process_data_file_impl(file_path, project_id=project_id, file_id=file_id)
+
+
+def _process_data_file_impl(
     file_path: str, *, project_id: str, file_id: str,
 ) -> ProcessingResult:
     """
