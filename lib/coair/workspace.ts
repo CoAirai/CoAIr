@@ -39,7 +39,7 @@ function friendlyUploadError(status: number, raw: string): string {
             "(files up to ~100MB are supported on api.coair.ai)."
         );
     }
-    let message = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const message = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     try {
         const parsed = JSON.parse(raw) as {
             detail?: unknown;
