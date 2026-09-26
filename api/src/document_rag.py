@@ -81,6 +81,14 @@ def _current_project_id() -> str:
         return ""
 
 
+def _is_billing_abort(exc: BaseException) -> bool:
+    """Do not retry embed batches when the uploader is out of CA/credits."""
+    from .billing_store import CreditBalanceExceededError
+    from .user_store import UserQuotaExceededError
+
+    return isinstance(exc, (CreditBalanceExceededError, UserQuotaExceededError))
+
+
 class ProjectScopeRequired(ValueError):
     """Raised before any vector operation that lacks an authenticated project."""
 
@@ -980,9 +988,18 @@ class DocumentRAG:
                         batch_emb = embed_model.get_text_embedding_batch(batch)
                         all_embeddings.extend(batch_emb)
                         logger.info(f"   Embedded batch {batch_num}/{total_batches}")
+                        from .ingestion_billing import charge_embedding_texts
+                        from .run_store import current_run_id_var
+
+                        charge_embedding_texts(
+                            batch,
+                            project_id=project_id,
+                            job_id=current_run_id_var.get() or "",
+                            batch_index=batch_num,
+                        )
                         break
                     except Exception as emb_err:
-                        if attempt < 2:
+                        if attempt < 2 and not _is_billing_abort(emb_err):
                             import time
                             wait = 2 ** (attempt + 1)
                             logger.warning(f"   Embedding batch {batch_num} failed (attempt {attempt + 1}): {emb_err}. Retrying in {wait}s...")
@@ -1062,7 +1079,18 @@ class DocumentRAG:
         embeddings: List[List[float]] = []
         EMBED_BATCH = 50
         for i in range(0, len(texts), EMBED_BATCH):
-            embeddings.extend(embed_model.get_text_embedding_batch(texts[i:i + EMBED_BATCH]))
+            batch = texts[i:i + EMBED_BATCH]
+            batch_num = i // EMBED_BATCH + 1
+            embeddings.extend(embed_model.get_text_embedding_batch(batch))
+            from .ingestion_billing import charge_embedding_texts
+            from .run_store import current_run_id_var
+
+            charge_embedding_texts(
+                batch,
+                project_id=project_id,
+                job_id=current_run_id_var.get() or "",
+                batch_index=batch_num,
+            )
         import uuid
         for ordinal, (n, e) in enumerate(zip(nodes, embeddings)):
             n.metadata["project_id"] = project_id

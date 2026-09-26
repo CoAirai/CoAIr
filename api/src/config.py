@@ -26,9 +26,9 @@ LLM_PRIMARY_PROVIDER = os.getenv("LLM_PRIMARY_PROVIDER", "gemini").strip().lower
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 # Upload-only cheap tier for metadata, clustering and selective OCR fallback.
 # Query routing, planning, reranking, SQL and synthesis stay on GEMINI_MODEL.
-GEMINI_MODEL_LITE = os.getenv("GEMINI_MODEL_LITE", "gemini-2.5-flash-lite")
+GEMINI_MODEL_LITE = os.getenv("GEMINI_MODEL_LITE", "gemini-3.5-flash-lite")
 GEMINI_INGESTION_MODEL = os.getenv(
-    "GEMINI_INGESTION_MODEL", "gemini-2.5-flash-lite",
+    "GEMINI_INGESTION_MODEL", "gemini-3.5-flash-lite",
 )
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-sol")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")  # claude-sonnet-4-20250514 or claude-3-5-sonnet-20241022
@@ -50,6 +50,11 @@ LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "BAAI/bge-base-en-v1.
 EMBEDDING_API_URL = os.getenv("EMBEDDING_API_URL", "")
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
 EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "auto")  # "auto" | "mps" | "cpu" | "cuda"
+# Platform compute rate billed as CA for local/fastembed ingest ($/1M est. tokens).
+# $1 provider cost → 1 CA. Typical PDFs stay small; bulk corpora consume CA.
+LOCAL_EMBEDDING_USD_PER_1M_TOKENS = float(
+    os.getenv("LOCAL_EMBEDDING_USD_PER_1M_TOKENS", "0.10")
+)
 
 # Dual-LLM providers (built dynamically from available keys)
 # Gemini is always available (primary), others added if keys present
@@ -135,8 +140,13 @@ def _resolve_app_database_url() -> str:
 
 APP_DATABASE_URL = _resolve_app_database_url()
 # Master event memory can share the same Postgres instance.
-if not os.getenv("EVENT_DATABASE_URL", "").strip() and APP_DATABASE_URL:
-    os.environ.setdefault("EVENT_DATABASE_URL", APP_DATABASE_URL)
+# Treat blank EVENT_DATABASE_URL= as unset — setdefault will not replace an
+# existing empty string, which otherwise forces fragile local DuckDB.
+_event_db = os.getenv("EVENT_DATABASE_URL", "").strip()
+if not _event_db and APP_DATABASE_URL:
+    os.environ["EVENT_DATABASE_URL"] = APP_DATABASE_URL
+elif not _event_db:
+    os.environ.pop("EVENT_DATABASE_URL", None)
 
 # Ensure directories exist
 DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -219,7 +229,9 @@ Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
 LLM_PRICING = {
     # Google Developer API standard paid tier, checked 2026-08-05.
     "gemini-3.6-flash": {"input": 1.50, "cached_input": 0.15, "output": 7.50},
+    "gemini-3.5-flash": {"input": 0.30, "cached_input": 0.03, "output": 2.50},
     "gemini-3.5-flash-lite": {"input": 0.30, "cached_input": 0.03, "output": 2.50},
+    # Legacy IDs retained for historical ledger rows.
     "gemini-2.5-flash": {"input": 0.30, "cached_input": 0.03, "output": 2.50},
     "gemini-2.5-flash-lite": {"input": 0.10, "cached_input": 0.01, "output": 0.40},
     "gemini-flash-latest": {"input": 0.075, "output": 0.30},

@@ -25,6 +25,17 @@ def index_file_background(file_id: str, file_path: str, corpus: str = "",
     if job_id:
         from src.run_store import current_run_id_var
         current_run_id_var.set(job_id)
+        # Attribute LLM + embed charges to the uploader (covers non-worker paths).
+        try:
+            from backend.tasks.ingestion_jobs import get_ingestion_job_store
+            from backend.core.security import set_current_user_context
+
+            job = get_ingestion_job_store().get(job_id, project_id=project_id)
+            requested_by = str((job or {}).get("requested_by") or "").strip()
+            if requested_by:
+                set_current_user_context(requested_by)
+        except Exception:
+            pass
     if project_id:
         from src.project_context import set_current_project
         set_current_project(project_id, "editor")
@@ -133,9 +144,15 @@ def index_file_background(file_id: str, file_path: str, corpus: str = "",
         if job_id:
             from backend.tasks.ingestion_jobs import get_ingestion_job_store
             from src.billing_store import CreditBalanceExceededError
+            from src.user_store import UserQuotaExceededError
             job_store = get_ingestion_job_store()
-            if isinstance(e, CreditBalanceExceededError):
-                job_store.credit_exhausted(job_id)
+            if isinstance(e, (CreditBalanceExceededError, UserQuotaExceededError)):
+                job_store.credit_exhausted(
+                    job_id,
+                    "token_quota_exceeded"
+                    if isinstance(e, UserQuotaExceededError)
+                    else "credit_balance_exhausted",
+                )
             else:
                 job_store.fail(job_id, str(e))
         try:

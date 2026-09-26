@@ -102,15 +102,13 @@ async def retry_file_indexing(
     """Requeue an existing source without uploading or charging storage again."""
     from fastapi import HTTPException
     from src.document_registry import get_document_registry
-    from src.user_store import get_user_store
 
     record = get_document_registry().get(file_id)
     if not record or (getattr(record, "project_id", "") or "") != project.project_id:
         raise HTTPException(404, "file_not_found")
-    user_store = get_user_store()
-    account = user_store.billing.get_account(user.username)
-    if account and account.get("plan_type") == "demo":
-        user_store.billing.enforce_credits(user.username)
+    from src.ingestion_billing import enforce_uploader_budget
+
+    enforce_uploader_budget(user.username)
     job = get_ingestion_job_store().enqueue(
         project.project_id, file_id, record.file_path, record.file_name,
         requested_by=user.username,

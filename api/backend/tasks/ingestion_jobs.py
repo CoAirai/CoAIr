@@ -287,8 +287,14 @@ def _worker() -> None:
             )
         except Exception as exc:
             from src.billing_store import CreditBalanceExceededError
-            if isinstance(exc, CreditBalanceExceededError):
-                store.credit_exhausted(job["job_id"])
+            from src.user_store import UserQuotaExceededError
+            if isinstance(exc, (CreditBalanceExceededError, UserQuotaExceededError)):
+                store.credit_exhausted(
+                    job["job_id"],
+                    "token_quota_exceeded"
+                    if isinstance(exc, UserQuotaExceededError)
+                    else "credit_balance_exhausted",
+                )
             else:
                 store.fail(job["job_id"], str(exc))
 

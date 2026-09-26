@@ -250,6 +250,10 @@ async def upload_file(
     user: UserContext = Depends(get_current_user),
     project: ProjectContext = Depends(require_project_editor),
 ):
+    from src.ingestion_billing import enforce_uploader_budget
+
+    # Fail before accepting bytes into the index queue when CA is exhausted.
+    enforce_uploader_budget(user.username)
     try:
         saved_path, file_id, is_duplicate = await _file_service.save(
             file, project.project_id, username=user.username,
