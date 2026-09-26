@@ -6,7 +6,7 @@ from typing import Annotated
 
 import torch
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 from transformers import AutoModel, AutoTokenizer
 
 MODEL = 'BAAI/bge-base-en-v1.5'
@@ -29,6 +29,17 @@ class EmbeddingRequest(BaseModel):
     model: str = MODEL
     input: Text | Annotated[list[Text], Field(min_length=1, max_length=64)]
     encoding_format: str = 'float'
+
+    @field_validator('input', mode='before')
+    @classmethod
+    def compact_oversized_layout_padding(cls, value):
+        # PDF layout extraction can produce 90 KB of spacing around 300 chars
+        # of text. Compact only oversized input; keep stored source text intact.
+        def compact(text):
+            if isinstance(text, str) and len(text) > 65536:
+                return ' '.join(text.split())
+            return text
+        return [compact(text) for text in value] if isinstance(value, list) else compact(value)
 
 
 @app.get('/health')

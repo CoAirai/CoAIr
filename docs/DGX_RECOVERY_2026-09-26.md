@@ -21,6 +21,13 @@
   All report rows open their detail page. Word download is disabled until ready.
   The production frontend build includes type checking.
 
+- A separate 422 failure in `CEC00430660.pdf` came from layout padding:
+  pages 67/70 produced chunks of 70,950/90,919 characters containing only
+  553/309 non-padding characters. The embedding request validator now compacts
+  whitespace in oversized strings before enforcing its existing length limit.
+  A live 90 KB padding request returned the exact same vector as its compact
+  text; genuinely oversized content and batches of 65 inputs still returned 422.
+
 ## Live verification
 
 - Browser sign-in succeeded for the existing local account, and Chatbot,
