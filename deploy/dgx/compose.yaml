@@ -16,6 +16,10 @@ services:
     networks: [data]
   qdrant:
     image: qdrant/qdrant:v1.15.4
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     restart: unless-stopped
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?Run setup first}

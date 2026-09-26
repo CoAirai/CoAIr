@@ -157,3 +157,23 @@ The BGE GPU benchmark processed 128 padded 512-token texts in 0.73 seconds
 while the existing LLM was running. Four CPU/GPU comparison vectors had cosine
 similarity above 0.99996. This is an embedding-only microbenchmark, not overall
 OCR/metadata throughput.
+
+## Recovery after vector write failures
+
+Qdrant needs more than Docker's default 1,024 open files for this corpus. Compose
+sets its soft and hard `nofile` limits to 65,536. A collection that reports
+`Too many open files` or `Can't write WAL` must be repaired before retrying imports:
+apply the Compose configuration and recreate only Qdrant, preserving its volume.
+The retry command checks collection health and selects only failed embedding
+jobs; it does not retry password-protected workbooks or reset successful jobs.
+
+```sh
+docker compose -f deploy/dgx/compose.yaml up -d --no-deps qdrant
+docker compose -f deploy/dgx/compose.yaml exec api \
+  python scripts/retry_local_embeddings.py --project PROJECT_ID
+# Add --apply to enqueue the eligible jobs; --limit 4 allows a pilot retry.
+```
+
+New local company setup enables the company-level Chronology and Forensic grants
+as well as the initial user's rights. Existing installations retain their grants;
+upgrading an image alone does not alter authorization records.

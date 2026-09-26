@@ -1031,8 +1031,12 @@ class DocumentRAG:
             # Fallback to sequential point upserts while preserving the stable
             # tenant-aware node IDs prepared above.
             logger.info("Falling back to sequential vector upsert...")
+            prepared_nodes = locals().get("nodes", [])
+            # An embedding failure cannot be repaired by upserting empty vectors.
+            if not prepared_nodes or any(node.embedding is None for node in prepared_nodes):
+                return False
             inserted = 0
-            for node in locals().get("nodes", []):
+            for node in prepared_nodes:
                 for attempt in range(3):
                     try:
                         self.vector_store.add([node])
@@ -1044,8 +1048,8 @@ class DocumentRAG:
                             time.sleep(2 ** attempt)
                         else:
                             logger.error(f"Failed to insert doc after 3 attempts: {e2}")
-            if inserted > 0:
-                logger.info(f"   Sequential insert: {inserted}/{len(new_docs)} docs inserted")
+            if inserted == len(prepared_nodes):
+                logger.info(f"   Sequential insert: {inserted}/{len(prepared_nodes)} chunks inserted")
                 return True
             logger.error("All insert attempts failed")
             return False
