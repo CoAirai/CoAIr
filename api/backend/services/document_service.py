@@ -178,7 +178,51 @@ class DocumentService:
                     roots.append(candidate)
             except (OSError, ValueError):
                 continue
-        return tuple(roots)
+        # Modern tenant layout: data/companies/{co}/{proj}/…
+        try:
+            from src.tenant_paths import company_project_root, project_type_dirs_for_read
+
+            company_root = company_project_root(project_id).resolve()
+            roots.append(company_root)
+            for file_type in ("document", "email", "data"):
+                for directory in project_type_dirs_for_read(project_id, file_type):
+                    try:
+                        roots.append(Path(directory).resolve())
+                    except (OSError, ValueError):
+                        continue
+        except Exception:
+            pass
+        # Deduplicate while preserving order
+        seen = set()
+        unique = []
+        for root in roots:
+            key = str(root)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(root)
+        return tuple(unique)
+
+    @classmethod
+    def _download_from_cloud(cls, local_dest: Path) -> str:
+        """Materialize a DATA_DIR path from S3/GCS if the object exists."""
+        try:
+            from src.gcs_storage import download_file, is_enabled
+            from src.tenant_paths import s3_upload_key_for_local
+        except Exception:
+            return ""
+        if not is_enabled():
+            return ""
+        try:
+            local_dest.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return ""
+        key = s3_upload_key_for_local(str(local_dest))
+        if not key:
+            return ""
+        if download_file(key, str(local_dest)) and local_dest.is_file():
+            return str(local_dest.resolve())
+        return ""
 
     @classmethod
     def _resolve_scoped_path(
@@ -195,6 +239,8 @@ class DocumentService:
         that performed ingestion.  We therefore recover by basename, but keep
         the search constrained to the active project's private roots and, only
         after project membership has been established, the shared corpus roots.
+        When the file is only in AWS (S3/GCS), download it into the matching
+        local DATA_DIR path before returning.
         """
         roots = list(cls._project_file_roots(project_id))
         if allow_shared:
@@ -213,6 +259,29 @@ class DocumentService:
                 exact = Path(raw).resolve()
                 if exact.is_file() and any(exact.is_relative_to(root) for root in approved):
                     return str(exact)
+            except (OSError, ValueError):
+                pass
+            # Path known from registry but missing on this host — pull from S3.
+            try:
+                candidate = Path(raw)
+                # Accept absolute paths under DATA_DIR even when the parent
+                # folder isn't yet in `approved` (fresh company slug folders).
+                from src.config import DATA_DIR
+
+                data_root = Path(DATA_DIR).resolve()
+                try:
+                    resolved_candidate = candidate if candidate.is_absolute() else (_PROJECT_ROOT / candidate)
+                    under_data = resolved_candidate.resolve().is_relative_to(data_root)
+                except (OSError, ValueError):
+                    under_data = False
+                if under_data or any(
+                    str(candidate).startswith(str(root)) for root in approved
+                ):
+                    fetched = cls._download_from_cloud(
+                        resolved_candidate if under_data else candidate
+                    )
+                    if fetched:
+                        return fetched
             except (OSError, ValueError):
                 pass
 
@@ -245,6 +314,14 @@ class DocumentService:
                             return str(resolved)
                 except OSError:
                     continue
+
+        # Local miss: download basename into each approved root's layout.
+        for name in names:
+            for root in approved:
+                dest = root / name
+                fetched = cls._download_from_cloud(dest)
+                if fetched:
+                    return fetched
         return ""
 
     def _get_content_sync(self, doc_id: str, anchor: str,
