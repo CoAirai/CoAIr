@@ -39,19 +39,21 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
         event: ChangeEvent<HTMLInputElement>,
         kind: CompanyDocumentKind
     ) => {
-        const file = event.target.files?.[0];
+        const files = Array.from(event.target.files || []);
         event.target.value = "";
-        if (!file || !session?.companyId || !session.userId) return;
+        if (!files.length || !session?.companyId || !session.userId) return;
         if (live.enabled) {
-            void live.uploadFile(file);
+            void live.uploadFiles(files);
             return;
         }
-        addCompanyDocument({
-            companyId: session.companyId,
-            name: file.name,
-            kind,
-            addedByUserId: session.userId,
-        });
+        for (const file of files) {
+            addCompanyDocument({
+                companyId: session.companyId,
+                name: file.name,
+                kind,
+                addedByUserId: session.userId,
+            });
+        }
     };
 
     return (
@@ -124,6 +126,7 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                         <input
                             ref={documentInputRef}
                             type="file"
+                            multiple
                             className="hidden"
                             onChange={(event) => onPickFile(event, "document")}
                         />
@@ -131,6 +134,7 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                             ref={csvInputRef}
                             type="file"
                             accept=".csv,text/csv"
+                            multiple
                             className="hidden"
                             onChange={(event) => onPickFile(event, "csv")}
                         />
@@ -140,7 +144,7 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                             isBlack
                             onClick={() => documentInputRef.current?.click()}
                         >
-                            Add document
+                            Add documents
                         </Button>
                         <Button
                             isStroke

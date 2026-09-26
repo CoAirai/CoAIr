@@ -100,7 +100,14 @@ type LiveWorkspaceValue = {
     /** In-flight uploads + indexing jobs for Knowledge Base progress UI. */
     fileTransfers: FileTransfer[];
     selectProject: (projectId: string) => void;
-    uploadFile: (file: File) => Promise<{ ok: boolean; error?: string }>;
+    uploadFile: (
+        file: File,
+        options?: { quiet?: boolean }
+    ) => Promise<{ ok: boolean; error?: string }>;
+    /** Upload many files in one picker action (parallel; progress per file). */
+    uploadFiles: (
+        files: File[]
+    ) => Promise<{ ok: boolean; uploaded: number; failed: number; error?: string }>;
     removeFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
     refresh: () => Promise<void>;
 };
@@ -435,7 +442,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     }, [fileTransfers]);
 
     const uploadFile = useCallback(
-        async (file: File) => {
+        async (file: File, options?: { quiet?: boolean }) => {
+            const quiet = Boolean(options?.quiet);
             if (!session?.accessToken || !session.projectId) {
                 return { ok: false, error: "No project selected" };
             }
@@ -446,7 +454,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             ) {
                 const message =
                     "That file is macOS metadata (._…), not the real document. Upload the PDF without the ._ prefix.";
-                pushToast(message, "error");
+                if (!quiet) pushToast(message, "error");
                 return { ok: false, error: message };
             }
             const transferId = `xfer-${Date.now()}-${++transferSeq.current}`;
@@ -460,7 +468,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 },
                 ...prev,
             ]);
-            pushToast(`Uploading ${file.name}…`, "info");
+            if (!quiet) pushToast(`Uploading ${file.name}…`, "info");
             try {
                 const result = await uploadProjectFile(
                     session.accessToken,
@@ -497,12 +505,14 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     )
                 );
                 await refreshLibrary();
-                pushToast(
-                    alreadyDone
-                        ? `Ready: ${file.name}`
-                        : `Uploaded ${file.name} — injecting into AI…`,
-                    "success"
-                );
+                if (!quiet) {
+                    pushToast(
+                        alreadyDone
+                            ? `Ready: ${file.name}`
+                            : `Uploaded ${file.name} — injecting into AI…`,
+                        "success"
+                    );
+                }
                 return { ok: true };
             } catch (err) {
                 const raw =
@@ -524,7 +534,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                             : transfer
                     )
                 );
-                pushToast(message, "error");
+                if (!quiet) pushToast(message, "error");
                 return {
                     ok: false,
                     error: message,
@@ -532,6 +542,50 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             }
         },
         [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
+    );
+
+    const uploadFiles = useCallback(
+        async (files: File[]) => {
+            const list = files.filter(Boolean);
+            if (list.length === 0) {
+                return { ok: false, uploaded: 0, failed: 0, error: "No files selected" };
+            }
+            if (list.length === 1) {
+                const result = await uploadFile(list[0]);
+                return {
+                    ok: result.ok,
+                    uploaded: result.ok ? 1 : 0,
+                    failed: result.ok ? 0 : 1,
+                    error: result.error,
+                };
+            }
+            pushToast(`Uploading ${list.length} documents…`, "info");
+            const results = await Promise.all(
+                list.map((file) => uploadFile(file, { quiet: true }))
+            );
+            const uploaded = results.filter((r) => r.ok).length;
+            const failed = results.length - uploaded;
+            if (failed === 0) {
+                pushToast(
+                    `Uploaded ${uploaded} documents — injecting into AI…`,
+                    "success"
+                );
+            } else if (uploaded === 0) {
+                pushToast(`All ${failed} uploads failed`, "error");
+            } else {
+                pushToast(
+                    `Uploaded ${uploaded} of ${list.length}; ${failed} failed`,
+                    "error"
+                );
+            }
+            return {
+                ok: failed === 0,
+                uploaded,
+                failed,
+                error: failed ? `${failed} upload(s) failed` : undefined,
+            };
+        },
+        [pushToast, uploadFile]
     );
 
     const removeFile = useCallback(
@@ -601,6 +655,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             fileTransfers,
             selectProject,
             uploadFile,
+            uploadFiles,
             removeFile,
             refresh,
         }),
@@ -621,6 +676,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             selectProject,
             teammates,
             uploadFile,
+            uploadFiles,
         ]
     );
 
