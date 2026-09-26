@@ -28,7 +28,7 @@ EVIDENCE_BATCH_CHARS = 12_000 if LOCAL_LLM else 80_000
 MAX_PREVIEW_DOCUMENTS = 20
 
 SYNTHESIS_BATCH_EVENTS = 3 if LOCAL_LLM else 12
-VERIFICATION_BATCH_CLAIMS = 30
+VERIFICATION_BATCH_CLAIMS = 3 if LOCAL_LLM else 30
 # Allow independently sourced sentences without forcing compound claims.
 MAX_EVENT_CLAIMS = 4
 MAX_OVERVIEW_CLAIMS = 5
@@ -732,6 +732,27 @@ def aggregate_candidates(
     return _cluster_events(candidates)
 
 
+def _overview_clusters(events: Sequence[Dict]) -> List[Dict]:
+    """Compact repeated observations without dropping claims or provenance."""
+    result = []
+    for event in events:
+        claims = []
+        seen = set()
+        for observation in event.get("observations") or [event]:
+            for claim in observation.get("claims", []):
+                identity = _hash(claim)
+                if identity not in seen:
+                    claims.append(deepcopy(claim))
+                    seen.add(identity)
+        result.append({
+            "event_date": event.get("event_date", ""),
+            "claims": claims,
+            "parties": event.get("parties", []),
+            "conflicting_positions": event.get("conflicting_positions", []),
+        })
+    return result
+
+
 def synthesize(
     *, prepared: PreparedChronologyQuery, candidates: Sequence[Dict],
     evidence: Sequence[EvidenceItem], cache_context: str,
@@ -794,13 +815,14 @@ def synthesize(
             save_step(step_key, input_hash, "ready", output, "")
         return output
 
+    overview_clusters = _overview_clusters(ordered) if LOCAL_LLM else ordered
     overview_hash = _hash({
-        "clusters": ordered, "evidence": [asdict(item) for item in selected],
+        "clusters": overview_clusters, "evidence": [asdict(item) for item in selected],
         "prompt": chronology_prompt_hash(), "schema": OverviewModel.model_json_schema(),
     })
     overview_prompt = (
         f"{base}\n\nCreate only the sourced overview; do not return dated events.\n\n"
-        f"EVENT CLUSTERS:\n{json.dumps(ordered, ensure_ascii=False)}\n\n"
+        f"EVENT CLUSTERS:\n{json.dumps(overview_clusters, ensure_ascii=False)}\n\n"
         f"EVIDENCE BEGIN\n{evidence_markdown(selected)}\nEVIDENCE END"
     )
     overview = call_step(

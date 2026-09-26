@@ -1,7 +1,7 @@
 """Run with DEPLOYMENT_MODE=local to verify on-device report budgets."""
 import unittest
 from src.config import LOCAL_LLM, LLM_CONTEXT_TOKENS
-from src.chronology_v2 import evidence_batches, _synthesis_batches
+from src.chronology_v2 import evidence_batches, _synthesis_batches, _overview_clusters
 from src.evidence_model import EvidenceItem
 from src.model_profiles import get_task_profile
 
@@ -22,6 +22,16 @@ class LocalChronologyBudgetTests(unittest.TestCase):
         batches = _synthesis_batches(events, [])
         self.assertEqual([item for batch in batches for item in batch], events)
         self.assertTrue(all(len(batch) <= 3 for batch in batches))
+
+    def test_overview_compaction_keeps_distinct_claim_provenance(self):
+        first = {'text': 'A dated notice', 'source_ids': ['a']}
+        second = {'text': 'A dated notice', 'source_ids': ['b'], 'counter_source_ids': ['c']}
+        events = [{'event_date': '2011-03-08', 'claims': [first],
+                   'observations': [{'claims': [first]}, {'claims': [first, second]}]}]
+        result = _overview_clusters(events)
+        self.assertEqual(result[0]['claims'], [first, second])
+        self.assertEqual(len(events[0]['observations']), 2)
+        self.assertEqual(result[0]['event_date'], '2011-03-08')
 
     def test_report_timeout_and_context_fit_local_model(self):
         for task in ('chronology_extract', 'chronology_synthesis', 'chronology_verify'):
