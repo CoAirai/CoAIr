@@ -2,6 +2,65 @@ import { COAIR_API_BASE, CoairApiError, coairFetch } from "./client";
 import type { CoairLibraryDoc } from "./mapLibrary";
 import type { CoairProject } from "./types";
 
+/**
+ * Large uploads must bypass the Next.js `/coair-api` proxy (Vercel ~4.5MB body
+ * limit → HTTP 413). Prefer a direct API origin in the browser.
+ */
+export function resolveUploadApiBase(): string {
+    const explicit = (
+        process.env.NEXT_PUBLIC_COAIR_UPLOAD_BASE ||
+        process.env.NEXT_PUBLIC_COAIR_API_ORIGIN ||
+        ""
+    )
+        .trim()
+        .replace(/\/$/, "");
+    if (explicit) {
+        return explicit.endsWith("/api") ? explicit : `${explicit}/api`;
+    }
+    if (typeof window !== "undefined") {
+        const host = window.location.hostname;
+        if (
+            host === "localhost" ||
+            host === "127.0.0.1" ||
+            host.endsWith(".local")
+        ) {
+            return COAIR_API_BASE;
+        }
+        // Production portals (login/user/admin.coair.ai or Vercel previews).
+        return "https://api.coair.ai/api";
+    }
+    return COAIR_API_BASE;
+}
+
+function friendlyUploadError(status: number, raw: string): string {
+    if (status === 413) {
+        return (
+            "File is too large for the upload path. Use a direct API upload " +
+            "(files up to ~100MB are supported on api.coair.ai)."
+        );
+    }
+    let message = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    try {
+        const parsed = JSON.parse(raw) as {
+            detail?: unknown;
+            error?: { message?: string; code?: string } | string;
+            message?: string;
+        };
+        if (typeof parsed?.detail === "string") return parsed.detail;
+        if (typeof parsed?.error === "string") return parsed.error;
+        if (parsed?.error && typeof parsed.error === "object") {
+            if (parsed.error.code === "413" || status === 413) {
+                return "File is too large for the current upload limit.";
+            }
+            if (parsed.error.message) return parsed.error.message;
+        }
+        if (typeof parsed?.message === "string") return parsed.message;
+    } catch {
+        /* keep stripped text */
+    }
+    return message || "Upload failed";
+}
+
 export async function listProjects(token: string) {
     return coairFetch<{
         projects: CoairProject[];
@@ -91,7 +150,7 @@ export function uploadProjectFile(
 ): Promise<UploadProjectResult> {
     const body = new FormData();
     body.append("file", file);
-    const base = COAIR_API_BASE;
+    const base = resolveUploadApiBase();
 
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -116,14 +175,13 @@ export function uploadProjectFile(
                 }
                 return;
             }
-            let message = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-            try {
-                const parsed = JSON.parse(text) as { detail?: unknown };
-                if (typeof parsed?.detail === "string") message = parsed.detail;
-            } catch {
-                /* keep stripped text */
-            }
-            reject(new CoairApiError(message || xhr.statusText || "Upload failed", xhr.status, text));
+            reject(
+                new CoairApiError(
+                    friendlyUploadError(xhr.status, text),
+                    xhr.status,
+                    text
+                )
+            );
         };
         xhr.onerror = () => reject(new CoairApiError("Network error", 0));
         xhr.ontimeout = () => reject(new CoairApiError("Upload timed out", 0));
