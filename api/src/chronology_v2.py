@@ -13,6 +13,7 @@ from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 from pydantic import BaseModel, Field
 
 from .chronology_prompts import chronology_prompt_hash, load_chronology_prompts
+from .config import LOCAL_LLM
 from .evidence_model import ChronologyEntry, EvidenceItem, VerifiedClaim
 from .jargon_manager import (
     jargon_dictionary_version, prepare_query, set_current_prepared_query,
@@ -21,12 +22,12 @@ from .report_errors import classify_report_error, diagnostic_summary
 
 
 PIPELINE_VERSION = "chronology-v2"
-EVIDENCE_BATCH_CHARS = 80_000
+EVIDENCE_BATCH_CHARS = 12_000 if LOCAL_LLM else 80_000
 # How many candidate documents the preview lists for the analyst. Presentation
 # only — what the report reads is decided by evidence_pack.select_pack.
 MAX_PREVIEW_DOCUMENTS = 20
 
-SYNTHESIS_BATCH_EVENTS = 12
+SYNTHESIS_BATCH_EVENTS = 3 if LOCAL_LLM else 12
 VERIFICATION_BATCH_CLAIMS = 30
 # Allow independently sourced sentences without forcing compound claims.
 MAX_EVENT_CLAIMS = 4
@@ -692,7 +693,7 @@ def _candidate_source_ids(event: Dict) -> set[str]:
 
 
 def _synthesis_batches(
-    events: Sequence[Dict], evidence: Sequence[EvidenceItem], *, max_chars: int = 180_000,
+    events: Sequence[Dict], evidence: Sequence[EvidenceItem], *, max_chars: int = 16_000 if LOCAL_LLM else 180_000,
 ) -> List[List[Dict]]:
     by_id = {item.source_id: item for item in evidence}
     batches: List[List[Dict]] = []

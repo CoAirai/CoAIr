@@ -88,26 +88,27 @@ const ChronologyHomePage = () => {
             return;
         }
         let cancelled = false;
-        void listReports(session.accessToken, session.projectId, "chronology")
-            .then((payload) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const refresh = async () => {
+            try {
+                const payload = await listReports(token, projectId, "chronology");
                 if (cancelled) return;
-                setLiveReports(
-                    (payload.reports ?? []).map((job) =>
-                        mapChronologyJob(job, session.companyId ?? "live")
-                    )
-                );
-            })
-            .catch((err) => {
-                if (!cancelled) {
-                    setError(
-                        err instanceof Error
-                            ? err.message
-                            : "Unable to load chronology reports"
-                    );
-                }
-            });
+                setLiveReports((payload.reports ?? []).map((job) =>
+                    mapChronologyJob(job, session.companyId ?? "live")
+                ));
+            } catch (err) {
+                if (!cancelled) setError(err instanceof Error
+                    ? err.message : "Unable to load chronology reports");
+            } finally {
+                if (!cancelled) timer = setTimeout(refresh, 5000);
+            }
+        };
+        void refresh();
         return () => {
             cancelled = true;
+            if (timer) clearTimeout(timer);
         };
     }, [live.enabled, session?.accessToken, session?.companyId, session?.projectId]);
 
@@ -296,23 +297,17 @@ const ChronologyHomePage = () => {
                         {reports.map((report) => (
                             <div
                                 key={report.id}
-                                className="grid grid-cols-[5rem_minmax(0,1fr)_7rem_5rem] items-center gap-4 py-3 text-label-sm"
+                                className="grid grid-cols-[5rem_minmax(0,1fr)_7rem_7rem] items-center gap-4 py-3 text-label-sm"
                             >
                                 <span className="text-sub-600">
                                     {report.reference}.x
                                 </span>
-                                {report.status === "ready" ? (
-                                    <Link
-                                        href={`/workspace/chronology/${report.id}`}
-                                        className="truncate text-strong-950 hover:text-blue-500"
-                                    >
-                                        {report.title}
-                                    </Link>
-                                ) : (
-                                    <span className="truncate text-sub-600">
-                                        {report.title}
-                                    </span>
-                                )}
+                                <Link
+                                    href={`/workspace/chronology/${report.id}`}
+                                    className="truncate text-strong-950 hover:text-blue-500"
+                                >
+                                    {report.title}
+                                </Link>
                                 <span className="text-sub-600">
                                     {dateFormatter.format(new Date(report.createdAt))}
                                 </span>
@@ -320,10 +315,10 @@ const ChronologyHomePage = () => {
                                     className={
                                         report.status === "ready"
                                             ? "text-green-600"
-                                            : "text-red-500"
+                                            : report.status === "generating" ? "text-blue-500" : "text-red-500"
                                     }
                                 >
-                                    {report.status === "ready" ? "READY" : "FAILED"}
+                                    {report.status === "ready" ? "READY" : report.status === "generating" ? "GENERATING" : "FAILED"}
                                 </span>
                             </div>
                         ))}

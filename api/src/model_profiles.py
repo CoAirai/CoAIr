@@ -122,7 +122,9 @@ def get_task_profile(task_type: str) -> TaskProfile:
         profile = replace(profile, max_output_tokens=output,
                           max_input_tokens=min(profile.max_input_tokens,
                                                LLM_CONTEXT_TOKENS - output - 1024),
-                          thinking_level="minimal", timeout_seconds=max(180, profile.timeout_seconds))
+                          thinking_level="minimal", timeout_seconds=max(
+                              600 if key.startswith("chronology_") else 180,
+                              profile.timeout_seconds))
     return profile
 
 
