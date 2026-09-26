@@ -73,3 +73,24 @@ archive if ready at
 The updated image package is `/home/coair/coair-local-package-20260926-fixed/`;
 its code revision is `904d6a4`. It includes the BGE embedding image/weights but
 still requires the separate Qwen runtime/weights for a fresh device.
+
+## Completed corpus audit — 2026-09-27 (Türkiye time)
+
+The document queue has finished: **1,240 ready / 2 password-protected failures**.
+Qdrant contains **51,060 vectors** for the source archive. No ready source file
+is missing vectors, and there are no recorded metadata extraction failures.
+All **1,210 PDFs / 15,125 pages** have completed extraction/OCR audits, with no
+missing audits or incomplete page coverage. These checks establish processing
+coverage, not a guarantee that OCR or generated metadata is error-free.
+
+The MUDFA job failed separately at synthesis because the overview repeated full
+cluster observations and exceeded the local input budget (45,573 > 27,648 tokens).
+Revision `b7d3bec` compacts repeated observations while retaining distinct claims
+and provenance; the measured cluster payload decreased from 139,256 to 42,529
+characters. Local verification groups now contain three claims. Four local
+chronology budget/provenance tests pass. The repaired job was automatically retried
+after the document queue finished; final report validation remains pending.
+
+The image package was refreshed to revision `b7d3bec` and its SHA-256 check passed.
+The final corpus audit is also saved locally at
+`/Volumes/Adata/coair-dgx-work/20260924/application-verification-final.json`.
