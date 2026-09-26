@@ -58,3 +58,18 @@ unlocked copies or their real passwords. They were not repeatedly retried.
 Tailscale remains required for the current application address. Company LAN,
 trusted HTTPS, and fresh-device installation validation remain separate delivery
 work; this recovery does not claim that those are complete.
+
+## Recovery snapshot (20:05 UTC)
+
+The source monitor reported 379 ready files, two password failures and 861
+remaining queued/processing files. `CEC00430660.pdf` completed after the layout
+padding fix. New MUDFA generation is still in evidence extraction; its first
+extraction batch completed and the next batch is processing. This is not yet an
+end-to-end generation pass.
+
+A durable monitor records the MUDFA terminal status and downloads/checks the Word
+archive if ready at
+`/home/coair/datasets/edinburgh-subset-20260924/reports/mudfa-generation-validation.json`.
+The updated image package is `/home/coair/coair-local-package-20260926-fixed/`;
+its code revision is `904d6a4`. It includes the BGE embedding image/weights but
+still requires the separate Qwen runtime/weights for a fresh device.
