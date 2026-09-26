@@ -516,6 +516,17 @@ class DocumentService:
                 "ORDER BY page_number",
                 [project_id, doc_id, file_name or doc_id, doc_id],
             ).fetchall()
+            if not rows:
+                # Edinburgh / bulk corpora often keep chunks with empty or
+                # legacy project_id. Membership is the file_name/doc_id hit;
+                # _resolve_scoped_path still only opens shared roots.
+                name = self._path_name(file_name or doc_id)
+                rows = con.execute(
+                    "SELECT file_name,page_number,text FROM chunks "
+                    "WHERE doc_id=? OR file_name=? OR file_name=? "
+                    "ORDER BY page_number",
+                    [doc_id, name or doc_id, doc_id],
+                ).fetchall()
             if rows:
                 page = self._parse_anchor_page(anchor)
                 total = max(int(r[1] or 1) for r in rows)

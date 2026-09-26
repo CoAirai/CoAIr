@@ -82,8 +82,17 @@ const DocumentPreview = () => {
             .then((data) => {
                 if (cancelled) return;
                 if (data.error) {
+                    // Keep citation snippet visible; bulk corpora often return
+                    // error when the PDF isn't on disk for this project yet.
                     setError(data.error);
-                    setLive(null);
+                    setLive({
+                        type: "text",
+                        file_name: citation.name,
+                        page,
+                        total_pages: Math.max(page, citation.page || 1),
+                        text: citation.excerpt || "",
+                        error: data.error,
+                    });
                     return;
                 }
                 setLive(data);
@@ -213,9 +222,15 @@ const DocumentPreview = () => {
                                         Loading page {page}…
                                     </div>
                                 )}
-                                {!loading && error && (
+                                {!loading && error && !extracted && (
                                     <div className="py-6 text-label-sm text-red-500">
                                         {error}
+                                    </div>
+                                )}
+                                {!loading && error && extracted && (
+                                    <div className="mb-3 rounded-lg bg-weak-50 px-2 py-1.5 text-label-xs text-sub-600">
+                                        Preview image unavailable — showing cited
+                                        text.
                                     </div>
                                 )}
                                 {!loading && !error && hasImage && (
@@ -276,9 +291,9 @@ const DocumentPreview = () => {
                                         </div>
                                     )}
                                 {!loading &&
-                                    !error &&
                                     !hasImage &&
-                                    !(isLive && live?.type === "table") && (
+                                    !(isLive && live?.type === "table" && !error) &&
+                                    (extracted || !error) && (
                                         <>
                                             <div className="text-[11px] uppercase tracking-[0.18em] text-soft-400">
                                                 Page {page}

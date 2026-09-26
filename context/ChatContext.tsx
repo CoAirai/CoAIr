@@ -13,7 +13,12 @@ import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { mapLiveCitations } from "@/lib/coair/mapCitations";
-import { createConversation, sendLiveChat } from "@/lib/coair/liveLogin";
+import {
+    createConversation,
+    getConversation,
+    listConversations,
+    sendLiveChat,
+} from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
 import { buildMockAnswer, buildMockReply } from "@/lib/chat/mockReply";
 import {
@@ -123,6 +128,48 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setLiveConversationId(null);
     }, [session?.userId, session?.projectId, requestedWorkspaceUserId]);
 
+    // Hydrate Recent Queries from the live conversations API (survives refresh).
+    useEffect(() => {
+        if (
+            session?.source !== "live" ||
+            !session.accessToken ||
+            !session.projectId ||
+            !session.userId
+        ) {
+            return;
+        }
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const userId = session.userId;
+        let cancelled = false;
+        void listConversations(token, projectId)
+            .then((rows) => {
+                if (cancelled) return;
+                const mapped: RecentQuery[] = (rows ?? [])
+                    .filter((row) => !row.archived)
+                    .slice(0, 20)
+                    .map((row) => ({
+                        id: row.conversation_id,
+                        title: row.title || "Conversation",
+                    }));
+                setRecentsByUserId((prev) => ({
+                    ...prev,
+                    [userId]: mapped,
+                }));
+            })
+            .catch(() => {
+                /* keep whatever is already in memory */
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        session?.accessToken,
+        session?.projectId,
+        session?.source,
+        session?.userId,
+    ]);
+
     const activeWorkspaceUserId = useMemo(() => {
         if (!session?.userId || !session.companyId) return null;
         return resolveActiveWorkspaceUserId({
@@ -176,6 +223,90 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             ).find((entry) => entry.id === queryId);
             setSelectedQueryId(queryId);
             setActiveKbId("assistant");
+            setSendError(null);
+            setOpenCitation(null);
+
+            const live =
+                session?.source === "live" &&
+                Boolean(session.accessToken) &&
+                Boolean(session.projectId);
+
+            if (live) {
+                setLiveConversationId(queryId);
+                if (query?.messages?.length) {
+                    setThreadsByUserId((prev) => ({
+                        ...prev,
+                        [activeWorkspaceUserId]: query.messages!.map((m) => ({
+                            ...m,
+                        })),
+                    }));
+                    return;
+                }
+                void getConversation(
+                    session!.accessToken!,
+                    session!.projectId!,
+                    queryId
+                )
+                    .then((conv) => {
+                        const mapped: Message[] = (conv.messages ?? []).map(
+                            (m, index) => ({
+                                id: `${queryId}-${index}`,
+                                role:
+                                    m.role === "assistant"
+                                        ? ("assistant" as const)
+                                        : ("user" as const),
+                                content:
+                                    m.role === "assistant"
+                                        ? m.response?.answer || m.content
+                                        : m.content,
+                                createdAt:
+                                    m.timestamp || new Date().toISOString(),
+                                threadUserId: activeWorkspaceUserId,
+                                citations:
+                                    m.role === "assistant"
+                                        ? mapLiveCitations(
+                                              m.response?.citations
+                                          )
+                                        : undefined,
+                                authorUserId:
+                                    m.role === "user"
+                                        ? session?.userId ?? undefined
+                                        : undefined,
+                                authorName:
+                                    m.role === "user"
+                                        ? session?.name
+                                        : undefined,
+                            })
+                        );
+                        setThreadsByUserId((prev) => ({
+                            ...prev,
+                            [activeWorkspaceUserId]: mapped,
+                        }));
+                        setRecentsByUserId((prev) => ({
+                            ...prev,
+                            [activeWorkspaceUserId]: (
+                                prev[activeWorkspaceUserId] ?? []
+                            ).map((entry) =>
+                                entry.id === queryId
+                                    ? {
+                                          ...entry,
+                                          title: conv.title || entry.title,
+                                          messages: mapped.slice(-2),
+                                      }
+                                    : entry
+                            ),
+                        }));
+                    })
+                    .catch((err) => {
+                        setSendError(
+                            err instanceof Error
+                                ? err.message
+                                : "Unable to open conversation"
+                        );
+                    });
+                return;
+            }
+
             setThreadsByUserId((prev) => ({
                 ...prev,
                 [activeWorkspaceUserId]: query?.messages
@@ -211,7 +342,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             activeWorkspaceUserId,
             companyDocs,
             recentsByUserId,
+            session?.accessToken,
             session?.name,
+            session?.projectId,
+            session?.source,
             session?.userId,
         ]
     );
@@ -237,8 +371,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
             const userMessageId = makeId("u");
             const assistantMessageId = makeId("a");
-            const queryId = makeId("q");
             const now = new Date().toISOString();
+            let conversationIdForRecent: string | null = liveConversationId;
 
             // Show the user message immediately; assistant fills in when the API returns.
             setThreadsByUserId((prev) => ({
@@ -277,6 +411,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         conversationId = created.conversation_id;
                         setLiveConversationId(conversationId);
                     }
+                    conversationIdForRecent = conversationId;
                     const response = await sendLiveChat({
                         token: session.accessToken!,
                         projectId: session.projectId,
@@ -300,49 +435,54 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     citations = answer.citations;
                 }
 
+                const queryId = conversationIdForRecent || makeId("q");
+                const assistantMessage: Message = {
+                    id: assistantMessageId,
+                    role: "assistant",
+                    content: assistantText,
+                    createdAt: new Date().toISOString(),
+                    threadUserId: activeWorkspaceUserId,
+                    citations,
+                };
+                const userMessage: Message = {
+                    id: userMessageId,
+                    role: "user",
+                    content: trimmed,
+                    createdAt: now,
+                    authorUserId: session.userId!,
+                    authorName: session.name,
+                    threadUserId: activeWorkspaceUserId,
+                };
+
                 setThreadsByUserId((prevThreads) => {
                     const thread = prevThreads[activeWorkspaceUserId] ?? [];
                     const withoutDup = thread.some((m) => m.id === userMessageId)
                         ? thread
-                        : [
-                              ...thread,
-                              {
-                                  id: userMessageId,
-                                  role: "user" as const,
-                                  content: trimmed,
-                                  createdAt: now,
-                                  authorUserId: session.userId!,
-                                  authorName: session.name,
-                                  threadUserId: activeWorkspaceUserId,
-                              },
-                          ];
-                    const nextThread = [
-                        ...withoutDup,
-                        {
-                            id: assistantMessageId,
-                            role: "assistant" as const,
-                            content: assistantText,
-                            createdAt: new Date().toISOString(),
-                            threadUserId: activeWorkspaceUserId,
-                            citations,
-                        },
-                    ];
-                    setRecentsByUserId((prevRecents) => ({
-                        ...prevRecents,
-                        [activeWorkspaceUserId]: [
-                            {
-                                id: queryId,
-                                title: trimmed,
-                                messages: nextThread.slice(-2),
-                            },
-                            ...(prevRecents[activeWorkspaceUserId] ?? []),
-                        ].slice(0, 8),
-                    }));
+                        : [...thread, userMessage];
                     return {
                         ...prevThreads,
-                        [activeWorkspaceUserId]: nextThread,
+                        [activeWorkspaceUserId]: [
+                            ...withoutDup,
+                            assistantMessage,
+                        ],
                     };
                 });
+                setRecentsByUserId((prevRecents) => {
+                    const existing = prevRecents[activeWorkspaceUserId] ?? [];
+                    const nextEntry: RecentQuery = {
+                        id: queryId,
+                        title: trimmed,
+                        messages: [userMessage, assistantMessage],
+                    };
+                    return {
+                        ...prevRecents,
+                        [activeWorkspaceUserId]: [
+                            nextEntry,
+                            ...existing.filter((entry) => entry.id !== queryId),
+                        ].slice(0, 20),
+                    };
+                });
+                setSelectedQueryId(queryId);
             } catch (error) {
                 setSendError(
                     error instanceof Error

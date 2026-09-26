@@ -339,11 +339,61 @@ export async function createConversation(
     projectId: string,
     title: string
 ) {
-    return coairFetch<{ conversation_id: string }>("/conversations", {
-        method: "POST",
+    return coairFetch<{ conversation_id: string; title?: string }>(
+        "/conversations",
+        {
+            method: "POST",
+            token,
+            projectId,
+            body: { title },
+        }
+    );
+}
+
+export type CoairConversationMeta = {
+    conversation_id: string;
+    title: string;
+    created_at?: string;
+    updated_at?: string;
+    message_count?: number;
+    pinned?: boolean;
+    archived?: boolean;
+};
+
+export type CoairConversationMessage = {
+    role: string;
+    content: string;
+    timestamp?: string;
+    response?: {
+        citations?: Array<{
+            doc_id?: string;
+            doc_name?: string;
+            anchor?: string;
+            snippet?: string;
+        }>;
+        answer?: string;
+    };
+};
+
+export async function listConversations(token: string, projectId: string) {
+    return coairFetch<CoairConversationMeta[]>("/conversations", {
         token,
         projectId,
-        body: { title },
+    });
+}
+
+export async function getConversation(
+    token: string,
+    projectId: string,
+    conversationId: string
+) {
+    return coairFetch<{
+        conversation_id: string;
+        title: string;
+        messages: CoairConversationMessage[];
+    }>(`/conversations/${encodeURIComponent(conversationId)}`, {
+        token,
+        projectId,
     });
 }
 
