@@ -169,6 +169,8 @@ const KnowledgeBase = () => {
     const sheets = documents.filter((doc) => doc.kind === "spreadsheet");
     const canRemove = session?.role === "company_admin";
     const docsLoading = live.enabled && live.libraryLoading;
+    const transfers = live.enabled ? live.fileTransfers : [];
+
     const tokenMeter = useMemo(() => {
         if (live.enabled) {
             const selected = live.orgUsers.find(
@@ -232,6 +234,58 @@ const KnowledgeBase = () => {
             <div className="mb-2 px-3 text-label-xs text-soft-400">
                 Knowledge Base
             </div>
+            {transfers.length > 0 && (
+                <div className="mb-3 flex flex-col gap-2 px-1">
+                    {transfers.map((transfer) => (
+                        <div
+                            key={transfer.id}
+                            className="rounded-xl border border-stroke-soft-200 bg-white-0 px-3 py-2"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0 truncate text-label-xs text-strong-950">
+                                    {transfer.name}
+                                </div>
+                                <div
+                                    className={`shrink-0 text-label-xs ${
+                                        transfer.phase === "failed"
+                                            ? "text-red-500"
+                                            : transfer.phase === "ready"
+                                              ? "text-green-600"
+                                              : "text-soft-400"
+                                    }`}
+                                >
+                                    {transfer.phase === "uploading"
+                                        ? `Uploading ${transfer.percent}%`
+                                        : transfer.phase === "injecting"
+                                          ? `${transfer.stage || "Injecting"} ${transfer.percent}%`
+                                          : transfer.phase === "ready"
+                                            ? "Ready"
+                                            : "Failed"}
+                                </div>
+                            </div>
+                            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-weak-50">
+                                <div
+                                    className={`h-full rounded-full transition-[width] duration-300 ${
+                                        transfer.phase === "failed"
+                                            ? "bg-red-400"
+                                            : transfer.phase === "ready"
+                                              ? "bg-green-500"
+                                              : "bg-blue-500"
+                                    }`}
+                                    style={{
+                                        width: `${Math.min(100, Math.max(3, transfer.percent))}%`,
+                                    }}
+                                />
+                            </div>
+                            {transfer.error && (
+                                <div className="mt-1 text-label-xs text-red-500">
+                                    {transfer.error}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
             <div className="flex flex-col gap-1">
                 <button
                     type="button"

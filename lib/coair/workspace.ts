@@ -1,4 +1,4 @@
-import { coairFetch } from "./client";
+import { COAIR_API_BASE, CoairApiError, coairFetch } from "./client";
 import type { CoairLibraryDoc } from "./mapLibrary";
 import type { CoairProject } from "./types";
 
@@ -67,17 +67,72 @@ export async function listLibrary(token: string, projectId: string) {
     return coairFetch<CoairLibraryDoc[]>("/library", { token, projectId });
 }
 
-export async function uploadProjectFile(
+export type UploadProjectResult = {
+    file_id?: string;
+    filename?: string;
+    status?: string;
+};
+
+export type IndexingStatus = {
+    file_id: string;
+    filename: string;
+    status: string;
+    progress: number;
+    error?: string | null;
+    details?: Record<string, unknown>;
+};
+
+/** Browser XHR upload so we can report byte progress for large PDFs. */
+export function uploadProjectFile(
     token: string,
     projectId: string,
-    file: File
-) {
+    file: File,
+    onProgress?: (percent: number) => void
+): Promise<UploadProjectResult> {
     const body = new FormData();
     body.append("file", file);
-    return coairFetch<{ file_id?: string; filename?: string; status?: string }>(
-        "/upload",
-        { method: "POST", token, projectId, body }
-    );
+    const base = COAIR_API_BASE;
+
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${base}/upload`);
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.setRequestHeader("X-Project-ID", projectId);
+        xhr.timeout = 10 * 60 * 1000;
+
+        xhr.upload.onprogress = (event) => {
+            if (!onProgress || !event.lengthComputable || !event.total) return;
+            onProgress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+        };
+
+        xhr.onload = () => {
+            const text = xhr.responseText || "";
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    resolve(text ? (JSON.parse(text) as UploadProjectResult) : {});
+                } catch {
+                    resolve({});
+                }
+                return;
+            }
+            let message = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+            try {
+                const parsed = JSON.parse(text) as { detail?: unknown };
+                if (typeof parsed?.detail === "string") message = parsed.detail;
+            } catch {
+                /* keep stripped text */
+            }
+            reject(new CoairApiError(message || xhr.statusText || "Upload failed", xhr.status, text));
+        };
+        xhr.onerror = () => reject(new CoairApiError("Network error", 0));
+        xhr.ontimeout = () => reject(new CoairApiError("Upload timed out", 0));
+        xhr.send(body);
+    });
+}
+
+export async function listIndexingStatus(token: string, projectId: string) {
+    return coairFetch<IndexingStatus[]>("/indexing/status", { token, projectId });
 }
 
 export async function deleteProjectFile(

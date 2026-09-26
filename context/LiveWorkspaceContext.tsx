@@ -29,11 +29,35 @@ import {
 import type { CoairProject } from "@/lib/coair/types";
 import {
     deleteProjectFile,
+    listIndexingStatus,
     listLibrary,
     listProjects,
     uploadProjectFile,
+    type IndexingStatus,
 } from "@/lib/coair/workspace";
 import { addOnsFromModuleGrants } from "@/lib/workspace/companyForSession";
+
+const INDEXING_DONE = new Set([
+    "ready",
+    "completed",
+    "failed",
+    "error",
+    "credit_balance_exhausted",
+]);
+
+function stageLabel(status: string): string {
+    const key = (status || "").toLowerCase();
+    if (key === "queued") return "Queued";
+    if (key === "extracting") return "Extracting";
+    if (key === "ocr") return "OCR";
+    if (key === "metadata") return "Metadata";
+    if (key === "chunking") return "Chunking";
+    if (key === "embedding") return "Embedding";
+    if (key === "indexing") return "Indexing";
+    if (key === "ready" || key === "completed") return "Ready";
+    if (key === "failed" || key === "error") return "Failed";
+    return status || "Processing";
+}
 
 type AccountUsage = {
     used_tokens?: number;
@@ -50,6 +74,16 @@ type ModuleGrants = {
     forensic: boolean;
 };
 
+type FileTransfer = {
+    id: string;
+    fileId?: string;
+    name: string;
+    phase: "uploading" | "injecting" | "ready" | "failed";
+    percent: number;
+    stage?: string;
+    error?: string;
+};
+
 type LiveWorkspaceValue = {
     enabled: boolean;
     loading: boolean;
@@ -63,6 +97,8 @@ type LiveWorkspaceValue = {
     orgUsers: CoairOrgUser[];
     moduleGrants: ModuleGrants;
     moduleAddOns: ModuleId[];
+    /** In-flight uploads + indexing jobs for Knowledge Base progress UI. */
+    fileTransfers: FileTransfer[];
     selectProject: (projectId: string) => void;
     uploadFile: (file: File) => Promise<{ ok: boolean; error?: string }>;
     removeFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
@@ -124,7 +160,9 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const [moduleGrants, setModuleGrants] = useState<ModuleGrants>(() =>
         grantsFromSession(session)
     );
+    const [fileTransfers, setFileTransfers] = useState<FileTransfer[]>([]);
     const lastProjectId = useRef<string | null | undefined>(undefined);
+    const transferSeq = useRef(0);
 
     // After login, reuse the /projects payload already fetched for session seeding.
     useEffect(() => {
@@ -256,6 +294,146 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         [updateSession]
     );
 
+    const applyIndexingJobs = useCallback(
+        (jobs: IndexingStatus[]) => {
+            const toasts: Array<{ message: string; tone: "success" | "error" }> =
+                [];
+            setFileTransfers((prev) => {
+                if (!prev.length && !jobs.length) return prev;
+                const byId = new Map(jobs.map((job) => [job.file_id, job]));
+                const byName = new Map(
+                    jobs.map((job) => [job.filename.toLowerCase(), job])
+                );
+                let changed = false;
+                const next = prev.map((transfer) => {
+                    const job =
+                        (transfer.fileId && byId.get(transfer.fileId)) ||
+                        byName.get(transfer.name.toLowerCase());
+                    if (!job) return transfer;
+                    const done = INDEXING_DONE.has(
+                        (job.status || "").toLowerCase()
+                    );
+                    const failed =
+                        job.status === "failed" ||
+                        job.status === "error" ||
+                        job.status === "credit_balance_exhausted";
+                    const percent = Math.max(
+                        transfer.percent,
+                        Math.round(
+                            Math.min(1, Math.max(0, job.progress || 0)) * 100
+                        )
+                    );
+                    const updated: FileTransfer = {
+                        ...transfer,
+                        fileId: job.file_id || transfer.fileId,
+                        phase: failed ? "failed" : done ? "ready" : "injecting",
+                        percent: failed || done ? 100 : Math.max(percent, 5),
+                        stage: stageLabel(job.status),
+                        error: job.error || undefined,
+                    };
+                    if (
+                        transfer.phase === "injecting" &&
+                        updated.phase === "ready"
+                    ) {
+                        toasts.push({
+                            message: `Injected ${transfer.name}`,
+                            tone: "success",
+                        });
+                    }
+                    if (
+                        transfer.phase === "injecting" &&
+                        updated.phase === "failed"
+                    ) {
+                        toasts.push({
+                            message:
+                                updated.error ||
+                                `Failed to inject ${transfer.name}`,
+                            tone: "error",
+                        });
+                    }
+                    if (
+                        updated.phase !== transfer.phase ||
+                        updated.percent !== transfer.percent ||
+                        updated.stage !== transfer.stage ||
+                        updated.fileId !== transfer.fileId
+                    ) {
+                        changed = true;
+                    }
+                    return updated;
+                });
+                return changed ? next : prev;
+            });
+            for (const toast of toasts) {
+                pushToast(toast.message, toast.tone);
+            }
+        },
+        [pushToast]
+    );
+
+    // Poll indexing while any transfer is still uploading/injecting.
+    const hasActiveTransfers = fileTransfers.some(
+        (transfer) =>
+            transfer.phase === "injecting" || transfer.phase === "uploading"
+    );
+
+    useEffect(() => {
+        if (!enabled || !session?.accessToken || !session.projectId) return;
+        if (!hasActiveTransfers) return;
+        let cancelled = false;
+        const token = session.accessToken;
+        const projectId = session.projectId;
+
+        const tick = async () => {
+            try {
+                const jobs = await listIndexingStatus(token, projectId);
+                if (cancelled) return;
+                applyIndexingJobs(jobs);
+                const stillBusy = jobs.some(
+                    (job) => !INDEXING_DONE.has((job.status || "").toLowerCase())
+                );
+                if (!stillBusy) {
+                    await refreshLibrary();
+                }
+            } catch {
+                /* keep polling */
+            }
+        };
+
+        void tick();
+        const timer = window.setInterval(() => {
+            void tick();
+        }, 2500);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [
+        applyIndexingJobs,
+        enabled,
+        hasActiveTransfers,
+        refreshLibrary,
+        session?.accessToken,
+        session?.projectId,
+    ]);
+
+    // Drop finished transfer chips after a short delay so the list stays tidy.
+    useEffect(() => {
+        const finished = fileTransfers.filter(
+            (transfer) => transfer.phase === "ready" || transfer.phase === "failed"
+        );
+        if (!finished.length) return;
+        const timer = window.setTimeout(() => {
+            setFileTransfers((prev) =>
+                prev.filter(
+                    (transfer) =>
+                        transfer.phase === "uploading" ||
+                        transfer.phase === "injecting"
+                )
+            );
+        }, 5000);
+        return () => window.clearTimeout(timer);
+    }, [fileTransfers]);
+
     const uploadFile = useCallback(
         async (file: File) => {
             if (!session?.accessToken || !session.projectId) {
@@ -271,14 +449,60 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 pushToast(message, "error");
                 return { ok: false, error: message };
             }
+            const transferId = `xfer-${Date.now()}-${++transferSeq.current}`;
+            setFileTransfers((prev) => [
+                {
+                    id: transferId,
+                    name: file.name,
+                    phase: "uploading",
+                    percent: 0,
+                    stage: "Uploading",
+                },
+                ...prev,
+            ]);
+            pushToast(`Uploading ${file.name}…`, "info");
             try {
-                await uploadProjectFile(
+                const result = await uploadProjectFile(
                     session.accessToken,
                     session.projectId,
-                    file
+                    file,
+                    (percent) => {
+                        setFileTransfers((prev) =>
+                            prev.map((transfer) =>
+                                transfer.id === transferId
+                                    ? {
+                                          ...transfer,
+                                          percent,
+                                          stage: `Uploading ${percent}%`,
+                                      }
+                                    : transfer
+                            )
+                        );
+                    }
+                );
+                const fileId = result.file_id || "";
+                const alreadyDone =
+                    result.status === "completed" || result.status === "ready";
+                setFileTransfers((prev) =>
+                    prev.map((transfer) =>
+                        transfer.id === transferId
+                            ? {
+                                  ...transfer,
+                                  fileId: fileId || undefined,
+                                  phase: alreadyDone ? "ready" : "injecting",
+                                  percent: alreadyDone ? 100 : Math.max(transfer.percent, 100),
+                                  stage: alreadyDone ? "Ready" : "Queued",
+                              }
+                            : transfer
+                    )
                 );
                 await refreshLibrary();
-                pushToast(`Uploaded ${file.name}`, "success");
+                pushToast(
+                    alreadyDone
+                        ? `Ready: ${file.name}`
+                        : `Uploaded ${file.name} — injecting into AI…`,
+                    "success"
+                );
                 return { ok: true };
             } catch (err) {
                 const raw =
@@ -287,6 +511,19 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     .replace(/^mac_sidecar:\s*/i, "")
                     .replace(/^invalid_pdf:\s*/i, "")
                     .replace(/^unsupported_file_type:\s*/i, "Unsupported file type: ");
+                setFileTransfers((prev) =>
+                    prev.map((transfer) =>
+                        transfer.id === transferId
+                            ? {
+                                  ...transfer,
+                                  phase: "failed",
+                                  percent: 100,
+                                  stage: "Failed",
+                                  error: message,
+                              }
+                            : transfer
+                    )
+                );
                 pushToast(message, "error");
                 return {
                     ok: false,
@@ -361,6 +598,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             orgUsers,
             moduleGrants,
             moduleAddOns,
+            fileTransfers,
             selectProject,
             uploadFile,
             removeFile,
@@ -371,6 +609,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             documents,
             enabled,
             error,
+            fileTransfers,
             libraryLoading,
             loading,
             moduleAddOns,
