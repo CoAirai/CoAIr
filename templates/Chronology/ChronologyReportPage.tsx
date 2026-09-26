@@ -177,7 +177,8 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                             ) : (
                                 <button
                                     type="button"
-                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                    disabled
+                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-sub-600 opacity-50"
                                 >
                                     Download Word ↓
                                 </button>
