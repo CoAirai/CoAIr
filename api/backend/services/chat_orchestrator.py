@@ -73,13 +73,11 @@ class ChatOrchestrator:
 
         # Fail before persisting a new chat turn or entering any router fallback.
         # Deep routing deliberately catches provider errors to preserve legacy
-        # availability; exhausted demo credit is an account state, not a model
-        # failure, and must remain an HTTP 402.
+        # availability; exhausted CA is an account state, not a model failure,
+        # and must remain an HTTP 402 (same meter for demo and paid packages).
         if username:
             from src.user_store import get_user_store
-            account = get_user_store().billing.get_account(username)
-            if account and account.get("plan_type") == "demo":
-                get_user_store().billing.enforce_credits(username)
+            get_user_store().enforce_quota(username)
 
         # Live activity feed: stamp the request_id on a contextvar (propagates
         # into the query worker thread via asyncio.to_thread, same as corpus_var)

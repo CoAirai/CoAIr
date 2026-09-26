@@ -41,14 +41,15 @@ def test_missing_demo_account_is_created_idempotently(monkeypatch, tmp_path):
         prompt_tokens=100, completion_tokens=10, reasoning_tokens=5,
         provider_cost_nanos=1_000_000_000, idempotency_key="demo-cost-1",
     )
-    assert charged["credits_used"] == 100
-    assert charged["credits_remaining"] == 4900
-    assert charged["credit_percent_remaining"] == 98
+    # Demo wallet is packaging only; charges no longer drain it.
+    assert charged["credits_used"] == 0
+    assert charged["credits_remaining"] == 5000
+    assert charged["credit_percent_remaining"] == 100.0
 
     assert _run(monkeypatch, store) == 0
     repeated = store.billing.summary("demo")
     assert repeated["credits_total"] == 5000
-    assert repeated["credits_remaining"] == 4900
+    assert repeated["credits_remaining"] == 5000
 
 
 def test_invalid_key_does_not_create_partial_account(monkeypatch, tmp_path):

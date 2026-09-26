@@ -204,9 +204,7 @@ def generate_chronology_report(
     _assert_chronology_enabled()
     _assert_ready(project.project_id)
     from src.user_store import get_user_store
-    account = get_user_store().billing.get_account(user.username)
-    if account and account.get("plan_type") == "demo":
-        get_user_store().billing.enforce_credits(user.username)
+    get_user_store().enforce_quota(user.username)
     preparation = None
     if body.preparation_id:
         preparation = get_report_job_store().get_preparation(
@@ -319,11 +317,11 @@ def retry_report(
     if not current:
         raise HTTPException(404, "report_not_found")
     if current["status"] == "credit_balance_exhausted":
-        from src.user_store import get_user_store
+        from src.user_store import UserQuotaExceededError, get_user_store
         try:
-            get_user_store().billing.enforce_credits(user.username)
-        except Exception as exc:
-            raise HTTPException(402, "credit_balance_exhausted") from exc
+            get_user_store().enforce_quota(user.username)
+        except UserQuotaExceededError as exc:
+            raise HTTPException(402, "token_quota_exceeded") from exc
     retried = store.retry(job_id, project.project_id)
     if not retried:
         raise HTTPException(409, "report_not_retryable")

@@ -32,12 +32,13 @@ def test_markup_and_project_ledger(billing):
         model="gemini-3.6-flash", prompt_tokens=100, completion_tokens=50,
         provider_cost_nanos=1_000_000_000, idempotency_key="call-1",
     )
-    assert summary["credits_remaining"] == 870.0
-    assert summary["credits_used"] == 130.0
+    # Demo wallet is no longer drained on charge; CA meters usage instead.
+    assert summary["credits_remaining"] == 1000.0
+    assert summary["credits_used"] == 0.0
     group = billing.usage(username="demo", project_id="p1")["groups"][0]
     assert group["estimated_provider_cost_usd"] == 1.0
     assert group["retail_credit"] == 130.0
-    assert group["debited_credit"] == 130.0
+    assert group["debited_credit"] == 0.0
     assert group["markup_percent"] == 30.0
     assert group["model"] == "gemini-3.6-flash"
 
@@ -61,29 +62,40 @@ def test_idempotency_and_cache_are_free(billing):
 
 
 def test_ledger_rejects_update_and_delete(billing):
+    from src.database import DbIntegrityError
+
     billing.record_charge(
         username="demo", provider="gemini", model="gemini-3.6-flash",
         prompt_tokens=1, completion_tokens=1, provider_cost_nanos=1,
         idempotency_key="immutable",
     )
     with billing._connect() as conn:
-        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with pytest.raises((sqlite3.IntegrityError, DbIntegrityError), match="append-only"):
             conn.execute(
                 "UPDATE billing_ledger SET note='changed' WHERE idempotency_key='immutable'"
             )
     with billing._connect() as conn:
-        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with pytest.raises((sqlite3.IntegrityError, DbIntegrityError), match="append-only"):
             conn.execute("DELETE FROM billing_ledger WHERE idempotency_key='immutable'")
-def test_last_call_completes_then_future_calls_are_blocked(billing):
-    summary = billing.record_charge(
+
+
+def test_demo_charges_do_not_empty_wallet(billing):
+    """Runtime gate is CA; charging must not zero the demo prepaid wallet."""
+    before = billing.summary("demo")["credits_remaining"]
+    billing.record_charge(
         username="demo", provider="gemini", model="gemini-3.6-flash",
         prompt_tokens=1, completion_tokens=1,
-        provider_cost_nanos=10_000_000_000, idempotency_key="overshoot",
+        provider_cost_nanos=10_000_000_000, idempotency_key="big",
     )
-    assert summary["credits_remaining"] == 0
-    group = billing.usage(username="demo")["groups"][0]
-    assert group["uncovered_credit"] == 300.0
-    assert group["uncovered_provider_cost_usd"] == pytest.approx(2.307692308)
+    after = billing.summary("demo")
+    assert after["credits_remaining"] == before
+    assert after["credits_used"] == 0.0
+    # enforce_credits only trips if balance was already emptied (manual/legacy).
+    billing.enforce_credits("demo")
+
+
+def test_enforce_credits_when_wallet_manually_empty(billing):
+    billing.adjust_credits("demo", -1000, "Drain wallet for test")
     with pytest.raises(CreditBalanceExceededError):
         billing.enforce_credits("demo")
 

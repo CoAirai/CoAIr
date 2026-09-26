@@ -404,17 +404,11 @@ class BillingStore:
                 * (Decimal(10_000 + markup) / Decimal(10_000))
                 / USD_PER_CREDIT * MICROCREDITS_PER_CREDIT
             ).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-            balance = int(account["credits_balance_micro"])
-            if account["plan_type"] == "demo" and debit:
-                debited = min(balance, retail)
-                uncovered = max(0, retail - debited)
-                conn.execute(
-                    "UPDATE billing_accounts SET credits_balance_micro=?,updated_at=? "
-                    "WHERE username=?", [balance - debited, now, username]
-                )
-            else:
-                debited = 0
-                uncovered = 0
+            # Runtime spend is metered on CA (token_limit) for every plan type.
+            # Demo prepaid wallets are packaging/history only — never a second
+            # hard stop that can empty while the CA meter still shows remaining.
+            debited = 0
+            uncovered = 0
             ledger_cols = table_columns(conn, "billing_ledger")
             if "provider_key_ref" in ledger_cols:
                 conn.execute(

@@ -127,3 +127,18 @@ def test_enforce_uploader_budget_blocks_exhausted(store):
     store.increment_usage("broke", 100, 0)
     with pytest.raises(UserQuotaExceededError):
         enforce_uploader_budget("broke")
+
+
+def test_enforce_uploader_budget_allows_demo_with_empty_wallet(store):
+    """Demo wallet empty must not block while CA remains."""
+    from src.ingestion_billing import enforce_uploader_budget
+
+    store.create_user("demoempty", "secret", token_limit=10_000_000)
+    store.billing.provision_account(
+        "demoempty", plan_type="demo", initial_credits=10,
+    )
+    store.billing.adjust_credits("demoempty", -10, "Empty wallet for test")
+    assert store.billing.summary("demoempty")["credits_remaining"] == 0.0
+    # Empty wallet, but CA still available — must not raise.
+    enforce_uploader_budget("demoempty")
+    assert store.get_usage("demoempty")["used_tokens"] == 0

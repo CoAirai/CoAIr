@@ -670,7 +670,8 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                             Demo and Custom are assign-only. Limits you set here
                             freeze on this company — editing the global Packages
                             template later will not change their renewals.
-                            Demo is always free ($20 CA credits, $0 invoice).
+                            Demo is always free (20 CA shared for chat + injection, $0 invoice).
+                            The sidebar CA meter is the only runtime gate.
                         </p>
                         {org.subscription?.assigned_plan ? (
                             <p className="mt-2 text-label-xs text-sub-600">

@@ -174,7 +174,11 @@ def _record_run_usage(usage: LLMUsage) -> None:
 
 
 def _enforce_user_quota() -> None:
-    """If a user context is active, raise UserQuotaExceededError when capped."""
+    """If a user context is active, raise UserQuotaExceededError when CA is capped.
+
+    All plan types (demo + legacy/paid) use the same CA token_limit meter that
+    the workspace UI shows. Demo prepaid wallets are not a second hard gate.
+    """
     try:
         from backend.core.security import get_current_username
     except Exception:
@@ -185,12 +189,7 @@ def _enforce_user_quota() -> None:
     try:
         from .user_store import get_user_store
 
-        store = get_user_store()
-        account = store.billing.get_account(username)
-        if account and account.get("plan_type") == "demo":
-            store.billing.enforce_credits(username)
-        else:
-            store.enforce_quota(username)
+        get_user_store().enforce_quota(username)
     except Exception:
         # enforce_quota raises UserQuotaExceededError on real cap hits — let it bubble
         raise

@@ -69,17 +69,17 @@ def _embedding_model_label() -> str:
 
 
 def enforce_uploader_budget(username: str) -> None:
-    """Block upload/indexing when the uploader has no remaining CA/credits."""
+    """Block upload/indexing when the uploader has no remaining CA.
+
+    Demo and paid packages both gate on the CA token pool (``token_limit``),
+    matching the sidebar meter. The legacy demo credit wallet is not used as a
+    hard stop — that caused "credits exhausted" while CA still remained.
+    """
     if not username:
         return
     from .user_store import get_user_store
 
-    store = get_user_store()
-    account = store.billing.get_account(username)
-    if account and account.get("plan_type") == "demo":
-        store.billing.enforce_credits(username)
-    else:
-        store.enforce_quota(username)
+    get_user_store().enforce_quota(username)
 
 
 def charge_embedding_texts(
