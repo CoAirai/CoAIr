@@ -186,6 +186,13 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                         </div>
                     </div>
 
+                    {report.coverageStatus === "partial" && (
+                        <p className="mt-5 rounded-xl border border-stroke-soft-200 bg-weak-50 p-4 text-label-sm text-sub-600">
+                            Partial source coverage. This report may not include all relevant events or records.
+                            Review the cited documents before relying on its conclusions.
+                        </p>
+                    )}
+
                     <div className="mt-8 grid gap-3">
                         {report.sections.map((section) => (
                             <section

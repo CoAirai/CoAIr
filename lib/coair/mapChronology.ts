@@ -33,6 +33,7 @@ export type CoairReportJob = {
     error?: string;
     result?: {
         entries?: CoairChronologyEntry[];
+        coverage_status?: string;
         evidence?: CoairReportEvidence[];
     };
 };
@@ -117,6 +118,8 @@ export function mapChronologyJob(
         topic: job.title || "",
         createdAt: job.created_at || new Date().toISOString(),
         status: mapReportStatus(job.status),
+        coverageStatus: job.result?.coverage_status === "partial" ? "partial" :
+            job.result?.coverage_status === "complete" ? "complete" : undefined,
         sections,
         sources,
     };

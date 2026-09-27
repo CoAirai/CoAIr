@@ -12,13 +12,14 @@ describe("mapReportStatus", () => {
 
 describe("mapChronologyJob", () => {
     it("shows real API event dates and distinguishes unresolved dates from the overview", () => {
-        const report = mapChronologyJob({job_id: "live", status: "ready", result: {
+        const report = mapChronologyJob({job_id: "live", status: "ready", result: {coverage_status: "partial",
             entries: [
                 {entry_ref: "6.2.1", event_type: "overview", event_date: ""},
                 {entry_ref: "6.2.2", event_type: "event", event_date: "2026-09-12"},
                 {entry_ref: "6.2.3", event_type: "event", event_date: ""},
             ],
         }}, "org");
+        expect(report.coverageStatus).toBe("partial");
         expect(report.sections.map(section => section.heading)).toEqual([
             "6.2.1 · Overview", "6.2.2 · 2026-09-12", "6.2.3 · Date not established",
         ]);

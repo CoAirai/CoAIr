@@ -30,6 +30,7 @@ export type ChronologyReport = {
     parties?: string;
     createdAt: string;
     status: ChronologyStatus;
+    coverageStatus?: "complete" | "partial";
     sections: ChronologySection[];
     sources: ChronologySource[];
 };
