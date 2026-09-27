@@ -1792,6 +1792,7 @@ class QueryRouter:
 
     def _handle_document_query(self, query: str, doc_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Handle document-based query with metadata pre-filter."""
+        original_question = query
         # Jargon replacement for semantic RAG matching. If the user asks for an
         # abbreviation that exists in the jargon dictionary, embed the full
         # meaning rather than running SQL/string search on the raw acronym.
@@ -1889,7 +1890,7 @@ class QueryRouter:
                 logger.debug(f"[DocQuery] scope skipped: {e}")
 
         result = self.document_rag.query(
-            search_topic,
+            original_question,
             top_k=top_k,
             doc_ids=doc_ids if doc_ids else None,
             file_names=filename_hints if filename_hints else None,

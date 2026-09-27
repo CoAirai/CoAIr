@@ -155,7 +155,7 @@ def _claims_are_source_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> b
             source_text = " ".join(by_id[sid] for sid in source_ids)
             text = str(claim.get("text") or "").casefold()
             numbers = re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)
-            if any(number not in source_text for number in numbers):
+            if any(number.rstrip(".,") not in source_text for number in numbers):
                 return False
             quotations = re.findall(r'["“]([^"”]{3,})["”]', str(claim.get("text") or ""))
             if any(quote.casefold().strip() not in source_text for quote in quotations):
@@ -193,6 +193,23 @@ def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
 
 def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
     value = dict(event)
+    # Local structured output may omit precision while supplying a grounded ISO
+    # date and its verbatim source wording. Precision describes that value; it
+    # must not erase an otherwise proven date just because the field defaulted.
+    if str(value.get("date_precision") or "unknown").casefold() in {"unknown", "day"}:
+        date = str(value.get("event_date") or "")
+        for precision, pattern, fmt in (
+            ("exact", r"\d{4}-\d{2}-\d{2}", "%Y-%m-%d"),
+            ("month", r"\d{4}-\d{2}", "%Y-%m"),
+            ("year", r"\d{4}", "%Y"),
+        ):
+            if re.fullmatch(pattern, date):
+                try:
+                    datetime.strptime(date, fmt)
+                except ValueError:
+                    break
+                value["date_precision"] = precision
+                break
     if not _date_proven(value, evidence):
         value.update({
             "event_date": "", "date_precision": "unknown",
@@ -567,6 +584,7 @@ def extract_batches(
     *, load_step: Callable[[str, str], Dict | None] | None = None,
     save_step: Callable[[str, str, str, Dict | None, str], None] | None = None,
     job_scope: str = "", stats: Dict | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> List[Dict]:
     """Extract candidate events from every evidence batch.
 
@@ -601,15 +619,32 @@ def extract_batches(
         if save_step:
             save_step(key, input_hash, "failed", None, error_code)
 
-    def run(batch: List[EvidenceItem], key: str, depth: int = 0) -> None:
-        input_hash = _hash({
+    def batch_hash(batch: List[EvidenceItem]) -> str:
+        return _hash({
             "evidence": [asdict(item) for item in batch],
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
+            "date_normalization": 1,
         })
-        previous = load_step(key, input_hash) if load_step else None
+
+    def cached_branch(batch: List[EvidenceItem], key: str, depth: int = 0):
+        previous = load_step(key, batch_hash(batch)) if load_step else None
         if previous and previous.get("status") == "ready":
-            results.extend((previous.get("output") or {}).get("entries", [])); return
+            return (previous.get("output") or {}).get("entries", [])
+        if load_step and len(batch) > 1 and depth < 8:
+            middle = len(batch) // 2
+            left = cached_branch(batch[:middle], key + "a", depth + 1)
+            right = cached_branch(batch[middle:], key + "b", depth + 1)
+            if left is not None and right is not None:
+                return left + right
+        return None
+
+    def run(batch: List[EvidenceItem], key: str, depth: int = 0) -> None:
+        input_hash = batch_hash(batch)
+        cached = cached_branch(batch, key, depth)
+        if cached is not None:
+            results.extend(cached)
+            return
         if save_step:
             save_step(key, input_hash, "processing", None, "")
         try:
@@ -634,8 +669,12 @@ def extract_batches(
                 # no step key ending in "b" has ever been recorded in
                 # production. run() now only raises for systemic errors, which
                 # should abort the whole run anyway.
+                start = len(results)
+                failed_before = counters["batches_failed"]
                 run(batch[:middle], key + "a", depth + 1)
                 run(batch[middle:], key + "b", depth + 1)
+                if save_step and counters["batches_failed"] == failed_before:
+                    save_step(key, input_hash, "ready", {"entries": results[start:]}, "")
                 return
             fail(batch, key, input_hash, exc)
 
@@ -643,6 +682,8 @@ def extract_batches(
     counters["batches_total"] = len(batches)
     for index, batch in enumerate(batches, 1):
         run(list(batch), f"extract:{index}")
+        if progress_callback:
+            progress_callback(index, len(batches))
     return results
 
 
@@ -753,12 +794,48 @@ def _overview_clusters(events: Sequence[Dict]) -> List[Dict]:
     return result
 
 
+def _local_source_preserving_draft(candidates: Sequence[Dict], evidence: Sequence[EvidenceItem]) -> Dict:
+    """Assemble extracted prose without asking a small model to rewrite facts.
+
+    This is synthesis only, not verification. The caller must still run the
+    independent claim audit before any report can be published.
+    """
+    ordered = sorted(_cluster_events(candidates), key=lambda event: (
+        str(event.get("event_date") or "9999-99-99"), _event_key(event)[1],
+    ))
+    entries = []
+    for event in ordered:
+        value = EventModel.model_validate(event).model_dump()
+        value["claims"] = [claim for claim in value["claims"] if _claims_are_source_valid(
+            {"entries": [{"claims": [claim]}]}, evidence,
+        )]
+        if value["claims"]:
+            entries.append(_enforce_event_date(value, evidence))
+    if not entries:
+        raise ValueError("insufficient_evidence")
+    # A sourced digest spanning the record; every event remains in the body.
+    count = min(MAX_OVERVIEW_CLAIMS, len(entries))
+    positions = [round(i * (len(entries) - 1) / max(1, count - 1)) for i in range(count)]
+    overview = [deepcopy(entries[i]["claims"][0]) for i in positions]
+    return _prune_source_invalid_claims({"overview_claims": overview, "entries": entries}, evidence)
+
+
 def synthesize(
     *, prepared: PreparedChronologyQuery, candidates: Sequence[Dict],
     evidence: Sequence[EvidenceItem], cache_context: str,
     load_step: Callable[[str, str], Dict | None] | None = None,
     save_step: Callable[[str, str, str, Dict | None, str], None] | None = None,
 ) -> Dict:
+    if LOCAL_LLM:
+        # Local extraction already supplies narrative claims and provenance.
+        # Avoid a second generative rewrite, which can corrupt source IDs or
+        # introduce quantities. verify_claims still audits this entire draft.
+        input_hash = _hash({"mode": "local-source-preserving-v1",
+                            "candidates": candidates, "evidence": [asdict(e) for e in evidence]})
+        draft = _local_source_preserving_draft(candidates, evidence)
+        if save_step:
+            save_step("synthesis:local", input_hash, "ready", draft, "")
+        return draft
     prompts = load_chronology_prompts()
     from .llm_client import generate_response_json
     ordered = sorted(_cluster_events(candidates), key=lambda item: (
@@ -887,7 +964,13 @@ def verify_claims(
         claims.append({"claim_ref": f"overview:{index}", **claim})
     for event_index, event in enumerate(chronology.get("entries", [])):
         for claim_index, claim in enumerate(event.get("claims", [])):
-            claims.append({"claim_ref": f"event:{event_index}:{claim_index}", **claim})
+            claims.append({
+                "claim_ref": f"event:{event_index}:{claim_index}", **claim,
+                "event_date": event.get("event_date", ""),
+                "date_precision": event.get("date_precision", "unknown"),
+                "date_source": event.get("date_source", "unresolved"),
+                "date_evidence": event.get("date_evidence", ""),
+            })
     if not claims:
         raise ValueError("insufficient_evidence")
     from .llm_client import generate_response_json

@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { listReports } from "@/lib/coair/reports";
+import { mapChronologyJob } from "@/lib/coair/mapChronology";
+import type { ChronologyReport } from "@/lib/chronology/types";
 import { usePathname, useRouter } from "next/navigation";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
@@ -25,12 +29,42 @@ const RecentQueries = () => {
         workspace?.chronologyReports ?? [],
         activeWorkspaceUserId ?? session?.userId
     );
+    const live = session?.source === "live";
+    const [liveReports, setLiveReports] = useState<ChronologyReport[]>([]);
+    const [reportMessage, setReportMessage] = useState("Loading reports…");
+    useEffect(() => {
+        if (!isChronology || !live || !session?.accessToken || !session.projectId) return;
+        let cancelled = false;
+        let timer: number | undefined;
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const companyId = session.companyId ?? "live";
+        setLiveReports([]);
+        setReportMessage("Loading reports…");
+        const refresh = async () => {
+            try {
+                const data = await listReports(token, projectId, "chronology");
+                if (cancelled) return;
+                setLiveReports((data.reports ?? []).map(job => mapChronologyJob(job, companyId)));
+                setReportMessage("No chronology reports yet");
+            } catch {
+                if (cancelled) return;
+                setReportMessage("Unable to load reports");
+            }
+            if (!cancelled) timer = window.setTimeout(() => void refresh(), 10000);
+        };
+        void refresh();
+        return () => {
+            cancelled = true;
+            if (timer) window.clearTimeout(timer);
+        };
+    }, [isChronology, live, pathname, session?.accessToken, session?.projectId, session?.companyId]);
     const activeChronologyId = pathname.startsWith("/workspace/chronology/")
         ? pathname.split("/workspace/chronology/")[1]
         : null;
 
     if (isChronology) {
-        const reports = chronologyReports;
+        const reports = live ? liveReports : chronologyReports;
         const activeId = activeChronologyId;
         const hrefBase = "/workspace/chronology";
 
@@ -47,7 +81,7 @@ const RecentQueries = () => {
                 <div className="flex flex-col gap-0.5">
                     {reports.length === 0 && (
                         <div className="px-3 py-2 text-label-xs text-soft-400">
-                            No chronology reports yet
+                            {live ? reportMessage : "No chronology reports yet"}
                         </div>
                     )}
                     {reports.map((report) => {
@@ -66,11 +100,11 @@ const RecentQueries = () => {
                                         : ""
                                 }`}
                                 onClick={() => {
-                                    if (report.status === "ready") {
+                                    if (live || report.status === "ready") {
                                         router.push(`${hrefBase}/${report.id}`);
                                     }
                                 }}
-                                disabled={report.status !== "ready"}
+                                disabled={!live && report.status !== "ready"}
                             >
                                 {report.reference}.x · {report.title}
                             </button>

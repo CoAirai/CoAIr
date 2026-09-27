@@ -5,7 +5,10 @@ DuckDB-backed correspondence table for fast SQL queries on notices.
 No external graph database required.
 """
 import json
+import os
 import re
+import tempfile
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple, Set
@@ -132,6 +135,7 @@ class LightGraph:
 
     def _save_graph(self):
         """Persist graph to disk."""
+        temporary = None
         try:
             data = {
                 'nodes': self.graph.nodes,
@@ -142,11 +146,19 @@ class LightGraph:
                     'edge_count': len(self.graph.edges),
                 },
             }
-            with open(GRAPH_FILE, 'w', encoding='utf-8') as f:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                    dir=GRAPH_FILE.parent, prefix='.graph-', suffix='.tmp', delete=False) as f:
+                temporary = Path(f.name)
                 json.dump(data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, GRAPH_FILE)
             logger.info(f"[LightGraph] Saved graph: {len(self.graph.nodes)} nodes, {len(self.graph.edges)} edges")
         except Exception as e:
             logger.error(f"[LightGraph] Error saving graph: {e}")
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def _sync_notices_to_duckdb(self):
         """Create and populate the notices DuckDB table from graph nodes."""
@@ -1599,13 +1611,16 @@ class LightGraph:
 
 # Singleton
 _graph: Optional[LightGraph] = None
+_graph_lock = threading.Lock()
 
 
 def get_light_graph() -> LightGraph:
     """Get or create LightGraph singleton."""
     global _graph
     if _graph is None:
-        _graph = LightGraph()
+        with _graph_lock:
+            if _graph is None:
+                _graph = LightGraph()
     return _graph
 
 

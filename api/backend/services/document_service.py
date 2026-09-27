@@ -178,6 +178,13 @@ class DocumentService:
                     roots.append(candidate)
             except (OSError, ValueError):
                 continue
+        # New uploads use company/project slugs rather than legacy project IDs.
+        # Resolve this project's canonical root, never the whole companies tree.
+        from src.tenant_paths import company_project_root
+        from src.config import DATA_DIR
+        canonical = company_project_root(project_id).resolve()
+        if canonical.is_relative_to((Path(DATA_DIR) / "companies").resolve()):
+            roots.append(canonical)
         return tuple(roots)
 
     @classmethod
@@ -435,7 +442,15 @@ class DocumentService:
                 rec.file_path, rec.file_name, project_id, allow_shared=True,
             )
             if resolved:
-                return self._serve_by_extension(resolved, anchor)
+                content = self._serve_by_extension(resolved, anchor)
+                if content.type == "pdf":
+                    from src.document_review import ReviewStore
+                    review = ReviewStore().get(project_id, rec.doc_id)
+                    if review:
+                        page_text = review.get("pages", {}).get(str(content.page or 1))
+                        if page_text is not None:
+                            content.text = page_text
+                return content
 
         # Extracted spreadsheets live in the catalog rather than the document
         # registry.  Their source paths frequently point to the ingest machine,

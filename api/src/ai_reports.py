@@ -266,7 +266,7 @@ def _claim_supported(claim: VerifiedClaim, evidence_by_id: Dict[str, EvidenceIte
     # Numbers and quoted passages are the highest-risk hallucinations in this
     # domain; every one must occur verbatim in at least one cited excerpt.
     claim_numbers = re.findall(r"(?<![a-z])\d[\d,.%/-]*", claim.text.lower())
-    if any(number not in combined_sources for number in claim_numbers):
+    if any(number.rstrip(".,") not in combined_sources for number in claim_numbers):
         return False
     quoted = re.findall(r"[\"“]([^\"”]{3,})[\"”]", claim.text)
     if any(value.lower().strip() not in combined_sources for value in quoted):
@@ -293,72 +293,99 @@ def _generate_chronology_v2(
         prepare_chronology_query, source_preview, synthesize, verify_claims,
     )
     from .jargon_manager import jargon_dictionary_version
+    from .config import LOCAL_LLM, LLM_MODEL
 
     def stage(name: str, progress: float) -> None:
         if stage_callback:
             stage_callback(name, progress)
 
-    stage("research_plan", .08)
-    if preparation and preparation.get("prepared"):
-        raw = preparation["prepared"]
-        prepared = PreparedChronologyQuery(
-            original_query=str(raw.get("original_query") or topic),
-            english_query=str(raw.get("english_query") or topic),
-            jargon_matches=tuple(tuple(value) for value in raw.get("jargon_matches", [])),
-            parties=tuple(raw.get("parties", parties)), contracts=tuple(raw.get("contracts", [])),
-            work_packages=tuple(raw.get("work_packages", [])),
-            exclusions=tuple(raw.get("exclusions", [])),
-            research_queries=tuple(raw.get("research_queries", [])),
-        )
+    # Freeze this run's selected evidence, keyed by the real project revision.
+    # Otherwise a retry can re-rank passages differently and invalidate every
+    # completed extraction checkpoint even though the source files are unchanged.
+    from .chronology_v2 import _corpus_revision
+    snapshot_hash = hashlib.sha256(json.dumps({
+        "project": project_id, "revision": _corpus_revision(project_id),
+        "topic": topic, "from": date_from, "to": date_to,
+        "parties": list(parties), "documents": list(source_doc_ids),
+        "prompt": chronology_prompt_hash(),
+    }, sort_keys=True).encode()).hexdigest()
+    snapshot = load_step("evidence_pack", snapshot_hash) if load_step else None
+    if snapshot and snapshot.get("status") == "ready":
+        saved = snapshot["output"]
+        prepared = PreparedChronologyQuery(**saved["prepared"])
+        evidence = [EvidenceItem(**item) for item in saved["evidence"]]
+        chosen = saved["chosen"]
+        selection_stats = saved["selection_stats"]
+        event_discovery_audit = saved["event_discovery_audit"]
+        stage("evidence_pack", .2)
     else:
-        prepared = prepare_chronology_query(
-            topic, date_from=date_from, date_to=date_to, parties=parties,
-            project_id=project_id,
-        )
+        stage("research_plan", .08)
+        if preparation and preparation.get("prepared"):
+            raw = preparation["prepared"]
+            prepared = PreparedChronologyQuery(
+                original_query=str(raw.get("original_query") or topic),
+                english_query=str(raw.get("english_query") or topic),
+                jargon_matches=tuple(tuple(value) for value in raw.get("jargon_matches", [])),
+                parties=tuple(raw.get("parties", parties)), contracts=tuple(raw.get("contracts", [])),
+                work_packages=tuple(raw.get("work_packages", [])),
+                exclusions=tuple(raw.get("exclusions", [])),
+                research_queries=tuple(raw.get("research_queries", [])),
+            )
+        else:
+            prepared = prepare_chronology_query(
+                topic, date_from=date_from, date_to=date_to, parties=parties,
+                project_id=project_id,
+            )
 
-    chosen = [str(value) for value in source_doc_ids if str(value).strip()]
-    if not chosen:
-        # source_preview used to run here purely to turn retrieval into a list
-        # of doc_ids, which the pack builder then re-read from disk. The pack
-        # builder now keeps the passages directly, so calling it would mean
-        # paying for the same retrieval twice. It remains the API's preview
-        # endpoint, where showing the analyst the candidate documents is the
-        # whole point.
-        stage("source_selection", .14)
-    stage("evidence_pack", .2)
-    selection_stats: Dict = {}
-    event_discovery_audit: Dict = {}
-    if source_doc_ids:
-        # An explicit selection is the analyst's, not ours: read every document
-        # they chose, however many that is. The budget still applies, shared
-        # evenly so a long document cannot consume the pack and leave the rest
-        # of their choice unread — which is the failure a document *count* limit
-        # was pretending to prevent.
-        picked = evidence_from_documents(project_id, chosen)
-        selection = select_pack(
-            picked, facets=COVERAGE_FACETS,
-            max_document_share=1.0 / max(1, len({item.file_name for item in picked})),
-            relevance_floor=0.0,          # the analyst already judged relevance
-        )
-        evidence = selection.evidence
-        selection_stats = selection.stats
-    else:
-        # Otherwise keep the passages retrieval actually scored, and bound the
-        # pack by text. The previous path threw the scored passages away, kept
-        # only their doc_ids and re-read those fragments whole — which is how a
-        # 240 MB corpus produced a 24,000-character pack.
-        from .chronology_discovery import discover_chronology_evidence
-        discovery = discover_chronology_evidence(
-            project_id=project_id, prepared=prepared, date_from=date_from, date_to=date_to,
-            fallback=lambda queries, doc_ids: retrieve_evidence(
-                project_id, queries, doc_ids=doc_ids,
-            ),
-        )
-        event_discovery_audit = discovery.audit
-        selection = select_pack(discovery.evidence, facets=COVERAGE_FACETS)
-        evidence = selection.evidence
-        selection_stats = selection.stats
-        chosen = sorted({item.doc_id for item in evidence if item.doc_id})
+        chosen = [str(value) for value in source_doc_ids if str(value).strip()]
+        if not chosen:
+            # source_preview used to run here purely to turn retrieval into a list
+            # of doc_ids, which the pack builder then re-read from disk. The pack
+            # builder now keeps the passages directly, so calling it would mean
+            # paying for the same retrieval twice. It remains the API's preview
+            # endpoint, where showing the analyst the candidate documents is the
+            # whole point.
+            stage("source_selection", .14)
+        stage("evidence_pack", .2)
+        selection_stats: Dict = {}
+        event_discovery_audit: Dict = {}
+        if source_doc_ids:
+            # An explicit selection is the analyst's, not ours: read every document
+            # they chose, however many that is. The budget still applies, shared
+            # evenly so a long document cannot consume the pack and leave the rest
+            # of their choice unread — which is the failure a document *count* limit
+            # was pretending to prevent.
+            picked = evidence_from_documents(project_id, chosen)
+            selection = select_pack(
+                picked, facets=COVERAGE_FACETS,
+                max_document_share=1.0 / max(1, len({item.file_name for item in picked})),
+                relevance_floor=0.0,          # the analyst already judged relevance
+            )
+            evidence = selection.evidence
+            selection_stats = selection.stats
+        else:
+            # Otherwise keep the passages retrieval actually scored, and bound the
+            # pack by text. The previous path threw the scored passages away, kept
+            # only their doc_ids and re-read those fragments whole — which is how a
+            # 240 MB corpus produced a 24,000-character pack.
+            from .chronology_discovery import discover_chronology_evidence
+            discovery = discover_chronology_evidence(
+                project_id=project_id, prepared=prepared, date_from=date_from, date_to=date_to,
+                fallback=lambda queries, doc_ids: retrieve_evidence(
+                    project_id, queries, doc_ids=doc_ids,
+                ),
+            )
+            event_discovery_audit = discovery.audit
+            selection = select_pack(discovery.evidence, facets=COVERAGE_FACETS)
+            evidence = selection.evidence
+            selection_stats = selection.stats
+            chosen = sorted({item.doc_id for item in evidence if item.doc_id})
+        if evidence and save_step:
+            save_step("evidence_pack", snapshot_hash, "ready", {
+                "prepared": asdict(prepared), "evidence": [asdict(item) for item in evidence],
+                "chosen": chosen, "selection_stats": selection_stats,
+                "event_discovery_audit": event_discovery_audit,
+            }, "")
     if not evidence:
         raise ValueError("no_evidence")
 
@@ -371,6 +398,7 @@ def _generate_chronology_v2(
     candidates = extract_batches(
         evidence, prepared, load_step=load_step, save_step=save_step,
         job_scope=job_id or f"project:{project_id}", stats=extraction_stats,
+        progress_callback=lambda done, total: stage("evidence_extraction", .3 + .28 * done / max(1, total)),
     )
     if not candidates:
         raise ValueError("insufficient_evidence")
@@ -389,8 +417,9 @@ def _generate_chronology_v2(
         ),
         load_step=load_step, save_step=save_step,
     )
+    stage("verification", .72)
     verification_hash = hashlib.sha256(json.dumps(
-        response, sort_keys=True, ensure_ascii=False,
+        {"draft": response, "date_audit_version": 1}, sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     verification_step = load_step("verification", verification_hash) if load_step else None
     if verification_step and verification_step.get("status") == "ready":
@@ -470,7 +499,7 @@ def _generate_chronology_v2(
                 claims.append(claim)
             else:
                 removed += 1
-        if str(raw.get("date_precision") or "unknown") != "exact" and claims:
+        if raw.get("date_precision") == "inferred" and claims:
             claims[0].is_inference = True
             if not claims[0].inference_basis:
                 claims[0].inference_basis = "The event date is inferred from the cited record"
@@ -518,8 +547,9 @@ def _generate_chronology_v2(
             "synthesized_events": len(response.get("entries", [])),
             "verifier_removed_events": len(response.get("entries", [])) - (len(entries) - 1),
             "issued_events": len(entries) - 1,
+            "synthesis_mode": "source_preserving" if LOCAL_LLM else "generative",
         }, "docx": blob, "research_audit": {"event_discovery": event_discovery_audit},
-        "model": "gemini-3.6-flash", "pipeline_version": PIPELINE_VERSION,
+        "model": LLM_MODEL if LOCAL_LLM else "gemini-3.6-flash", "pipeline_version": PIPELINE_VERSION,
         "prompt_version": PROMPT_VERSION,
         "coverage": pack_coverage,
         "coverage_status": "partial" if final_reasons else "complete",

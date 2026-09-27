@@ -15,6 +15,9 @@ export type CoairReportEvidence = {
 };
 
 export type CoairChronologyEntry = {
+    entry_ref?: string;
+    event_date?: string;
+    event_type?: string;
     date?: string;
     heading?: string;
     title?: string;
@@ -80,8 +83,12 @@ export function mapChronologyJob(
                       heading:
                           entry.heading ||
                           entry.title ||
-                          entry.date ||
-                          `${sequence}.${index + 1}`,
+                          (entry.entry_ref || entry.event_date || entry.event_type
+                              ? `${entry.entry_ref || `${sequence}.${index + 1}`} · ${
+                                    entry.event_type === "overview" ? "Overview" :
+                                    entry.event_date || entry.date || "Date not established"
+                                }`
+                              : entry.date || `${sequence}.${index + 1}`),
                       body:
                           body ||
                           job.error ||
