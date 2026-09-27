@@ -123,7 +123,7 @@ def get_task_profile(task_type: str) -> TaskProfile:
                           max_input_tokens=min(profile.max_input_tokens,
                                                LLM_CONTEXT_TOKENS - output - 1024),
                           thinking_level="minimal", timeout_seconds=max(
-                              600 if key.startswith("chronology_") else 180,
+                              600 if key.startswith("chronology_") or key == "ingestion_event_extract" else 180,
                               profile.timeout_seconds))
     return profile
 

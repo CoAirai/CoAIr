@@ -34,7 +34,7 @@ class LocalChronologyBudgetTests(unittest.TestCase):
         self.assertEqual(result[0]['event_date'], '2011-03-08')
 
     def test_report_timeout_and_context_fit_local_model(self):
-        for task in ('chronology_extract', 'chronology_synthesis', 'chronology_verify'):
+        for task in ('chronology_extract', 'chronology_synthesis', 'chronology_verify', 'ingestion_event_extract'):
             profile = get_task_profile(task)
             self.assertGreaterEqual(profile.timeout_seconds, 600)
             self.assertLess(profile.max_input_tokens + profile.max_output_tokens,
