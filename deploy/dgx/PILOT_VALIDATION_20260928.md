@@ -19,9 +19,12 @@ Qdrant, English Tesseract OCR, BGE embeddings and Qwen3-8B inference.
 - Report `58bcac68189a4c60a83a` completed through extraction, source-preserving
   local synthesis and independent verification. Its downloaded Word file has
   real footnotes and separate events dated 2026-09-12 and 2026-09-14.
-- Fifteen targeted Python regression tests and three frontend mapping tests
+- Fifteen targeted Python regression tests and four frontend mapping/history tests
   passed; the production frontend build passed. Existing unrelated lint warnings
   remain. This is not a claim that the complete repository test suite was run.
+- Chat history reloads from device storage with citations, and the selected
+  authorized project survives browser refresh. The real-archive MUDFA query
+  completed in 30.8 seconds with document citations while the large report ran.
 - API and sign-in respond on the device's LAN address and mDNS hostname. Docker,
   Avahi and Tailscale are enabled; containers use `unless-stopped`. API/web
   container recreation was exercised. An OS power cycle was not performed.
@@ -33,7 +36,7 @@ resolve canonical company/project document paths; write graph files atomically;
 resume split report extraction and freeze evidence across retries; avoid a second
 lossy synthesis on the small local model while retaining independent claim/date
 audits; recover omitted date precision; display real event dates and live report
-history; remove cloud invitation/password-reset instructions from local sign-in.
+history; restore saved conversations and project selection; remove cloud invitation/password-reset instructions from local sign-in.
 Two report workers allow a small trial report alongside a long archive report.
 
 The existing graph was rebuilt from 1,212 saved notices after a truncated JSON

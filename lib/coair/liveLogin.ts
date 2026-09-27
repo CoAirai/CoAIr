@@ -45,7 +45,7 @@ async function readOrg(token: string): Promise<CoairOrgResponse | null> {
     }
 }
 
-async function firstProjectId(token: string): Promise<string | null> {
+async function firstProjectId(token: string, preferredProjectId?: string | null): Promise<string | null> {
     try {
         const payload = await coairFetch<
             CoairProjectsResponse & {
@@ -63,7 +63,8 @@ async function firstProjectId(token: string): Promise<string | null> {
         } catch {
             /* ignore quota */
         }
-        return payload.projects?.[0]?.project_id ?? null;
+        return payload.projects?.find(project => project.project_id === preferredProjectId)?.project_id
+            ?? payload.projects?.[0]?.project_id ?? null;
     } catch (error) {
         if (error instanceof CoairApiError && (error.status === 403 || error.status === 404)) {
             return null;
@@ -174,11 +175,12 @@ async function reportLoginAlert(token: string): Promise<void> {
 export async function sessionFromAccessToken(
     accessToken: string,
     user: CoairUserPayload,
-    impersonator?: string
+    impersonator?: string,
+    preferredProjectId?: string | null
 ): Promise<AuthSession> {
     const [org, projectId] = await Promise.all([
         readOrg(accessToken).catch(() => null),
-        firstProjectId(accessToken).catch(() => null),
+        firstProjectId(accessToken, preferredProjectId).catch(() => null),
     ]);
     hydrateProfilePrefsFromFeatures(user.features ?? null);
     return mapLiveSession({
@@ -192,12 +194,13 @@ export async function sessionFromAccessToken(
 
 export async function sessionFromLiveToken(
     accessToken: string,
-    impersonator?: string
+    impersonator?: string,
+    preferredProjectId?: string | null
 ): Promise<AuthSession> {
     const me = await coairFetch<{ user: CoairUserPayload }>("/auth/me", {
         token: accessToken,
     });
-    return sessionFromAccessToken(accessToken, me.user, impersonator);
+    return sessionFromAccessToken(accessToken, me.user, impersonator, preferredProjectId);
 }
 
 async function loginViaApi(

@@ -143,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         async function adoptToken(token: string, allowRefresh = true) {
             try {
-                const live = await sessionFromLiveToken(token);
+                const live = await sessionFromLiveToken(token, undefined, readStoredSession()?.projectId);
                 if (cancelled) return;
                 if (shouldIgnoreSessionOnThisPortal(live)) {
                     // Keep shared cookies for admin.coair.ai; stay logged-out on login portal.

@@ -6,12 +6,14 @@ import {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from "react";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
+import { listConversations, loadConversation, conversationMessages } from "@/lib/coair/conversations";
 import { mapLiveCitations } from "@/lib/coair/mapCitations";
 import { createConversation, sendLiveChat } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
@@ -119,9 +121,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         null
     );
 
-    useEffect(() => {
-        setLiveConversationId(null);
-    }, [session?.userId, session?.projectId, requestedWorkspaceUserId]);
+    const scope = `${session?.userId}:${session?.projectId}:${requestedWorkspaceUserId}`;
+    const scopeRef = useRef(scope);
+    scopeRef.current = scope;
+    const historyRequest = useRef(0);
 
     const activeWorkspaceUserId = useMemo(() => {
         if (!session?.userId || !session.companyId) return null;
@@ -133,6 +136,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             companyId: session.companyId,
         });
     }, [requestedWorkspaceUserId, session, workspaceUsers]);
+
+    useEffect(() => {
+        setLiveConversationId(null);
+        historyRequest.current += 1;
+        if (session?.source !== "live" || !session.accessToken || !session.projectId || !activeWorkspaceUserId) return;
+        let cancelled = false;
+        setThreadsByUserId(previous => ({ ...previous, [activeWorkspaceUserId]: [] }));
+        setRecentsByUserId(previous => ({ ...previous, [activeWorkspaceUserId]: [] }));
+        setSelectedQueryId(null);
+        setOpenCitation(null);
+        setIsReplying(false);
+        setSendError(null);
+        void listConversations(session.accessToken, session.projectId).then(items => {
+            if (!cancelled) setRecentsByUserId(previous => ({
+                ...previous,
+                [activeWorkspaceUserId]: items.map(item => ({ id: item.conversation_id, title: item.title })),
+            }));
+        }).catch(error => {
+            if (!cancelled) setSendError(error instanceof Error ? error.message : "Unable to load chat history");
+        });
+        return () => { cancelled = true; };
+    }, [session?.source, session?.accessToken, session?.projectId, activeWorkspaceUserId, scope]);
 
     const messages = activeWorkspaceUserId
         ? messagesForUser(threadsByUserId, activeWorkspaceUserId)
@@ -159,6 +184,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const clearChat = useCallback(() => {
         if (!activeWorkspaceUserId) return;
+        setLiveConversationId(null);
+        historyRequest.current += 1;
+        setIsReplying(false);
+        setSendError(null);
         setThreadsByUserId((prev) => ({
             ...prev,
             [activeWorkspaceUserId]: [],
@@ -170,6 +199,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const selectQuery = useCallback(
         (queryId: string) => {
             if (!activeWorkspaceUserId) return;
+            if (session?.source === "live" && session.accessToken && session.projectId) {
+                const request = ++historyRequest.current;
+                const requestedScope = scopeRef.current;
+                setSelectedQueryId(queryId);
+                setOpenCitation(null);
+                setSendError(null);
+                setIsReplying(true);
+                void loadConversation(session.accessToken, session.projectId, queryId).then(conversation => {
+                    if (request !== historyRequest.current || requestedScope !== scopeRef.current) return;
+                    setLiveConversationId(conversation.conversation_id);
+                    setThreadsByUserId(previous => ({
+                        ...previous, [activeWorkspaceUserId]: conversationMessages(conversation, activeWorkspaceUserId),
+                    }));
+                }).catch(error => {
+                    if (request === historyRequest.current && requestedScope === scopeRef.current)
+                        setSendError(error instanceof Error ? error.message : "Unable to open conversation");
+                }).finally(() => {
+                    if (request === historyRequest.current && requestedScope === scopeRef.current) setIsReplying(false);
+                });
+                return;
+            }
             const query = recentsForUser(
                 recentsByUserId,
                 activeWorkspaceUserId
@@ -211,8 +261,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             activeWorkspaceUserId,
             companyDocs,
             recentsByUserId,
-            session?.name,
-            session?.userId,
+            session,
         ]
     );
 
@@ -237,7 +286,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
             const userMessageId = makeId("u");
             const assistantMessageId = makeId("a");
-            const queryId = makeId("q");
+            let queryId = makeId("q");
+            const requestedScope = scopeRef.current;
+            const generationRequest = ++historyRequest.current;
             const now = new Date().toISOString();
 
             // Show the user message immediately; assistant fills in when the API returns.
@@ -274,9 +325,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                             session.projectId,
                             trimmed.slice(0, 80)
                         );
+                        if (requestedScope !== scopeRef.current || generationRequest !== historyRequest.current) return;
                         conversationId = created.conversation_id;
                         setLiveConversationId(conversationId);
                     }
+                    queryId = conversationId;
                     const response = await sendLiveChat({
                         token: session.accessToken!,
                         projectId: session.projectId,
@@ -300,6 +353,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     citations = answer.citations;
                 }
 
+                if (requestedScope !== scopeRef.current || generationRequest !== historyRequest.current) return;
+                if (live) setSelectedQueryId(queryId);
                 setThreadsByUserId((prevThreads) => {
                     const thread = prevThreads[activeWorkspaceUserId] ?? [];
                     const withoutDup = thread.some((m) => m.id === userMessageId)
@@ -332,11 +387,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         [activeWorkspaceUserId]: [
                             {
                                 id: queryId,
-                                title: trimmed,
-                                messages: nextThread.slice(-2),
+                                title: live ? (prevRecents[activeWorkspaceUserId]?.find(item => item.id === queryId)?.title || trimmed) : trimmed,
+                                messages: live ? nextThread : nextThread.slice(-2),
                             },
-                            ...(prevRecents[activeWorkspaceUserId] ?? []),
-                        ].slice(0, 8),
+                            ...(prevRecents[activeWorkspaceUserId] ?? []).filter(item => !live || item.id !== queryId),
+                        ].slice(0, live ? 100 : 8),
                     }));
                     return {
                         ...prevThreads,
@@ -344,13 +399,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     };
                 });
             } catch (error) {
+                if (requestedScope !== scopeRef.current || generationRequest !== historyRequest.current) return;
                 setSendError(
                     error instanceof Error
                         ? error.message
                         : "Chat request failed"
                 );
             } finally {
-                setIsReplying(false);
+                if (requestedScope === scopeRef.current && generationRequest === historyRequest.current) setIsReplying(false);
             }
         },
         [
