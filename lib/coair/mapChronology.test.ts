@@ -24,6 +24,18 @@ describe("mapChronologyJob", () => {
             "6.2.1 · Overview", "6.2.2 · 2026-09-12", "6.2.3 · Date not established",
         ]);
     });
+    it("never fills an unknown event date from generic or system dates", () => {
+        const report = mapChronologyJob({job_id: "dates", created_at: "2026-09-28", result: {
+            entries: [
+                {event_date: "", date: "2026-09-28", title: "Uploaded 2026-09-28"},
+                {event_date: "2026-09-28", date_source: "uploaded_at"},
+                {event_date: "2007-04", date_source: "content_body", date: "2026-09-28"},
+            ],
+        }}, "org");
+        expect(report.sections.map(s => s.heading)).toEqual([
+            "1.1 · Date not established", "1.2 · Date not established", "1.3 · 2007-04",
+        ]);
+    });
     it("turns API entries and evidence into the report UI shape", () => {
         const report = mapChronologyJob(
             {
@@ -58,7 +70,7 @@ describe("mapChronologyJob", () => {
         );
         expect(report.id).toBe("job-1");
         expect(report.reference).toBe("21");
-        expect(report.sections[0].heading).toBe("2026-01-12");
+        expect(report.sections[0].heading).toBe("21.1 · Date not established");
         expect(report.sections[0].body).toContain("Notice issued.");
         expect(report.sections[0].body).toContain("[src_ab]");
         expect(report.sources[0]).toMatchObject({

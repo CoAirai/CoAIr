@@ -186,9 +186,9 @@ def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
         str(source_id) for claim in event.get("claims", [])
         for source_id in claim.get("source_ids", [])
     }
-    return date_evidence.casefold() in " ".join(
-        by_id.get(source_id, "") for source_id in source_ids
-    )
+    from .chronology_dates import event_date_is_grounded
+    return event_date_is_grounded(event_date, precision, date_source, date_evidence,
+                                  [by_id.get(sid, "") for sid in source_ids])
 
 
 def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
@@ -211,10 +211,24 @@ def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
                 value["date_precision"] = precision
                 break
     if not _date_proven(value, evidence):
-        value.update({
-            "event_date": "", "date_precision": "unknown",
-            "date_source": "unresolved", "date_evidence": "",
-        })
+        # Preserve a proven month/year instead of inventing its first/last day.
+        original = str(value.get("event_date") or "")
+        try:
+            datetime.strptime(original, {10: "%Y-%m-%d", 7: "%Y-%m", 4: "%Y"}[len(original)])
+        except (ValueError, KeyError):
+            original = ""
+        for precision, length in (("month", 7), ("year", 4)):
+            if len(original) <= length:
+                continue
+            reduced = {**value, "event_date": original[:length], "date_precision": precision}
+            if _date_proven(reduced, evidence):
+                value = reduced
+                break
+        else:
+            value.update({
+                "event_date": "", "date_precision": "unknown",
+                "date_source": "unresolved", "date_evidence": "",
+            })
     elif not value.get("event_date"):
         value.update({
             "date_precision": "unknown", "date_source": "unresolved",
@@ -636,7 +650,7 @@ def extract_batches(
             "evidence": [asdict(item) for item in batch],
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
-            "date_normalization": 1,
+            "date_normalization": 2,
         })
 
     def cached_branch(batch: List[EvidenceItem], key: str, depth: int = 0):

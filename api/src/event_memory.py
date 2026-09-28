@@ -393,6 +393,10 @@ def validate_draft(draft: ObservationDraft, window: CandidateWindow,
                         and item.normalized == normalized_date]
             if not matching:
                 return None, "date_not_deterministically_proven"
+            from .chronology_dates import event_date_is_grounded
+            if not event_date_is_grounded(normalized_date, draft.date_precision,
+                                          "content_body", date_quote, [window.text]):
+                return None, "system_or_ungrounded_event_date"
             absolute_start, absolute_end = window.start + draft.date_start, window.start + draft.date_end
             date_hash = hashlib.sha256(date_quote.encode()).hexdigest()
             date = {

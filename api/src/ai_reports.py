@@ -425,7 +425,7 @@ def _generate_chronology_v2(
     )
     stage("verification", .72)
     verification_hash = hashlib.sha256(json.dumps(
-        {"draft": response, "date_audit_version": 1}, sort_keys=True, ensure_ascii=False,
+        {"draft": response, "date_audit_version": 2}, sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     verification_step = load_step("verification", verification_hash) if load_step else None
     if verification_step and verification_step.get("status") == "ready":

@@ -23,7 +23,7 @@ from .report_errors import classify_report_error
 
 
 PIPELINE_VERSION = "chronology-v3"
-PIPELINE_CONTRACT_REVISION = "evidence-led-narrative-v2"
+PIPELINE_CONTRACT_REVISION = "event-date-provenance-v3"
 from .config import LOCAL_LLM
 
 EVIDENCE_BATCH_CHARS = 24_000 if LOCAL_LLM else 80_000
@@ -595,7 +595,9 @@ def _events_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> bool:
             if not pattern or not re.fullmatch(pattern, event_date):
                 return False
             source_text = " ".join(by_id[source_id] for source_id in ids)
-            if not date_evidence or date_evidence.casefold() not in source_text:
+            from .chronology_dates import event_date_is_grounded
+            if not event_date_is_grounded(event_date, precision, date_source, date_evidence,
+                                          [by_id[sid] for sid in ids]):
                 return False
         source_text = " ".join(by_id[source_id] for source_id in ids)
         prose = " ".join(str(event.get(key) or "") for key in (
@@ -756,7 +758,7 @@ def _style_valid(value: Dict) -> bool:
     entries = list(value.get("entries", []))
     if not entries:
         return False
-    dates = [str(event.get("event_date") or "") for event in entries]
+    dates = [str(event.get("event_date") or "9999-99-99") for event in entries]
     if dates != sorted(dates):
         return False
     for event in entries:
@@ -775,13 +777,20 @@ def _final_valid(
     by_id = {item.source_id: item.excerpt.casefold() for item in evidence}
     events = list(value.get("entries", []))
     for event in events:
-        if event.get("date_source") not in ALLOWED_DATE_SOURCES - {"unresolved"}:
+        if event.get("date_source") not in ALLOWED_DATE_SOURCES:
             return False
+        if event.get("date_source") == "unresolved":
+            if event.get("event_date") or event.get("date_evidence"):
+                return False
+            continue
         date_evidence = str(event.get("date_evidence") or "")
         ids = [str(source_id) for claim in event.get("claims", [])
                for source_id in claim.get("source_ids", [])]
         source_text = " ".join(by_id.get(source_id, "") for source_id in ids)
-        if not date_evidence or date_evidence.casefold() not in source_text:
+        from .chronology_dates import event_date_is_grounded
+        if not event_date_is_grounded(event.get("event_date"), event.get("date_precision", "exact"),
+                                      event.get("date_source"), date_evidence,
+                                      [by_id.get(sid, "") for sid in ids]):
             return False
     claim_groups = [{"claims": value.get("overview_claims", [])}, *events]
     for group in claim_groups:
