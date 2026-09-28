@@ -43,5 +43,12 @@ short-year or OCR-damaged dates require manual review; clearing a date does not
 mean the event is false. Existing claims were retained, not independently re-audited
 in this date-only pass. Both fictional pilot reports needed no date changes.
 
-Validation: 27 targeted backend tests, including seven event-date separation
-cases. Frontend tests additionally reject generic/system-date fallbacks.
+Dates are revalidated against surviving claims after independent verification,
+then entries are sorted and numbered again with undated events last.
+
+Validation: 28 targeted backend tests, including eight event-date separation
+cases, and five frontend tests. The DGX local-model acceptance run used a fictional
+record dated 20 September 2010, uploaded in September 2026. Approval and completion
+events correctly retained 12 and 14 April 2007; no upload date became an event date.
+The model also included the explicitly sourced record-preparation event on
+20 September 2010, which was checked separately. The Word export was validated.

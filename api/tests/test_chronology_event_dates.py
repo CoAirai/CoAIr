@@ -40,6 +40,21 @@ class EventDateSeparationTests(unittest.TestCase):
         result=_enforce_event_date(event,[EvidenceItem(source_id='s',doc_id='d',file_name='d.pdf',excerpt='Works began in April 2007.')])
         self.assertEqual((result['event_date'],result['date_precision']),('2007-04','month'))
 
+    def test_removed_claim_cannot_supply_surviving_event_date(self):
+        evidence = [
+            EvidenceItem(source_id='a', doc_id='a', file_name='a.pdf', excerpt='Inspection on 12 April 2007.'),
+            EvidenceItem(source_id='b', doc_id='b', file_name='b.pdf', excerpt='Inspection completed; date unknown.'),
+        ]
+        event = {'event_date': '2007-04-12', 'date_precision': 'exact',
+                 'date_source': 'content_body', 'date_evidence': '12 April 2007',
+                 'claims': [{'text': 'Inspection scheduled.', 'source_ids': ['a']},
+                            {'text': 'Inspection completed.', 'source_ids': ['b']}]}
+        self.assertEqual(_enforce_event_date(event, evidence)['event_date'], '2007-04-12')
+        surviving = {**event, 'claims': event['claims'][1:]}
+        result = _enforce_event_date(surviving, evidence)
+        self.assertEqual(result['event_date'], '')
+        self.assertEqual(result['claims'], surviving['claims'])
+
     def test_v3_rejects_mismatched_date_and_retains_undated_events(self):
         from src.chronology_v3 import _events_valid, _final_valid
         evidence=[EvidenceItem(source_id='s',doc_id='d',file_name='d.pdf',excerpt='Alice completed inspection on 12 April 2007.')]

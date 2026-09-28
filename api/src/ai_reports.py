@@ -295,7 +295,7 @@ def _generate_chronology_v2(
     from .chronology_prompts import chronology_prompt_hash
     from .chronology_v2 import (
         COVERAGE_FACETS, PIPELINE_VERSION, PreparedChronologyQuery, coverage_matrix,
-        aggregate_candidates, evidence_from_documents, extract_batches,
+        aggregate_candidates, evidence_from_documents, extract_batches, _enforce_event_date,
         prepare_chronology_query, source_preview, synthesize, verify_claims,
     )
     from .jargon_manager import jargon_dictionary_version
@@ -511,17 +511,22 @@ def _generate_chronology_v2(
                 claims[0].inference_basis = "The event date is inferred from the cited record"
         if not claims:
             continue
+        # A rejected claim may have supplied the only evidence for this date.
+        dated = _enforce_event_date({**raw, "claims": [asdict(c) for c in claims]}, evidence)
         entries.append(ChronologyEntry(
-            entry_ref=f"6.{issue_number}.{index}", event_date=str(raw.get("event_date") or ""),
-            date_precision=str(raw.get("date_precision") or "unknown"), claims=claims,
-            date_source=str(raw.get("date_source") or "unresolved"),
-            date_evidence=str(raw.get("date_evidence") or ""),
+            entry_ref=f"6.{issue_number}.{index}", event_date=str(dated.get("event_date") or ""),
+            date_precision=str(dated.get("date_precision") or "unknown"), claims=claims,
+            date_source=str(dated.get("date_source") or "unresolved"),
+            date_evidence=str(dated.get("date_evidence") or ""),
             parties=[str(x) for x in raw.get("parties", [])],
             event_type=str(raw.get("event_type") or "event"),
             conflicting_positions=[str(x) for x in raw.get("conflicting_positions", [])],
         ))
     if len(entries) < 2:
         raise ValueError("insufficient_evidence")
+    entries[1:] = sorted(entries[1:], key=lambda entry: entry.event_date or "9999-99-99")
+    for index, entry in enumerate(entries, 1):
+        entry.entry_ref = f"6.{issue_number}.{index}"
     blob, audit = build_ai_chronology_docx(
         project_name=project_name, issue_number=issue_number, title=topic,
         entries=entries, evidence=evidence, audit_metadata=None,
