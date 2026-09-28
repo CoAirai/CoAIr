@@ -1,7 +1,8 @@
 # CoAIr Local — device trial
 
 1. Turn on the device and connect it to the same network as your computer.
-2. Allow the services to start. Open **http://spark-9631.local:8080** in your browser.
+2. Allow several minutes for the local model and services to start. Open
+   **http://spark-9631.local:8080** in your browser.
    On the currently configured network, **http://192.168.1.57:8080** is the fallback.
    The IP address can change on a different network. The device also has a
    **CoAIr Local** application shortcut.
