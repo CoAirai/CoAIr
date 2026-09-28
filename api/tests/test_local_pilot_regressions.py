@@ -3,6 +3,19 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 class PilotRegressions(unittest.TestCase):
+    def test_contract_acronym_cannot_be_attached_to_an_unrelated_dated_source(self):
+        from src.ai_reports import _claim_supported
+        from src.evidence_model import EvidenceItem, VerifiedClaim
+        claim = VerifiedClaim(text='The MUDFA contract was signed on 14 May 2008.', source_ids=['s'])
+        source = EvidenceItem(source_id='s', doc_id='d', file_name='audit.pdf',
+                              excerpt='Review of events between Contract Signature on 14 May 2008 and March 2010.')
+        self.assertFalse(_claim_supported(claim, {'s': source}))
+        from dataclasses import replace
+        source = replace(source, excerpt='The mudfa contract was signed on 14 May 2008.')
+        self.assertTrue(_claim_supported(claim, {'s': source}))
+        source = replace(source, excerpt='The MUDFA2 contract was signed on 14 May 2008.')
+        self.assertFalse(_claim_supported(claim, {'s': source}))
+
     def test_full_question_reaches_document_answerer(self):
         from src.router import QueryRouter
         router=QueryRouter.__new__(QueryRouter)

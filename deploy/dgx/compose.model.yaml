@@ -9,8 +9,13 @@ services:
     environment:
       VLLM_API_KEY: ${LLM_API_KEY:?Run setup first}
       HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      VLLM_NO_USAGE_STATS: '1'
+      DO_NOT_TRACK: '1'
     volumes:
       - ${MODEL_DIRECTORY:?Path to downloaded Qwen3-8B}:/models/qwen:ro
+      - llm-cache:/root/.cache/vllm
     command:
       - --model
       - /models/qwen
@@ -37,3 +42,6 @@ services:
       MODEL_UPSTREAM: http://llm:8000
     depends_on: [llm]
     networks: !override [service]
+
+volumes:
+  llm-cache:

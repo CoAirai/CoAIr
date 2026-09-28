@@ -263,6 +263,12 @@ def _claim_supported(claim: VerifiedClaim, evidence_by_id: Dict[str, EvidenceIte
     for sid in claim.source_ids:
         source_words.update(re.findall(r"[a-z0-9]{4,}", evidence_by_id[sid].excerpt.lower()))
     combined_sources = " ".join(evidence_by_id[sid].excerpt for sid in claim.source_ids).lower()
+    # A matching date must not let the model attach a different contract or
+    # organisation to the source. Require literal evidence for named acronyms.
+    acronyms = re.findall(r"\b[A-Z][A-Z0-9]{2,}\b", claim.text)
+    if any(not re.search(r"\b" + re.escape(name.lower()) + r"\b", combined_sources)
+           for name in acronyms):
+        return False
     # Numbers and quoted passages are the highest-risk hallucinations in this
     # domain; every one must occur verbatim in at least one cited excerpt.
     claim_numbers = re.findall(r"(?<![a-z])\d[\d,.%/-]*", claim.text.lower())

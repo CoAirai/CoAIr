@@ -19,12 +19,17 @@ Qdrant, English Tesseract OCR, BGE embeddings and Qwen3-8B inference.
 - Report `58bcac68189a4c60a83a` completed through extraction, source-preserving
   local synthesis and independent verification. Its downloaded Word file has
   real footnotes and separate events dated 2026-09-12 and 2026-09-14.
-- Fifteen targeted Python regression tests and four frontend mapping/history tests
+- Sixteen targeted Python regression tests and four frontend mapping/history tests
   passed; the production frontend build passed. Existing unrelated lint warnings
   remain. This is not a claim that the complete repository test suite was run.
 - Chat history reloads from device storage with citations, and the selected
   authorized project survives browser refresh. The real-archive MUDFA query
   completed in 30.8 seconds with document citations while the large report ran.
+- The existing Qwen service was recreated with `HF_HUB_OFFLINE=1`,
+  `TRANSFORMERS_OFFLINE=1` and telemetry disabled. All five weight shards were
+  available locally. A fresh, uncached application question after restart
+  correctly returned Robert Hayes, 14 September 2026 and no defects with a
+  source citation (17.1 seconds). The completed MUDFA Word file survived.
 - API and sign-in respond on the device's LAN address and mDNS hostname. Docker,
   Avahi and Tailscale are enabled; containers use `unless-stopped`. API/web
   container recreation was exercised. An OS power cycle was not performed.
@@ -45,10 +50,21 @@ file is retained on the device as a recovery backup.
 
 ## Scope and remaining checks
 
-The full MUDFA report `2a17355ae703406baa5e` is a separate long-running acceptance
-case. Its current status must be checked before presenting it as completed.
-The fictional pilot report is not a substitute for that report or an Edinburgh
-project finding. Large chronologies can take substantially longer than chat.
+MUDFA report `2a17355ae703406baa5e` completed its 22 extraction batches and
+144 verification batches. Final source review found a false contract attribution
+that the model verifier had accepted. A regression-tested literal acronym check
+now rejects claims naming contracts/organisations absent from their cited
+excerpts. Applying the same check to this report removed 20 additional claims;
+the original result remains on the device as a recovery copy.
+
+The final Word file has 144 entries including the overview, 95 dated entries,
+301 claims/footnotes and 72 cited source IDs, with no unresolved footnotes. It is
+52,039 bytes. The report explicitly remains **partial coverage**: the frozen
+research snapshot had queued/processing/partial/failed master-event indexing and
+no master-event/counter-evidence hits. This does not mean OCR/vector ingestion
+failed. Do not describe this report as an exhaustive chronology of the archive.
+Large chronologies can take hours; the fictional pilot report is a separate
+short acceptance example, not an Edinburgh project finding.
 
 Metadata samples the first 24,000 characters of long documents; all extracted
 pages are indexed. OCR and generated answers still require source review.

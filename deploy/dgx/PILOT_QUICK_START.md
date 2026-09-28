@@ -14,7 +14,9 @@
    corrections and wait for reindexing before asking questions about them.
 7. Open **Chronology** to read a completed report, download its Word file, or
    generate a new report from a topic and selected project documents.
-   Large reports run in the background; **Generating** does not mean complete.
+   A completed **MUDFA utility diversion delays** report is available in Edinburgh
+   Test. Its partial-coverage notice means it is not an exhaustive archive review.
+   Large reports can take hours and run in the background; **Generating** does not mean complete.
 
 The interface and generated answers are in English. Documents, PostgreSQL,
 Qdrant vectors, OCR, embeddings and inference are hosted on the device. Internet
