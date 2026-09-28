@@ -285,6 +285,18 @@ def _corpus_revision(project_id: str, doc_ids: Sequence[str] = ()) -> str:
         digest = hashlib.sha256()
         for row in rows:
             digest.update("|".join(str(v or "") for v in row).encode("utf-8"))
+        # A metadata-only review can change document selection even when the
+        # OCR text is identical. Do not reuse an older research/evidence pack.
+        scope = "project_id=?"
+        params = [project_id]
+        if doc_ids:
+            scope += f" AND doc_id IN ({','.join('?' for _ in doc_ids)})"
+            params.extend(doc_ids)
+        metadata_rows = con.execute(
+            "SELECT doc_id,search_text,metadata_date_source,ocr_quality,content_hash "
+            f"FROM document_index WHERE {scope} ORDER BY doc_id", params,
+        ).fetchall()
+        digest.update(json.dumps(metadata_rows, ensure_ascii=False).encode("utf-8"))
         return digest.hexdigest()
     except Exception:
         return hashlib.sha256(project_id.encode()).hexdigest()

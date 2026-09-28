@@ -560,10 +560,22 @@ def _persist_document_metadata(project_id: str, version: Mapping, batch: Observa
     summary = batch.document_summary.strip()
     topics = [value.strip() for value in batch.document_topics if value.strip()]
     doc_id = str(version["doc_id"])
+    from .config import LOCAL_LLM
+    reviewed = {}
+    if LOCAL_LLM:
+        from .document_review import ReviewStore
+        review = ReviewStore().get(project_id, doc_id)
+        if review and review["version"] > 0:
+            reviewed = review.get("metadata") or {}
+    # Human corrections (including explicit blanks/removals) take precedence
+    # over the asynchronous event worker's separate metadata extraction.
+    if "summary" in reviewed:
+        summary = str(reviewed["summary"] or "")
     try:
         from .document_registry import get_document_registry
         get_document_registry().set_llm_enrichment(
-            doc_id, summary=summary or None, topics=topics or None,
+            doc_id, summary=summary if "summary" in reviewed else summary or None,
+            topics=topics or None,
         )
     except Exception:
         pass
@@ -573,13 +585,22 @@ def _persist_document_metadata(project_id: str, version: Mapping, batch: Observa
         index = get_document_index()
         record = next((item for item in index.list_project(project_id) if item.doc_id == doc_id), None)
         if record:
+            parties = list(dict.fromkeys([*record.parties, *batch.document_parties]))
+            if "people" in reviewed or "organizations" in reviewed:
+                parties = []
+                for key in ("people", "organizations", "sender", "recipient"):
+                    values = reviewed.get(key) or []
+                    if isinstance(values, str):
+                        values = values.splitlines()
+                    parties.extend(str(value).strip() for value in values if str(value).strip())
+                parties = list(dict.fromkeys(parties))
             index.upsert(replace(
                 record,
-                description=summary or record.description,
-                title=batch.document_title.strip() or record.title,
+                description=summary if "summary" in reviewed else summary or record.description,
+                title=reviewed.get("title", batch.document_title.strip() or record.title),
                 reference=batch.document_reference.strip() or record.reference,
-                document_family=batch.document_type.strip().casefold() or record.document_family,
-                parties=list(dict.fromkeys([*record.parties, *batch.document_parties])),
+                document_family=reviewed.get("doc_type", batch.document_type.strip().casefold() or record.document_family),
+                parties=parties,
                 topics=list(dict.fromkeys([*record.topics, *topics])),
             ))
     except Exception:
