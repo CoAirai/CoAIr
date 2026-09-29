@@ -1,0 +1,8 @@
+# Explicit opt-in. Development compose continues to work without protection keys.
+services:
+  api:
+    image: coair-api:dgx-protected-pilot
+    volumes:
+      - ./protection-secrets/device.key:/run/secrets/coair-protection.key:ro
+      - ./protection-secrets/license.json:/run/secrets/coair-license.json:ro
+      - /etc/machine-id:/run/coair-machine-id:ro

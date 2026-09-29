@@ -74,3 +74,6 @@ deploy/dgx/.env
 deploy/dgx/inbox/
 
 deploy/dgx/embedding-model/
+# Protected DGX runtime secrets and local build products
+deploy/dgx/protection-secrets/
+deploy/dgx/protection/build/
