@@ -38,8 +38,8 @@ services:
       # Versioned runtime policy. Keep these outside the persistent server env
       # so an older MAX_LLM_CALLS value cannot silently disable the rollout.
       - GEMINI_MODEL=gemini-3.6-flash
-      - GEMINI_MODEL_LITE=gemini-2.5-flash-lite
-      - GEMINI_INGESTION_MODEL=gemini-2.5-flash-lite
+      - GEMINI_MODEL_LITE=gemini-3.5-flash-lite
+      - GEMINI_INGESTION_MODEL=gemini-3.5-flash-lite
       # Document and query vectors use the same local 768d BGE model. This is
       # both cheaper and required for compatibility with the existing corpus.
       - EMBEDDING_PROVIDER=fastembed

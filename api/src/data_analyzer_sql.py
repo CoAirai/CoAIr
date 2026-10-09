@@ -1015,6 +1015,18 @@ class DataAnalyzerSQL:
                 logger.warning(f"   Normal read failed: {e1}, trying with dtype=str")
                 df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_row, dtype=str)
 
+            # sheet_name=None → pandas returns {sheet: DataFrame}; load each sheet.
+            if isinstance(df, dict):
+                loaded_any = False
+                for name, sheet_df in df.items():
+                    if sheet_df is None or getattr(sheet_df, "empty", True):
+                        continue
+                    ok = self.load_excel(file_path, sheet_name=str(name))
+                    loaded_any = loaded_any or ok
+                if not loaded_any:
+                    logger.error("   Empty workbook after reading all sheets")
+                return loaded_any
+
             if df is None or df.empty:
                 logger.error("   Empty DataFrame after reading")
                 return False

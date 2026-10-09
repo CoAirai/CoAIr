@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS provider_key_registry (
 CREATE INDEX IF NOT EXISTS idx_provider_key_registry_status
     ON provider_key_registry(status, created_at);
 
+-- Backend-only; deny PostgREST anon/authenticated (service_role still works).
+ALTER TABLE provider_key_registry ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE organizations
     ADD COLUMN IF NOT EXISTS provider_key_ref TEXT NOT NULL DEFAULT '';
 

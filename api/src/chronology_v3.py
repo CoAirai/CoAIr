@@ -612,9 +612,11 @@ def extract_events(
     load_step: Callable[[str, str], Dict | None] | None = None,
     save_step: Callable[[str, str, str, Dict | None, str], None] | None = None,
     job_scope: str = "",
+    skipped_slices: Optional[List[str]] = None,
 ) -> List[Dict]:
     prompts = load_chronology_v3_prompts(); results: List[Dict] = []
     from .llm_client import generate_response_json
+    from .logger import logger
 
     def run(batch: List[EvidenceItem], key: str, depth: int = 0) -> None:
         input_hash = _hash({
@@ -657,7 +659,15 @@ def extract_events(
                 )
             if not _is_structured_output_error(exc):
                 raise
-            raise RuntimeError(classify_report_error(exc)) from exc
+            # A single passage that still fails after the batch is split must not
+            # discard events already extracted from the other passages.
+            if skipped_slices is not None:
+                skipped_slices.append(key)
+            logger.warning(
+                "[Chronology] skipped evidence slice %s after %s",
+                key, classify_report_error(exc),
+            )
+            return
 
     for index, batch in enumerate(_batches(evidence), 1):
         run(list(batch), f"extract:{index}")
@@ -1238,10 +1248,14 @@ def generate_chronology_v3(
         }, "")
     stage("evidence_pack", .25)
     stage("extraction", .36)
+    skipped_slices: List[str] = []
     events = extract_events(
         evidence, prepared, map_skeleton=research_audit.get("map_skeleton", []),
         load_step=load_step, save_step=save_step, job_scope=job_id or project_id,
+        skipped_slices=skipped_slices,
     )
+    if skipped_slices:
+        research_audit.setdefault("warnings", []).append("extraction_slice_skipped")
     if not events:
         raise ValueError("insufficient_evidence")
     stage("coverage_review", .54)

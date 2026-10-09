@@ -216,6 +216,7 @@ class DocumentRegistry:
             rec = self._records.get(doc_id)
             if rec:
                 rec.status = "completed"
+                rec.error = None
                 rec.completed_at = datetime.now().isoformat()
                 rec.table_names = table_names or []
                 rec.notice_extracted = notice_extracted

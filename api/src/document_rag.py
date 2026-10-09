@@ -663,14 +663,29 @@ class DocumentRAG:
         return documents
 
     def parse_txt(self, file_path: str) -> List[Document]:
-        """Parse text file into documents."""
+        """Parse text file into documents.
+
+        Many construction exports are Windows-1252 (curly quotes as 0x92, etc.).
+        Strict UTF-8 used to fail the whole inject with a blank "Unknown error".
+        """
         documents = []
         path = Path(file_path)
         file_name = path.name
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read().strip()
+            raw = Path(file_path).read_bytes()
+            text = ""
+            used = "utf-8"
+            for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+                try:
+                    text = raw.decode(encoding).strip()
+                    used = encoding
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if not text and raw:
+                text = raw.decode("utf-8", errors="replace").strip()
+                used = "utf-8/replace"
 
             if text:
                 documents.append(Document(
@@ -682,9 +697,10 @@ class DocumentRAG:
                         "page_number": 1,
                         "total_pages": 1,
                         "doc_id": generate_doc_id(file_path),
+                        "text_encoding": used,
                     },
                 ))
-            logger.info(f"   Parsed TXT: {len(text)} characters")
+            logger.info(f"   Parsed TXT: {len(text)} characters ({used})")
 
         except Exception as e:
             logger.error(f"   Error parsing TXT: {e}")

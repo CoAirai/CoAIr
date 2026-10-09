@@ -353,8 +353,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     ) {
                         toasts.push({
                             message:
-                                updated.error ||
-                                `Failed to inject ${transfer.name}`,
+                                updated.error &&
+                                updated.error.toLowerCase() !== "unknown error"
+                                    ? `Failed to inject ${transfer.name}: ${updated.error}`
+                                    : `Failed to inject ${transfer.name}`,
                             tone: "error",
                         });
                     }
@@ -395,9 +397,33 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 const jobs = await listIndexingStatus(token, projectId);
                 if (cancelled) return;
                 applyIndexingJobs(jobs);
-                const stillBusy = jobs.some(
-                    (job) => !INDEXING_DONE.has((job.status || "").toLowerCase())
+                const activeNames = new Set(
+                    fileTransfers
+                        .filter(
+                            (t) =>
+                                t.phase === "injecting" || t.phase === "uploading"
+                        )
+                        .map((t) => t.name.toLowerCase())
                 );
+                const activeIds = new Set(
+                    fileTransfers
+                        .map((t) => t.fileId)
+                        .filter(Boolean) as string[]
+                );
+                const watched = jobs.filter(
+                    (job) =>
+                        activeIds.has(job.file_id) ||
+                        activeNames.has((job.filename || "").toLowerCase())
+                );
+                const stillBusy =
+                    watched.length === 0
+                        ? false
+                        : watched.some(
+                              (job) =>
+                                  !INDEXING_DONE.has(
+                                      (job.status || "").toLowerCase()
+                                  )
+                          );
                 if (!stillBusy) {
                     await refreshLibrary();
                 }
@@ -417,6 +443,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     }, [
         applyIndexingJobs,
         enabled,
+        fileTransfers,
         hasActiveTransfers,
         refreshLibrary,
         session?.accessToken,

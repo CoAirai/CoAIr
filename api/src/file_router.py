@@ -390,6 +390,15 @@ def _process_document(
                         analyzer.load_from_catalog()
                 except Exception as e:
                     logger.warning(f"[FileRouter] PDF table extraction error: {e}")
+        else:
+            # add_document returned []/None — always surface a reason (UI used to
+            # show only "Unknown error" when result.error stayed empty).
+            ext = Path(file_path).suffix.lower()
+            result.error = (
+                f"No readable text extracted from {ext or 'file'} "
+                f"(unsupported encoding, empty file, or parse failure)"
+            )
+            logger.error(f"[FileRouter] {filename}: {result.error}")
 
     except Exception as e:
         result.error = str(e)
@@ -773,9 +782,16 @@ def _process_data_file(
                 result.tables_extracted = 1
                 logger.info(f"[FileRouter] Data file loaded directly: {filename}")
             else:
-                result.error = "No tables extracted and direct load failed"
+                result.error = _excel_load_failure_reason(file_path) or (
+                    "No tables extracted and direct load failed"
+                )
     except Exception as e:
-        # Last resort: direct load
+        encrypted = _is_encrypted_workbook_error(e)
+        # Last resort: direct load (skip when workbook is password-protected)
+        if encrypted:
+            result.error = "Workbook is password-protected (encrypted)"
+            logger.warning(f"[FileRouter] Encrypted workbook skipped: {filename}")
+            return result
         try:
             analyzer = get_data_analyzer()
             if analyzer.load_file(file_path):
@@ -783,12 +799,35 @@ def _process_data_file(
                 result.tables_extracted = 1
                 logger.info(f"[FileRouter] Data file loaded directly (after error): {filename}")
             else:
-                result.error = str(e)
+                result.error = _excel_load_failure_reason(file_path) or str(e)
         except Exception as e2:
-            result.error = str(e2)
-            logger.error(f"[FileRouter] Data file processing failed: {e2}")
+            result.error = (
+                "Workbook is password-protected (encrypted)"
+                if _is_encrypted_workbook_error(e2)
+                else str(e2)
+            )
+            logger.error(f"[FileRouter] Data file processing failed: {result.error}")
 
     return result
+
+
+def _is_encrypted_workbook_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "encrypted" in msg or "password" in msg
+
+
+def _excel_load_failure_reason(file_path: str) -> Optional[str]:
+    """Best-effort human reason when Excel extract + DuckDB load both fail."""
+    try:
+        import pandas as pd
+        xl = pd.ExcelFile(file_path)
+        if not xl.sheet_names:
+            return "Workbook has no readable sheets"
+        return None
+    except Exception as exc:
+        if _is_encrypted_workbook_error(exc):
+            return "Workbook is password-protected (encrypted)"
+        return str(exc) or None
 
 
 def delete_document(doc_id: str) -> Dict[str, Any]:

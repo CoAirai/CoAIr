@@ -111,12 +111,21 @@ def upload_file(local_path: str, blob_name: str) -> bool:
 
 
 def download_file(blob_name: str, local_path: str) -> bool:
-    """Download a file from S3 or GCS to local path."""
+    """Download a file from S3 or GCS to local path.
+
+    Skips the network pull when a local file already exists with the same size
+    as the remote object (VPS persistent disk). Cloud Run still pulls on empty
+    disks; restarts no longer re-download multi‑GB trees.
+    """
+    local = Path(local_path)
     if S3_BUCKET_NAME:
         try:
             client = _get_s3()
-            client.head_object(Bucket=S3_BUCKET_NAME, Key=blob_name)
-            Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+            head = client.head_object(Bucket=S3_BUCKET_NAME, Key=blob_name)
+            remote_size = int(head.get("ContentLength") or 0)
+            if local.is_file() and local.stat().st_size == remote_size and remote_size > 0:
+                return True
+            local.parent.mkdir(parents=True, exist_ok=True)
             client.download_file(S3_BUCKET_NAME, blob_name, local_path)
             logger.info(f"[S3] Downloaded: {blob_name}")
             return True
@@ -135,7 +144,11 @@ def download_file(blob_name: str, local_path: str) -> bool:
         blob = bucket.blob(blob_name)
         if not blob.exists():
             return False
-        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        blob.reload()
+        remote_size = int(blob.size or 0)
+        if local.is_file() and local.stat().st_size == remote_size and remote_size > 0:
+            return True
+        local.parent.mkdir(parents=True, exist_ok=True)
         blob.download_to_filename(local_path)
         logger.info(f"[GCS] Downloaded: {blob_name}")
         return True

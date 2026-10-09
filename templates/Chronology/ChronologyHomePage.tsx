@@ -11,7 +11,7 @@ import { companyForSession, resolveLiveAddOns, liveModuleGrantsPending } from "@
 import { buildChronologyReport } from "@/lib/chronology/generate";
 import type { ChronologyReport } from "@/lib/chronology/types";
 import { mapChronologyJob } from "@/lib/coair/mapChronology";
-import { generateChronology, listReports } from "@/lib/coair/reports";
+import { generateChronology, listReports, retryReport } from "@/lib/coair/reports";
 import { getModuleGate } from "@/lib/workspace/moduleAccess";
 import { ownedByUser } from "@/lib/workspace/ownedByUser";
 import { useChat } from "@/context/ChatContext";
@@ -73,6 +73,7 @@ const ChronologyHomePage = () => {
     const [parties, setParties] = useState("");
     const [error, setError] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [retryingId, setRetryingId] = useState("");
 
     const documents = useMemo(
         () =>
@@ -296,34 +297,77 @@ const ChronologyHomePage = () => {
                         {reports.map((report) => (
                             <div
                                 key={report.id}
-                                className="grid grid-cols-[5rem_minmax(0,1fr)_7rem_5rem] items-center gap-4 py-3 text-label-sm"
+                                className="grid grid-cols-[5rem_minmax(0,1fr)_7rem_auto] items-center gap-4 py-3 text-label-sm"
                             >
                                 <span className="text-sub-600">
                                     {report.reference}.x
                                 </span>
-                                {report.status === "ready" ? (
-                                    <Link
-                                        href={`/workspace/chronology/${report.id}`}
-                                        className="truncate text-strong-950 hover:text-blue-500"
-                                    >
-                                        {report.title}
-                                    </Link>
-                                ) : (
-                                    <span className="truncate text-sub-600">
-                                        {report.title}
-                                    </span>
-                                )}
+                                <Link
+                                    href={`/workspace/chronology/${report.id}`}
+                                    className="truncate text-strong-950 hover:text-blue-500"
+                                >
+                                    {report.title}
+                                </Link>
                                 <span className="text-sub-600">
                                     {dateFormatter.format(new Date(report.createdAt))}
                                 </span>
-                                <span
-                                    className={
-                                        report.status === "ready"
-                                            ? "text-green-600"
-                                            : "text-red-500"
-                                    }
-                                >
-                                    {report.status === "ready" ? "READY" : "FAILED"}
+                                <span className="flex items-center justify-end gap-3">
+                                    <span
+                                        className={
+                                            report.status === "ready"
+                                                ? "text-green-600"
+                                                : report.status === "generating"
+                                                  ? "text-sub-600"
+                                                  : "text-red-500"
+                                        }
+                                    >
+                                        {report.status === "ready"
+                                            ? "READY"
+                                            : report.status === "generating"
+                                              ? "RUNNING"
+                                              : "FAILED"}
+                                    </span>
+                                    {live.enabled && report.status === "failed" ? (
+                                        <button
+                                            type="button"
+                                            disabled={retryingId === report.id}
+                                            className="text-blue-500 hover:underline disabled:opacity-60"
+                                            onClick={() => {
+                                                if (
+                                                    !session?.accessToken ||
+                                                    !session.projectId
+                                                ) {
+                                                    return;
+                                                }
+                                                setRetryingId(report.id);
+                                                setError("");
+                                                void retryReport(
+                                                    session.accessToken,
+                                                    session.projectId,
+                                                    report.id
+                                                )
+                                                    .then(() => {
+                                                        router.push(
+                                                            `/workspace/chronology/${report.id}`
+                                                        );
+                                                    })
+                                                    .catch((err) => {
+                                                        setError(
+                                                            err instanceof Error
+                                                                ? err.message
+                                                                : "Unable to retry chronology"
+                                                        );
+                                                    })
+                                                    .finally(() =>
+                                                        setRetryingId("")
+                                                    );
+                                            }}
+                                        >
+                                            {retryingId === report.id
+                                                ? "Retrying…"
+                                                : "Retry"}
+                                        </button>
+                                    ) : null}
                                 </span>
                             </div>
                         ))}

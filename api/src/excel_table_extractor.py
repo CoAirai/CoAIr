@@ -1604,40 +1604,50 @@ class ExcelTableExtractor:
         """
         Fix mixed-type columns that would break parquet serialization.
         Handles: mixed int/float/str, datetime objects, etc.
+
+        Construction spreadsheets often mix ints and strings in the same column
+        far below the first rows — sampling only the head misses that and leaves
+        pyarrow with "Expected bytes, got a 'int'". Object columns are therefore
+        fully coerced unless they are uniformly numeric.
         """
         from datetime import datetime as dt_type, date as date_type
 
+        def _coerce_cell(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return None
+            if isinstance(v, (dt_type, date_type)):
+                return v.isoformat()
+            return str(v)
+
         df = df.copy()
         for col in df.columns:
-            if df[col].dtype == object:
-                # Check types present in the column
-                types_present = set()
-                has_datetime = False
-                for v in df[col].dropna().head(50):
-                    if isinstance(v, (dt_type, date_type)):
-                        has_datetime = True
-                        types_present.add('datetime')
-                    elif isinstance(v, (int, float)) and not isinstance(v, bool):
-                        types_present.add('numeric')
-                    elif isinstance(v, str):
-                        types_present.add('string')
+            if df[col].dtype != object:
+                continue
 
-                if has_datetime or len(types_present) > 1:
-                    # Mixed types or datetime: convert all to string. Datetime/date
-                    # objects use clean ISO (isoformat) rather than str(), which can
-                    # otherwise emit locale/tz artifacts and was a source of the
-                    # corrupted "...T00:00:00A" values seen in the viewer.
-                    def _coerce_cell(v):
-                        if v is None or (isinstance(v, float) and pd.isna(v)):
-                            return None
-                        if isinstance(v, (dt_type, date_type)):
-                            return v.isoformat()
-                        return str(v)
+            series = df[col]
+            non_null = series.dropna()
+            if non_null.empty:
+                continue
 
-                    df[col] = df[col].apply(_coerce_cell)
-                elif types_present == {'numeric'}:
-                    # All numeric but stored as object: convert to float
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            types_present = set()
+            has_datetime = False
+            # Scan the whole column — head(50) missed mixed ints further down.
+            for v in non_null:
+                if isinstance(v, (dt_type, date_type)):
+                    has_datetime = True
+                    types_present.add("datetime")
+                elif isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, bool):
+                    types_present.add("numeric")
+                elif isinstance(v, str):
+                    types_present.add("string")
+                else:
+                    types_present.add(type(v).__name__)
+
+            if types_present == {"numeric"} and not has_datetime:
+                df[col] = pd.to_numeric(series, errors="coerce")
+            else:
+                # Mixed / datetime / unknown object payloads → string for parquet.
+                df[col] = series.apply(_coerce_cell)
 
         return df
 

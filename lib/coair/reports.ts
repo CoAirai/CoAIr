@@ -23,6 +23,17 @@ export async function getReport(
     );
 }
 
+export async function retryReport(
+    token: string,
+    projectId: string,
+    jobId: string
+) {
+    return coairFetch<CoairReportJob>(
+        `/reports/${encodeURIComponent(jobId)}/retry`,
+        { method: "POST", token, projectId, timeoutMs: 30000 }
+    );
+}
+
 export async function generateChronology(
     token: string,
     projectId: string,

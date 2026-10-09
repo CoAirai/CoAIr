@@ -9,7 +9,11 @@ import { useAuth } from "@/context/AuthContext";
 import { companyForSession } from "@/lib/workspace/companyForSession";
 import type { ChronologyCitation, ChronologyReport } from "@/lib/chronology/types";
 import { mapChronologyJob } from "@/lib/coair/mapChronology";
-import { downloadReportDocument, getReport } from "@/lib/coair/reports";
+import {
+    downloadReportDocument,
+    getReport,
+    retryReport,
+} from "@/lib/coair/reports";
 import ChronologyShell from "./ChronologyShell";
 
 type Props = {
@@ -32,6 +36,8 @@ const ChronologyReportPage = ({ reportId }: Props) => {
     const [openSource, setOpenSource] = useState<ChronologyCitation | null>(
         null
     );
+    const [retrying, setRetrying] = useState(false);
+    const [pollEpoch, setPollEpoch] = useState(0);
 
     useEffect(() => {
         if (!live || !session?.accessToken || !session.projectId) return;
@@ -69,7 +75,14 @@ const ChronologyReportPage = ({ reportId }: Props) => {
             cancelled = true;
             if (timer) window.clearTimeout(timer);
         };
-    }, [live, reportId, session?.accessToken, session?.companyId, session?.projectId]);
+    }, [
+        live,
+        pollEpoch,
+        reportId,
+        session?.accessToken,
+        session?.companyId,
+        session?.projectId,
+    ]);
 
     const createdLabel = useMemo(() => {
         if (!report) return "";
@@ -163,7 +176,9 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                                     Created {createdLabel} —{" "}
                                     {report.status === "generating"
                                         ? "generating"
-                                        : "read-only record"}
+                                        : report.status === "failed"
+                                          ? "failed — retry to run it again"
+                                          : "read-only record"}
                                 </p>
                             </div>
                             {live && report.status === "ready" ? (
@@ -174,14 +189,49 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                                 >
                                     Download Word ↓
                                 </button>
-                            ) : (
+                            ) : null}
+                            {live && report.status === "failed" ? (
                                 <button
                                     type="button"
-                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                    disabled={retrying}
+                                    onClick={() => {
+                                        if (
+                                            !session?.accessToken ||
+                                            !session.projectId
+                                        ) {
+                                            return;
+                                        }
+                                        setRetrying(true);
+                                        setLiveError(null);
+                                        void retryReport(
+                                            session.accessToken,
+                                            session.projectId,
+                                            reportId
+                                        )
+                                            .then((job) => {
+                                                setLiveReport(
+                                                    mapChronologyJob(
+                                                        job,
+                                                        session.companyId ??
+                                                            "live"
+                                                    )
+                                                );
+                                                setPollEpoch((value) => value + 1);
+                                            })
+                                            .catch((err) => {
+                                                setLiveError(
+                                                    err instanceof Error
+                                                        ? err.message
+                                                        : "Unable to retry chronology"
+                                                );
+                                            })
+                                            .finally(() => setRetrying(false));
+                                    }}
+                                    className="h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-60"
                                 >
-                                    Download Word ↓
+                                    {retrying ? "Retrying…" : "Retry"}
                                 </button>
-                            )}
+                            ) : null}
                         </div>
                     </div>
 

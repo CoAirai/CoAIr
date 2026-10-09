@@ -36,12 +36,18 @@ MODEL_CAPABILITIES: Dict[str, ModelCapabilities] = {
         output_tokens=65_536,
         thinking_levels=("minimal", "low", "medium", "high"),
     ),
-    # Retained for legacy non-demo routes.  Chronology never selects it.
+    "gemini-3.5-flash": ModelCapabilities(
+        input_tokens=1_048_576,
+        output_tokens=65_536,
+        thinking_levels=("minimal", "low", "medium", "high"),
+    ),
+    # Active upload/OCR/metadata tier (and retained for non-demo routes).
     "gemini-3.5-flash-lite": ModelCapabilities(
         input_tokens=1_048_576,
         output_tokens=65_536,
         thinking_levels=("minimal", "low", "medium", "high"),
     ),
+    # Legacy IDs kept for pricing/ledger compatibility.
     "gemini-2.5-flash": ModelCapabilities(
         input_tokens=1_048_576,
         output_tokens=65_536,

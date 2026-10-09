@@ -481,6 +481,47 @@ def test_provider_timeout_does_not_trigger_recursive_batch_split(monkeypatch):
     assert saved["extract:1"] == ("failed", "provider_timeout")
 
 
+def test_invalid_leaf_keeps_events_from_the_other_slice(monkeypatch):
+    from src.llm_client import LLMInvalidStructuredOutputError
+
+    evidence = [
+        EvidenceItem(
+            source_id="src-0", doc_id="doc-0", file_name="notice-0.pdf",
+            excerpt="14 March 2025 The Engineer issued Notice 17.",
+        ),
+        EvidenceItem(
+            source_id="src-1", doc_id="doc-1", file_name="notice-1.pdf",
+            excerpt="2 April 2025 The Contractor denied delay.",
+        ),
+    ]
+    prepared = PreparedChronologyQuery(
+        original_query="delay", english_query="delay", jargon_matches=(), parties=(),
+        contracts=(), work_packages=(), exclusions=(), research_queries=("delay",),
+    )
+    good = {"entries": [{
+        "event_date": "2025-03-14", "date_precision": "exact",
+        "date_source": "content_header", "date_evidence": "14 March 2025",
+        "actor": "Engineer", "action": "issued Notice 17",
+        "established_fact": "The Engineer issued Notice 17.",
+        "party_position": "", "analytical_inference": "",
+        "immediate_consequence": "", "supporting_source_ids": ["src-0"],
+        "counter_source_ids": [], "missing_records": [],
+    }]}
+    skipped: list[str] = []
+
+    def fake(prompt, **_kwargs):
+        if "notice-0.pdf" in prompt and "notice-1.pdf" in prompt:
+            raise LLMInvalidStructuredOutputError("model_output_invalid")
+        if "notice-1.pdf" in prompt:
+            raise LLMInvalidStructuredOutputError("model_output_invalid")
+        return SimpleNamespace(raw=good)
+
+    monkeypatch.setattr("src.llm_client.generate_response_json", fake)
+    result = extract_events(evidence, prepared, skipped_slices=skipped)
+    assert result == good["entries"]
+    assert skipped == ["extract:1b"]
+
+
 def test_gap_round_reread_preserves_document_scores(monkeypatch):
     primary = CandidateDocument(
         doc_id="primary", file_name="primary.pdf", reference="P", title="Primary",

@@ -192,8 +192,8 @@ class IngestionJobStore:
     def fail(self, job_id: str, error: str) -> None:
         with self._lock, self._connect() as conn:
             conn.execute(
-                "UPDATE ingestion_jobs SET status='failed', error=?, completed_at=?, updated_at=? "
-                "WHERE job_id=?",
+                "UPDATE ingestion_jobs SET status='failed', stage='failed', "
+                "error=?, completed_at=?, updated_at=? WHERE job_id=?",
                 [(error or "unknown error")[:2000], _now(), _now(), job_id],
             )
 

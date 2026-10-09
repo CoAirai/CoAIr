@@ -1,13 +1,20 @@
 """FastAPI lifespan: the startup sync every request path assumes has run."""
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await asyncio.to_thread(_startup_sync)
+    # Critical path only — Postgres + deploy invariants. Heavy S3/GCS pulls used
+    # to block uvicorn for 15–40+ minutes on every restart (nginx 502), so they
+    # run in a background thread after the API accepts traffic.
+    await asyncio.to_thread(_startup_critical)
+    # Kick off heavy S3/GCS sync without blocking readiness (avoids nginx 502).
+    sync_task = asyncio.create_task(asyncio.to_thread(_startup_object_sync_and_hydrate))
+    await asyncio.sleep(0)
     from backend.tasks.ingestion_jobs import start_ingestion_workers, stop_ingestion_workers
     from backend.tasks.report_jobs import start_report_workers, stop_report_workers
     from backend.tasks.forensic_jobs import start_forensic_workers, stop_forensic_workers
@@ -19,14 +26,20 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Prefer finishing the pull over cancelling mid-file.
+        if not sync_task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(sync_task), timeout=30)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
         stop_ingestion_workers()
         stop_report_workers()
         stop_forensic_workers()
         stop_event_index_workers()
 
 
-def _startup_sync():
-    """Synchronous startup for Cloud Run (stateless — GCS is source of truth)."""
+def _startup_critical():
+    """Must finish before the API accepts traffic (auth, admin, billing)."""
 
     # ── Step 0: Postgres schema + relational stores ───────────
     try:
@@ -53,9 +66,22 @@ def _startup_sync():
     from src.chronology_prompts import validate_chronology_runtime
     validate_chronology_runtime()
 
-    # ── Step 1: Download ALL shared state from object storage FIRST ──
-    # This MUST happen before loading any singletons.
-    # Cloud Run / VPS instances are ephemeral — local disk may be stale or empty.
+
+def _startup_object_sync_and_hydrate():
+    """S3/GCS pull + local hydrate. Safe to run after the API is already up."""
+    skip_heavy = os.getenv("SKIP_STARTUP_OBJECT_SYNC", "").lower() in ("1", "true", "yes")
+    if skip_heavy:
+        print("[Startup] SKIP_STARTUP_OBJECT_SYNC set — skipping object storage pull")
+    else:
+        _startup_object_sync()
+    _startup_hydrate_after_sync()
+
+
+def _startup_object_sync():
+    """Download shared state from object storage (skips unchanged local files)."""
+    # ── Step 1: Download shared state from object storage ──
+    # Cloud Run is ephemeral; VPS mounts persist. download_file skips unchanged
+    # local files so restarts no longer re-pull multi‑GB parquet trees.
     try:
         from src.gcs_storage import (
             backend_name,
@@ -67,7 +93,7 @@ def _startup_sync():
             sync_review_sessions_from_gcs,
         )
         storage = backend_name()
-        print(f"[Startup] Syncing from {storage}...")
+        print(f"[Startup] Syncing from {storage} (background)...")
         sync_document_registry_from_gcs()  # Registry FIRST
         sync_catalog_from_gcs()
         sync_all_parquets_from_gcs()
@@ -77,6 +103,10 @@ def _startup_sync():
         print(f"[Startup] {storage} sync complete")
     except Exception as e:
         print(f"[Startup] Object storage sync error (non-fatal): {e}")
+
+
+def _startup_hydrate_after_sync():
+    """Local repairs + singleton loads that prefer a completed object sync."""
 
     # ── Step 1b: Repair JSON damaged by the old text-mode path normalizer ──
     # Until this release, config.normalize_stored_paths() rewrote every JSON file
@@ -204,16 +234,17 @@ def _startup_sync():
     except Exception as e:
         print(f"[Startup] Registry hydration: {e}")
 
-    # ── Step 7: Recover legacy files left mid-index by an older deployment ──
-    # New uploads already live in the durable ingestion_jobs queue. This pass
-    # only adopts old registry records that predate it.
+    # ── Step 7: Recover files left mid-index by a crashed deploy ──
+    # Only adopt registry rows still marked *processing* (interrupted). Do NOT
+    # requeue terminal `error` rows — that made encrypted/corrupt XLS files flip
+    # back to "processing" on every API restart and confused the Knowledge Base.
     try:
         from pathlib import Path
         from src.document_registry import get_document_registry
         from backend.tasks.ingestion_jobs import get_ingestion_job_store
 
         registry = get_document_registry()
-        stuck = [r for r in registry.get_all() if r.status in ("processing", "error")]
+        stuck = [r for r in registry.get_all() if r.status == "processing"]
         requeued = 0
         for rec in stuck:
             fp = getattr(rec, "file_path", "")
