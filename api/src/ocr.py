@@ -7,7 +7,13 @@ and OCR execution (extract text via Tesseract) into a single module.
 import os
 import hashlib
 import json
+import threading
 import time
+# One tesseract at a time. Each call is a ~800MB subprocess, and two ingest
+# workers times two pages was enough to OOM-kill the API on this 8GB host.
+os.environ["OMP_THREAD_LIMIT"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+_ocr_slot = threading.Semaphore(1)
 from pathlib import Path
 from typing import List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
@@ -480,6 +486,17 @@ class OCRPipeline:
         warnings = []
         confidence = None
 
+        with _ocr_slot:
+            return self._extract_text_with_ocr_locked(pdf_path, page_number, file_hash, warnings, confidence)
+
+    def _extract_text_with_ocr_locked(
+        self,
+        pdf_path: str,
+        page_number: int,
+        file_hash: str,
+        warnings: list,
+        confidence,
+    ) -> OCRResult:
         try:
             doc = fitz.open(pdf_path)
             page = doc[page_number - 1]
@@ -611,7 +628,7 @@ class OCRPipeline:
         wall_ocr_ms = 0
         if ocr_pages:
             import contextvars
-            workers = max(1, min(OCR_MAX_WORKERS, os.cpu_count() or 2, len(ocr_pages)))
+            workers = max(1, min(OCR_MAX_WORKERS, 1, len(ocr_pages)))
             t0 = time.time()
             with ThreadPoolExecutor(max_workers=workers) as ex:
                 futs = {ex.submit(contextvars.copy_context().run,

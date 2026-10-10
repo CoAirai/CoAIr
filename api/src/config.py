@@ -170,7 +170,7 @@ INGEST_EXTRACT_NOTICES = os.getenv("INGEST_EXTRACT_NOTICES", "true").lower() in 
 # Max heavy indexing jobs (OCR + embed) running at once. Several PDFs uploaded
 # together would otherwise spawn parallel OCR/embedding in the threadpool and
 # blow CPU/RAM on a small (2 GB) box. Extra files queue and show "queued".
-INGEST_MAX_CONCURRENCY = int(os.getenv("INGEST_MAX_CONCURRENCY", "2"))
+INGEST_MAX_CONCURRENCY = int(os.getenv("INGEST_MAX_CONCURRENCY", "1"))
 # Ingest-time master chronology. PostgreSQL is selected automatically when
 # EVENT_DATABASE_URL is present; local/offline runs use the repository's DuckDB
 # adapter. Event extraction is intentionally decoupled from document search.
@@ -192,7 +192,7 @@ OCR_ENGINE = os.getenv("OCR_ENGINE", "tesseract")  # "tesseract" | "paddleocr"
 # Pages of a scanned PDF are OCR'd in parallel (each tesseract call releases the
 # GIL via its subprocess). Capped by CPU count in code. Combined with the ingest
 # semaphore this bounds total parallel OCR on a small box.
-OCR_MAX_WORKERS = int(os.getenv("OCR_MAX_WORKERS", "2"))
+OCR_MAX_WORKERS = int(os.getenv("OCR_MAX_WORKERS", "1"))
 OCR_VISION_FALLBACK_ENABLED = os.getenv("OCR_VISION_FALLBACK_ENABLED", "true").lower() == "true"
 OCR_VISION_CONFIDENCE_THRESHOLD = float(os.getenv("OCR_VISION_CONFIDENCE_THRESHOLD", "0.50"))
 OCR_LANG = os.getenv("OCR_LANG", "eng")  # English-only (all documents are English)

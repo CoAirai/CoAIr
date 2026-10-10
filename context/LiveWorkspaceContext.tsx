@@ -787,8 +787,11 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                         skipRefresh: true,
                         skipTrack: true,
                     });
-                    if (!result.ok && /network|timeout|502|503|429/i.test(result.error || "")) {
-                        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+                    for (let attempt = 1; attempt <= 4; attempt += 1) {
+                        if (result.ok || !/network|timeout|502|503|429|reset/i.test(result.error || "")) {
+                            break;
+                        }
+                        await new Promise((resolve) => window.setTimeout(resolve, 3000 * attempt));
                         result = await uploadFile(file, {
                             quiet: true,
                             skipRefresh: true,
