@@ -13,6 +13,10 @@ import { getModuleGate } from "@/lib/workspace/moduleAccess";
 import { ownedByUser } from "@/lib/workspace/ownedByUser";
 import { useChat } from "@/context/ChatContext";
 import ForensicShell from "./ForensicShell";
+import {
+    FORENSIC_MODULE_REQUIREMENTS,
+    forensicRequirementCopy,
+} from "@/lib/forensic/requirements";
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
 import {
     createForensicRun,
@@ -55,6 +59,18 @@ function statusClass(status?: string) {
     return "text-sub-600";
 }
 
+function forensicFailure(run: CoairForensicRun) {
+    const code = run.error_code || run.error || "";
+    if (code === "forensic_programmes_insufficient") {
+        return "This check needs two programme files: one as-planned and one as-built. This workspace has only one XER, so the run stopped before any model was called. It is not a token limit.";
+    }
+    if (code === "token_quota_exceeded" || code.includes("quota")) {
+        return "The account is over its CA usage limit, so this run could not continue.";
+    }
+    if (!code) return "Run failed.";
+    return `Run failed — ${code.replaceAll("_", " ")}`;
+}
+
 function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
     if (!run) {
         return (
@@ -73,10 +89,7 @@ function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
     if ((run.status || "").toLowerCase() === "failed") {
         return (
             <p className="mt-2 text-label-sm leading-6 text-red-500">
-                Run failed
-                {run.error_code || run.error
-                    ? ` — ${run.error_code || run.error}`
-                    : "."}
+                {forensicFailure(run)}
             </p>
         );
     }
@@ -200,6 +213,13 @@ const ForensicToolPage = ({ toolId }: Props) => {
           )
         : [];
     const canLiveRun = Boolean(defaultForensicRunParameters(toolId));
+    const programmeCount = live.enabled
+        ? (activeWorkspace?.programmeIds.length ?? 0)
+        : activeProgrammes.length;
+    const requirement = FORENSIC_MODULE_REQUIREMENTS[toolId];
+    const shortOnFiles = Boolean(
+        requirement && !requirement.extra && programmeCount < requirement.files
+    );
     const runBusy = running || isOpenRun(run?.status);
 
     useEffect(() => {
@@ -397,6 +417,9 @@ const ForensicToolPage = ({ toolId }: Props) => {
                             </select>
                         </label>
                     </div>
+                    <p className="mt-4 text-label-sm text-sub-600">
+                        {forensicRequirementCopy(tool.id, programmeCount)}
+                    </p>
 
                     {!activeWorkspace ? (
                         <section className="mt-8 rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
@@ -456,15 +479,17 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 {live.enabled ? (
                                     <button
                                         type="button"
-                                        disabled={!canLiveRun || runBusy}
+                                        disabled={!canLiveRun || runBusy || shortOnFiles}
                                         onClick={() => void runLive()}
                                         className="mt-4 h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 disabled:cursor-not-allowed disabled:bg-soft-200 disabled:text-soft-400"
                                     >
                                         {runBusy
                                             ? "Running…"
-                                            : canLiveRun
-                                              ? `Run ${tool.label}`
-                                              : "Needs extra inputs"}
+                                            : !canLiveRun
+                                              ? "Needs extra inputs"
+                                              : shortOnFiles
+                                                ? "Needs another programme"
+                                                : `Run ${tool.label}`}
                                     </button>
                                 ) : null}
                             </section>

@@ -29,7 +29,9 @@ const LiveUsagePage = () => {
     const storageUsed = bytesToGb(usage?.storage_used_bytes);
     const storageLimit = bytesToGb(usage?.storage_limit_bytes);
     const totals = orgUsage?.totals;
-    const groups = orgUsage?.groups?.slice(0, 8) ?? [];
+    const groups = [...(orgUsage?.groups ?? [])].sort(
+        (a, b) => (b.calls ?? 0) - (a.calls ?? 0)
+    );
     const geminiConsumed =
         (totals?.prompt_tokens ?? 0) + (totals?.completion_tokens ?? 0);
     const caFromSpend = totals?.provider_cost_usd ?? totals?.cost_usd;
@@ -230,9 +232,17 @@ const LiveUsagePage = () => {
                                         className="flex items-center justify-between py-2 text-label-sm"
                                     >
                                         <span className="text-strong-950">
-                                            {group.username ||
-                                                group.model ||
+                                            {group.model ||
+                                                group.username ||
                                                 "group"}
+                                            {group.task_type ? (
+                                                <span className="mt-0.5 block text-label-xs capitalize text-sub-600">
+                                                    {group.task_type.replaceAll(
+                                                        "_",
+                                                        " "
+                                                    )}
+                                                </span>
+                                            ) : null}
                                         </span>
                                         <span className="text-sub-600 tabular-nums">
                                             {numberFormatter.format(
@@ -243,7 +253,8 @@ const LiveUsagePage = () => {
                                             {numberFormatter.format(
                                                 group.calls ?? 0
                                             )}{" "}
-                                            calls
+                                            calls · limit{" "}
+                                            {formatDisplayCa(limit, sellRate)} CA
                                         </span>
                                     </li>
                                 ))}

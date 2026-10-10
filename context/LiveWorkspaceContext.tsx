@@ -285,6 +285,53 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     }, [refreshCore]);
 
     useEffect(() => {
+        if (!enabled || !session?.accessToken) return;
+        const token = session.accessToken;
+        let cancelled = false;
+        const pullBalance = () => {
+            void readAuthMe(token)
+                .then((me) => {
+                    if (cancelled || !me.user) return;
+                    const used = me.user.used_tokens ?? 0;
+                    const limit = me.user.token_limit ?? 0;
+                    const username = me.user.username;
+                    setAccountUsage((current) => ({
+                        ...(current ?? {}),
+                        used_tokens: used,
+                        token_limit: limit,
+                        percent_remaining: me.user.percent_remaining,
+                        credits_remaining: me.user.credits_remaining,
+                        credits_total: me.user.credits_total,
+                        storage_used_bytes: me.user.storage_used_bytes,
+                        storage_limit_bytes: me.user.storage_limit_bytes,
+                    }));
+                    if (!username) return;
+                    setOrgUsers((current) =>
+                        current.map((user) =>
+                            user.username === username
+                                ? {
+                                      ...user,
+                                      used_tokens: used,
+                                      token_limit: limit || user.token_limit,
+                                  }
+                                : user
+                        )
+                    );
+                })
+                .catch(() => undefined);
+        };
+        pullBalance();
+        const timer = window.setInterval(pullBalance, 15000);
+        const onFocus = () => pullBalance();
+        window.addEventListener("focus", onFocus);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+            window.removeEventListener("focus", onFocus);
+        };
+    }, [enabled, session?.accessToken]);
+
+    useEffect(() => {
         const projectId = session?.projectId ?? null;
         // Always load library when project is set; skip only duplicate same-id remounts.
         if (lastProjectId.current === projectId && lastProjectId.current !== undefined) {

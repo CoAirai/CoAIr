@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { FORENSIC_NAV_GROUPS } from "@/lib/forensic/nav";
+import CaCredits from "./CaCredits";
 
 const ForensicNav = () => {
     const pathname = usePathname();
@@ -9,6 +10,7 @@ const ForensicNav = () => {
 
     return (
         <div className="mb-4">
+            <CaCredits />
             <div className="flex flex-col gap-4">
                 {FORENSIC_NAV_GROUPS.map((group) => (
                     <div key={group.id}>

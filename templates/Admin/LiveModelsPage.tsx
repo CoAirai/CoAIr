@@ -1,24 +1,72 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 
 import { AdminModelsSkeleton } from "@/components/Skeleton/sections";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
-import { patchAdminUser } from "@/lib/coair/admin";
+import { patchAdminUser, type CoairBillingGroup } from "@/lib/coair/admin";
 import { apiErrorMessage } from "@/lib/coair/commerce";
+import { formatCa } from "@/lib/billing/tokenEconomics";
 import { useAuth } from "@/context/AuthContext";
+
+const numberFormatter = new Intl.NumberFormat("en-US");
+
+function taskLabel(task?: string) {
+    if (!task) return "Other";
+    return task.replaceAll("_", " ");
+}
+
+function modelRows(groups: CoairBillingGroup[]) {
+    const byModel = new Map<
+        string,
+        { calls: number; tokens: number; ca: number }
+    >();
+    for (const group of groups) {
+        const model = group.model || "Unknown model";
+        const current = byModel.get(model) ?? { calls: 0, tokens: 0, ca: 0 };
+        current.calls += group.calls ?? 0;
+        current.tokens +=
+            (group.prompt_tokens ?? 0) + (group.completion_tokens ?? 0);
+        current.ca += group.retail_credit ?? group.estimated_provider_cost_usd ?? 0;
+        byModel.set(model, current);
+    }
+    return Array.from(byModel.entries())
+        .map(([model, stats]) => ({ model, ...stats }))
+        .sort((a, b) => b.ca - a.ca || b.calls - a.calls);
+}
 
 const LiveModelsPage = () => {
     const { session } = useAuth();
     const token = session?.accessToken ?? "";
-    const { users, groups, loading, error, refresh } = useLiveAdmin();
+    const { users, orgs, groups, loading, error, refresh } = useLiveAdmin();
     const [drafts, setDrafts] = useState<Record<string, string>>({});
     const [message, setMessage] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
 
-    const modelsInUse = Array.from(
-        new Set(groups.map((group) => group.model).filter(Boolean))
-    ) as string[];
+    const models = useMemo(() => modelRows(groups), [groups]);
+    const grantedMicros = useMemo(() => {
+        return orgs.reduce((sum, org) => {
+            const memberLimit = users
+                .filter((user) => user.org_id === org.org_id)
+                .reduce((total, user) => total + (user.token_limit ?? 0), 0);
+            return sum + (org.default_token_limit || memberLimit || 0);
+        }, 0);
+    }, [orgs, users]);
+    const limitLabel = `${formatCa(grantedMicros)} CA`;
+    const taskRows = useMemo(
+        () =>
+            [...groups]
+                .filter((group) => (group.calls ?? 0) > 0)
+                .sort(
+                    (a, b) =>
+                        (b.retail_credit ?? b.estimated_provider_cost_usd ?? 0) -
+                        (a.retail_credit ?? a.estimated_provider_cost_usd ?? 0)
+                ),
+        [groups]
+    );
+    const forensicRecorded = taskRows.some((group) =>
+        (group.task_type ?? "").includes("forensic")
+    );
 
     const onSave = async (event: FormEvent, username: string) => {
         event.preventDefault();
@@ -53,15 +101,144 @@ const LiveModelsPage = () => {
             ) : null}
             <AdminModelsSkeleton loading={loading && users.length === 0}>
                 <div className="flex flex-col gap-8">
-                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
-                        <h2 className="text-label-lg text-strong-950">
-                            Models in use
-                        </h2>
-                        <p className="mt-2 text-label-sm text-sub-600">
-                            {modelsInUse.length > 0
-                                ? modelsInUse.join(" · ")
-                                : "No model calls recorded yet."}
-                        </p>
+                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                        <div className="p-5">
+                            <h2 className="text-label-lg text-strong-950">
+                                Models in use
+                            </h2>
+                            <p className="mt-1 text-label-sm text-sub-600">
+                                Chronology runs on the first model. Each row
+                                shows that model&apos;s recorded CA against the
+                                granted usage limit.
+                            </p>
+                        </div>
+                        {models.length === 0 ? (
+                            <p className="px-5 pb-5 text-label-sm text-sub-600">
+                                No model calls recorded yet.
+                            </p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[720px] text-left">
+                                    <thead className="bg-weak-50 text-label-xs text-sub-600">
+                                        <tr>
+                                            <th className="px-5 py-3 font-medium">
+                                                Model
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Calls
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Tokens
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                CA used
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Usage limit
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-stroke-soft-200">
+                                        {models.map((row) => (
+                                            <tr
+                                                key={row.model}
+                                                className="text-label-sm"
+                                            >
+                                                <td className="px-5 py-4 text-strong-950">
+                                                    {row.model}
+                                                </td>
+                                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                    {numberFormatter.format(
+                                                        row.calls
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                    {numberFormatter.format(
+                                                        row.tokens
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                    {formatCa(row.ca, false)} CA
+                                                </td>
+                                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                    {limitLabel}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </section>
+                    <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
+                        <div className="p-5">
+                            <h2 className="text-label-lg text-strong-950">
+                                Recorded by task
+                            </h2>
+                            <p className="mt-1 text-label-sm text-sub-600">
+                                Chronology extract, synthesis, and verify land
+                                on the first model. Forensic programme checks
+                                do not call a model
+                                {forensicRecorded
+                                    ? ", except an optional narrative."
+                                    : ", so they are not in this ledger."}
+                            </p>
+                        </div>
+                        {taskRows.length === 0 ? (
+                            <p className="px-5 pb-5 text-label-sm text-sub-600">
+                                No task usage recorded yet.
+                            </p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[720px] text-left">
+                                    <thead className="bg-weak-50 text-label-xs text-sub-600">
+                                        <tr>
+                                            <th className="px-5 py-3 font-medium">
+                                                Task
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Model
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                Calls
+                                            </th>
+                                            <th className="px-5 py-3 font-medium">
+                                                CA used
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-stroke-soft-200">
+                                        {taskRows.map((group, index) => (
+                                            <tr
+                                                key={`${group.model}-${group.task_type}-${index}`}
+                                                className="text-label-sm"
+                                            >
+                                                <td className="px-5 py-4 capitalize text-strong-950">
+                                                    {taskLabel(group.task_type)}
+                                                </td>
+                                                <td className="px-5 py-4 text-sub-600">
+                                                    {group.model || "—"}
+                                                </td>
+                                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                    {numberFormatter.format(
+                                                        group.calls ?? 0
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                    {formatCa(
+                                                        group.retail_credit ??
+                                                            group.estimated_provider_cost_usd ??
+                                                            0,
+                                                        false
+                                                    )}{" "}
+                                                    CA
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </section>
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0">
                         <div className="overflow-x-auto">

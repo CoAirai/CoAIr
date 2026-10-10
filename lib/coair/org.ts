@@ -22,6 +22,7 @@ export type CoairOrgUsageGroup = {
     username?: string;
     provider?: string;
     model?: string;
+    task_type?: string;
     calls?: number;
     prompt_tokens?: number;
     completion_tokens?: number;

@@ -9,6 +9,7 @@ import Button from "@/components/Button";
 import User from "./User";
 import KnowledgeBase from "./KnowledgeBase";
 import RecentQueries from "./RecentQueries";
+import CaCredits from "./CaCredits";
 import ForensicNav from "./ForensicNav";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
@@ -110,14 +111,17 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                     ) : !isChronology ? (
                         <KnowledgeBase />
                     ) : (
-                        <Button
-                            className="mb-5 w-full"
-                            icon="plus"
-                            isBlack
-                            onClick={onClickNewChat}
-                        >
-                            Build new chronology
-                        </Button>
+                        <>
+                            <CaCredits />
+                            <Button
+                                className="mb-5 w-full"
+                                icon="plus"
+                                isBlack
+                                onClick={onClickNewChat}
+                            >
+                                Build new chronology
+                            </Button>
+                        </>
                     )}
                     {isForensic ? null : <RecentQueries />}
 
