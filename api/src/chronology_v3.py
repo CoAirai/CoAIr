@@ -807,6 +807,91 @@ def _final_valid(
     return not enforce_style or _style_valid(value)
 
 
+def _grounded_claims(
+    claims: Sequence[Dict], evidence: Sequence[EvidenceItem], *, limit: int = 3,
+) -> List[Dict]:
+    """Keep claims whose sources, numbers, and quotations are in the excerpts."""
+    kept: List[Dict] = []
+    for claim in claims:
+        if not isinstance(claim, dict):
+            continue
+        probe = {
+            "text": str(claim.get("text") or "").strip(),
+            "source_ids": [str(item) for item in claim.get("source_ids") or []],
+            "counter_source_ids": [
+                str(item) for item in claim.get("counter_source_ids") or []
+            ],
+        }
+        if not probe["text"] or not probe["source_ids"]:
+            continue
+        if _final_valid(
+            {"overview_claims": [probe], "entries": []}, evidence, enforce_style=False,
+        ):
+            kept.append({**claim, **probe})
+        if len(kept) >= limit:
+            break
+    return kept
+
+
+def _ledger_claim(event: Dict, evidence: Sequence[EvidenceItem]) -> Optional[Dict]:
+    """One claim copied from an extraction that already passed the source check."""
+    observations = event.get("observations") or [event]
+    for observation in observations:
+        text = str(
+            observation.get("established_fact") or observation.get("action") or ""
+        ).strip()
+        ids = [str(item) for item in observation.get("supporting_source_ids") or []][:3]
+        if not text or not ids:
+            continue
+        claim = {"text": text, "source_ids": ids, "counter_source_ids": []}
+        if _final_valid(
+            {"overview_claims": [claim], "entries": []}, evidence, enforce_style=False,
+        ):
+            return claim
+    return None
+
+
+def _ledger_overview_claims(
+    events: Sequence[Dict], evidence: Sequence[EvidenceItem],
+) -> List[Dict]:
+    claims: List[Dict] = []
+    seen: set[str] = set()
+    for event in events:
+        claim = _ledger_claim(event, evidence)
+        if not claim:
+            continue
+        key = claim["text"].casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        claims.append(claim)
+        if len(claims) == 3:
+            break
+    return claims
+
+
+def _ledger_event_entry(event: Dict, evidence: Sequence[EvidenceItem]) -> Optional[Dict]:
+    claim = _ledger_claim(event, evidence)
+    if not claim:
+        return None
+    entry = {
+        "cluster_id": str(event.get("cluster_id") or ""),
+        "event_date": str(event.get("event_date") or ""),
+        "date_precision": str(event.get("date_precision") or "exact"),
+        "date_source": str(event.get("date_source") or "content_header"),
+        "date_evidence": str(event.get("date_evidence") or ""),
+        "claims": [claim],
+        "parties": [],
+        "event_type": "event",
+        "conflicting_positions": [],
+    }
+    if not _final_valid(
+        {"overview_claims": [], "entries": [entry]}, evidence, enforce_style=False,
+    ):
+        return None
+    return entry
+
+
 def synthesize(
     events: Sequence[Dict], evidence: Sequence[EvidenceItem],
     prepared: PreparedChronologyQuery, *, cache_context: str,
@@ -827,6 +912,7 @@ def synthesize(
     }
     cited = [item for item in evidence if item.source_id in used]
     from .llm_client import generate_response_json
+    from .logger import logger
     base = (
         f"TOPIC: {prepared.english_query}\nPARTIES: {', '.join(prepared.parties)}\n"
         f"{prompts['synthesizer']}\n{prompts['style_profile']}"
@@ -877,17 +963,35 @@ def synthesize(
         "events": ordered, "evidence": [asdict(item) for item in cited],
         "prompt": chronology_v3_prompt_hash(), "schema": OverviewModel.model_json_schema(),
     })
-    overview = call_step(
-        "synthesis:overview", overview_hash,
-        f"{base}\n\nCreate only the sourced overview; do not return dated events.\n\n"
-        f"VERIFIED LEDGER:\n{json.dumps(ordered, ensure_ascii=False)}\n\n"
-        f"EVIDENCE BEGIN\n{evidence_markdown(cited)}\nEVIDENCE END",
-        schema_name="chronology_v3_overview", validation_model=OverviewModel,
-        semantic_validator=lambda value: _final_valid(
-            {"overview_claims": value.get("overview_claims", []), "entries": []},
-            cited, enforce_style=False,
-        ),
-    )
+    # Accept a schema-valid overview even when some claims invent a number or
+    # quotation. Those claims are dropped below; one bad sentence must not
+    # discard the verified ledger.
+    try:
+        overview = call_step(
+            "synthesis:overview", overview_hash,
+            f"{base}\n\nCreate only the sourced overview; do not return dated events.\n\n"
+            f"VERIFIED LEDGER:\n{json.dumps(ordered, ensure_ascii=False)}\n\n"
+            f"EVIDENCE BEGIN\n{evidence_markdown(cited)}\nEVIDENCE END",
+            schema_name="chronology_v3_overview", validation_model=OverviewModel,
+            semantic_validator=lambda value: isinstance(value.get("overview_claims"), list),
+        )
+    except Exception as exc:
+        if not _is_structured_output_error(exc):
+            raise
+        logger.warning("[Chronology] overview synthesis skipped after %s", exc)
+        overview = {"overview_claims": []}
+    overview_claims = _grounded_claims(overview.get("overview_claims") or [], cited)
+    if not overview_claims:
+        overview_claims = _ledger_overview_claims(ordered, cited)
+        if overview_claims:
+            logger.warning("[Chronology] overview replaced with grounded ledger claims")
+    if not overview_claims:
+        raise ValueError("model_output_invalid")
+    if save_step:
+        save_step(
+            "synthesis:overview", overview_hash, "ready",
+            {"overview_claims": overview_claims}, "",
+        )
 
     entries: List[Dict] = []
     for batch_number, batch in enumerate(_synthesis_batches(ordered, evidence), 1):
@@ -902,41 +1006,73 @@ def synthesize(
         }
         batch_evidence = [item for item in evidence if item.source_id in batch_source_ids]
 
-        def batch_valid(value: Dict, expected: set[str] = expected_ids) -> bool:
-            values = value.get("entries", [])
-            returned = [str(item.get("cluster_id") or "") for item in values]
-            return (
-                len(returned) == len(expected) and set(returned) == expected
-                and _final_valid(
-                    {"overview_claims": [], "entries": values},
-                    batch_evidence, enforce_style=False,
-                )
-            )
-
         input_hash = _hash({
             "events": batch, "evidence": [asdict(item) for item in batch_evidence],
             "prompt": chronology_v3_prompt_hash(),
             "schema": EventSynthesisModel.model_json_schema(),
         })
-        output = call_step(
-            f"synthesis:event:{batch_number}", input_hash,
-            f"{base}\n\nCreate exactly one final event for every cluster_id in this batch. "
-            "Return each cluster_id unchanged; do not omit, combine or invent cluster IDs.\n\n"
-            f"VERIFIED LEDGER BATCH:\n{json.dumps(batch, ensure_ascii=False)}\n\n"
-            f"EVIDENCE BEGIN\n{evidence_markdown(batch_evidence)}\nEVIDENCE END",
-            schema_name="chronology_v3_event_batch", validation_model=EventSynthesisModel,
-            semantic_validator=batch_valid,
-        )
-        entries.extend(output.get("entries", []))
+        try:
+            output = call_step(
+                f"synthesis:event:{batch_number}", input_hash,
+                f"{base}\n\nCreate exactly one final event for every cluster_id in this batch. "
+                "Return each cluster_id unchanged; do not omit, combine or invent cluster IDs.\n\n"
+                f"VERIFIED LEDGER BATCH:\n{json.dumps(batch, ensure_ascii=False)}\n\n"
+                f"EVIDENCE BEGIN\n{evidence_markdown(batch_evidence)}\nEVIDENCE END",
+                schema_name="chronology_v3_event_batch", validation_model=EventSynthesisModel,
+                semantic_validator=lambda value: isinstance(value.get("entries"), list),
+            )
+            raw_entries = list(output.get("entries") or [])
+        except Exception as exc:
+            if not _is_structured_output_error(exc):
+                raise
+            logger.warning(
+                "[Chronology] event batch %s skipped after %s", batch_number, exc,
+            )
+            raw_entries = []
+        kept: List[Dict] = []
+        seen: set[str] = set()
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            cluster_id = str(entry.get("cluster_id") or "")
+            if cluster_id not in expected_ids or cluster_id in seen:
+                continue
+            if _final_valid(
+                {"overview_claims": [], "entries": [entry]},
+                batch_evidence, enforce_style=False,
+            ):
+                kept.append(entry)
+                seen.add(cluster_id)
+        for event in batch:
+            cluster_id = str(event.get("cluster_id") or "")
+            if cluster_id in seen:
+                continue
+            fallback = _ledger_event_entry(event, batch_evidence)
+            if fallback:
+                kept.append(fallback)
+                seen.add(cluster_id)
+                logger.warning(
+                    "[Chronology] event %s filled from the verified ledger", cluster_id,
+                )
+        if save_step and kept:
+            save_step(
+                f"synthesis:event:{batch_number}", input_hash, "ready",
+                {"entries": kept}, "",
+            )
+        entries.extend(kept)
 
     result = {
-        "overview_claims": overview.get("overview_claims", []),
+        "overview_claims": overview_claims,
         "entries": sorted(entries, key=lambda item: (
             str(item.get("event_date") or "9999-99-99"), str(item.get("cluster_id") or ""),
         )),
     }
-    if not _style_valid(result):
+    if not result["entries"]:
         raise ValueError("model_output_invalid")
+    if not _style_valid(result):
+        logger.warning(
+            "[Chronology] synthesis style check failed; keeping grounded claims",
+        )
     return ChronologyModel.model_validate(result).model_dump()
 
 

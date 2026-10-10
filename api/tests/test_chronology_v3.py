@@ -240,31 +240,75 @@ def test_v3_synthesis_keeps_every_cluster_around_the_old_limit(monkeypatch, even
     ) // SYNTHESIS_BATCH_EVENTS
 
 
-def test_v3_synthesis_rejects_a_missing_cluster_id(monkeypatch):
+def test_v3_synthesis_fills_a_missing_cluster_from_the_ledger(monkeypatch):
     from src.chronology_v3 import synthesize
+    from src.llm_client import LLMInvalidStructuredOutputError
     evidence = [EvidenceItem(
         "s1", "d1", "a.pdf", excerpt="14 March 2025 Engineer issued notice",
     )]
     events = aggregate_events([{
         "event_date": "2025-03-14", "date_precision": "exact",
         "date_source": "content_header", "date_evidence": "14 March 2025",
-        "actor": "Engineer", "action": "issued", "supporting_source_ids": ["s1"],
+        "actor": "Engineer", "action": "issued notice",
+        "established_fact": "Engineer issued notice",
+        "supporting_source_ids": ["s1"],
         "counter_source_ids": [], "missing_records": [],
     }], evidence, PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",)))
 
     def fake(_prompt, **kwargs):
         if kwargs["schema_name"] == "chronology_v3_overview":
-            return SimpleNamespace(raw={"overview_claims": [{
-                "text": "Engineer issued notice", "source_ids": ["s1"],
-            }]})
+            raise LLMInvalidStructuredOutputError("model_output_invalid")
         return SimpleNamespace(raw={"entries": []})
 
     monkeypatch.setattr("src.llm_client.generate_response_json", fake)
-    with pytest.raises(ValueError, match="model_output_invalid"):
-        synthesize(
-            events, evidence, PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",)),
-            cache_context="c",
-        )
+    result = synthesize(
+        events, evidence, PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",)),
+        cache_context="c",
+    )
+
+    assert result["overview_claims"][0]["text"] == "Engineer issued notice"
+    assert result["overview_claims"][0]["source_ids"] == ["s1"]
+    assert result["entries"][0]["cluster_id"] == events[0]["cluster_id"]
+    assert result["entries"][0]["claims"][0]["text"] == "Engineer issued notice"
+
+
+def test_v3_synthesis_drops_an_ungrounded_overview_claim(monkeypatch):
+    from src.chronology_v3 import synthesize
+    evidence = [EvidenceItem(
+        "s1", "d1", "a.pdf", excerpt="14 March 2025 Engineer issued notice",
+    )]
+    event_text = " ".join(["Engineer"] * 30)
+    overview_text = " ".join(["Engineer"] * 90)
+    events = aggregate_events([{
+        "event_date": "2025-03-14", "date_precision": "exact",
+        "date_source": "content_header", "date_evidence": "14 March 2025",
+        "actor": "Engineer", "action": "issued notice",
+        "established_fact": "Engineer issued notice",
+        "supporting_source_ids": ["s1"],
+        "counter_source_ids": [], "missing_records": [],
+    }], evidence, PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",)))
+
+    def fake(_prompt, **kwargs):
+        if kwargs["schema_name"] == "chronology_v3_overview":
+            return SimpleNamespace(raw={"overview_claims": [
+                {"text": "Cost rose by 2000000", "source_ids": ["s1"]},
+                {"text": overview_text, "source_ids": ["s1"]},
+            ]})
+        return SimpleNamespace(raw={"entries": [{
+            "cluster_id": events[0]["cluster_id"], "event_date": "2025-03-14",
+            "date_precision": "exact", "date_source": "content_header",
+            "date_evidence": "14 March 2025", "claims": [{
+                "text": event_text, "source_ids": ["s1"],
+            }],
+        }]})
+
+    monkeypatch.setattr("src.llm_client.generate_response_json", fake)
+    result = synthesize(
+        events, evidence, PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",)),
+        cache_context="c",
+    )
+
+    assert [claim["text"] for claim in result["overview_claims"]] == [overview_text]
 
 
 def test_v3_verifier_batches_more_than_thirty_claims(monkeypatch):
