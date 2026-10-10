@@ -20,7 +20,7 @@ import {
     planLabel,
 } from "@/lib/admin/liveHelpers";
 import { getPlanById } from "@/lib/admin/plans";
-import { formatCa } from "@/lib/billing/tokenEconomics";
+import { formatCa, microsToCa } from "@/lib/billing/tokenEconomics";
 import type { AuditEntry } from "@/lib/admin/types";
 import { loadWeeklySpend } from "@/lib/coair/admin";
 import { listAudit } from "@/lib/coair/ops";
@@ -172,7 +172,7 @@ const LiveDashboardPage = () => {
                             value={`${formatCa(budgetUsedMicros)} CA`}
                             hint={
                                 tokenTotals.limit > 0
-                                    ? `${formatCa(tokenTotals.limit)} CA allocated · ${numberFormatter.format(users.length)} users · ${numberFormatter.format(orgs.length)} companies`
+                                    ? `${formatCa(tokenTotals.limit)} CA granted across ${numberFormatter.format(orgs.length)} companies`
                                     : `${numberFormatter.format(users.length)} users · ${numberFormatter.format(orgs.length)} companies`
                             }
                         />
@@ -357,19 +357,19 @@ const LiveDashboardPage = () => {
 
                     <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
                         <h2 className="text-label-lg text-strong-950">
-                            Platform allocation
+                            Granted CA
                         </h2>
-                        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                        <p className="mt-1 text-label-xs text-sub-600">
+                            Each company has its own allowance. The total grows
+                            as you add companies and users. There is no separate
+                            platform cap.
+                        </p>
+                        <div className="mt-5 max-w-xl">
                             <QuotaBar
-                                label="Budget"
-                                used={usage?.used_usd ?? 0}
-                                limit={usage?.limit_usd ?? 0}
-                                unit="USD"
-                            />
-                            <QuotaBar
-                                label="Tokens"
-                                used={tokenTotals.used}
-                                limit={tokenTotals.limit}
+                                label="CA used"
+                                used={microsToCa(budgetUsedMicros)}
+                                limit={microsToCa(tokenTotals.limit)}
+                                unit="CA"
                             />
                         </div>
                     </section>
