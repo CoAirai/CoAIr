@@ -20,6 +20,7 @@ import {
     planLabel,
 } from "@/lib/admin/liveHelpers";
 import { getPlanById } from "@/lib/admin/plans";
+import { formatCa } from "@/lib/billing/tokenEconomics";
 import type { AuditEntry } from "@/lib/admin/types";
 import { loadWeeklySpend } from "@/lib/coair/admin";
 import { listAudit } from "@/lib/coair/ops";
@@ -117,6 +118,10 @@ const LiveDashboardPage = () => {
             ),
         [usageRows]
     );
+    const budgetUsedMicros = useMemo(
+        () => users.reduce((sum, user) => sum + (user.used_tokens ?? 0), 0),
+        [users]
+    );
 
     const tokenBars = useMemo(() => {
         if (groups.length > 0) {
@@ -163,9 +168,13 @@ const LiveDashboardPage = () => {
                             hint="All accounts"
                         />
                         <StatCard
-                            label="Budget remaining"
-                            value={`$${(usage?.remaining_usd ?? 0).toFixed(2)}`}
-                            hint={`of $${(usage?.limit_usd ?? 0).toFixed(0)}`}
+                            label="Budget used"
+                            value={`${formatCa(budgetUsedMicros)} CA`}
+                            hint={
+                                tokenTotals.limit > 0
+                                    ? `${formatCa(tokenTotals.limit)} CA allocated · ${numberFormatter.format(users.length)} users · ${numberFormatter.format(orgs.length)} companies`
+                                    : `${numberFormatter.format(users.length)} users · ${numberFormatter.format(orgs.length)} companies`
+                            }
                         />
                     </div>
 
