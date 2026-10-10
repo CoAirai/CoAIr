@@ -14,17 +14,43 @@ export type CoairForensicWorkspace = {
     created_at?: string;
 };
 
+export type CoairForensicMetric = {
+    label?: string;
+    value?: string | number;
+};
+
+export type CoairForensicTableRow = {
+    number?: number;
+    name?: string;
+    status?: string;
+    metric_label?: string;
+    metric_value?: string | number;
+    threshold?: string;
+    summary?: string;
+    affected_ids?: string[];
+    detail_rows?: Array<Record<string, unknown>>;
+    na_reason?: string | null;
+};
+
 export type CoairForensicRun = {
     run_id?: string;
     status?: string;
+    stage?: string;
     module_slug?: string;
     error?: string;
+    error_code?: string;
     result?: {
         title?: string;
         summary?: string;
         findings?: string[] | string;
         narrative?: string;
         text?: string;
+        warnings?: string[];
+        metrics?: CoairForensicMetric[];
+        tables?: Array<{
+            name?: string;
+            rows?: CoairForensicTableRow[];
+        }>;
     };
 };
 

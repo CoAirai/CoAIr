@@ -43,18 +43,113 @@ function mapWorkspace(
     };
 }
 
-function summarizeRun(run: CoairForensicRun | null) {
-    if (!run) return "No live run yet.";
-    if (run.status && !["ready", "complete", "completed"].includes(run.status)) {
-        return `Status: ${run.status}${run.error ? ` — ${run.error}` : ""}`;
+function isOpenRun(status?: string) {
+    const value = (status || "").toLowerCase();
+    return value === "queued" || value === "processing";
+}
+
+function statusClass(status?: string) {
+    const value = (status || "").toUpperCase();
+    if (value === "PASS") return "text-green-600";
+    if (value === "FAIL") return "text-red-500";
+    return "text-sub-600";
+}
+
+function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
+    if (!run) {
+        return (
+            <p className="mt-2 text-label-sm leading-6 text-sub-600">
+                No live run yet.
+            </p>
+        );
+    }
+    if (isOpenRun(run.status)) {
+        return (
+            <p className="mt-2 text-label-sm leading-6 text-sub-600">
+                Status: {run.status}. The engine is working through the XER.
+            </p>
+        );
+    }
+    if ((run.status || "").toLowerCase() === "failed") {
+        return (
+            <p className="mt-2 text-label-sm leading-6 text-red-500">
+                Run failed
+                {run.error_code || run.error
+                    ? ` — ${run.error_code || run.error}`
+                    : "."}
+            </p>
+        );
     }
     const result = run.result;
-    if (!result) return "Run finished with no summary.";
-    if (typeof result.summary === "string") return result.summary;
-    if (typeof result.narrative === "string") return result.narrative;
-    if (typeof result.text === "string") return result.text;
-    if (Array.isArray(result.findings)) return result.findings.join(" ");
-    return JSON.stringify(result).slice(0, 1200);
+    const checks =
+        result?.tables?.flatMap((table) => table.rows ?? []) ?? [];
+    if (!result || (checks.length === 0 && !(result.metrics ?? []).length)) {
+        const fallback =
+            result?.summary ||
+            result?.narrative ||
+            result?.text ||
+            (Array.isArray(result?.findings) ? result.findings.join(" ") : "");
+        return (
+            <p className="mt-2 text-label-sm leading-6 text-sub-600">
+                {fallback || "Run finished with no summary."}
+            </p>
+        );
+    }
+    return (
+        <div className="mt-3 flex flex-col gap-4">
+            {(result.metrics ?? []).length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                    {result.metrics?.map((metric) => (
+                        <span
+                            key={`${metric.label}-${metric.value}`}
+                            className="rounded-full border border-stroke-soft-200 px-3 py-1 text-label-xs text-sub-600"
+                        >
+                            {metric.label}: {metric.value}
+                        </span>
+                    ))}
+                </div>
+            ) : null}
+            {checks.length > 0 ? (
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-left text-label-sm">
+                        <thead>
+                            <tr className="text-label-xs uppercase tracking-[0.14em] text-soft-400">
+                                <th className="py-2 pr-3 font-medium">Check</th>
+                                <th className="py-2 pr-3 font-medium">Status</th>
+                                <th className="py-2 pr-3 font-medium">Result</th>
+                                <th className="py-2 font-medium">Threshold</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stroke-soft-200">
+                            {checks.map((row) => (
+                                <tr key={`${row.number}-${row.name}`}>
+                                    <td className="py-3 pr-3 text-strong-950">
+                                        {row.number}. {row.name}
+                                        {row.summary ? (
+                                            <p className="mt-1 text-label-xs leading-5 text-sub-600">
+                                                {row.summary}
+                                            </p>
+                                        ) : null}
+                                    </td>
+                                    <td
+                                        className={`py-3 pr-3 ${statusClass(row.status)}`}
+                                    >
+                                        {row.status || "—"}
+                                    </td>
+                                    <td className="py-3 pr-3 text-sub-600">
+                                        {row.metric_value ?? "—"}
+                                    </td>
+                                    <td className="py-3 text-sub-600">
+                                        {row.threshold || row.na_reason || "—"}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : null}
+        </div>
+    );
 }
 
 const ForensicToolPage = ({ toolId }: Props) => {
@@ -105,6 +200,7 @@ const ForensicToolPage = ({ toolId }: Props) => {
           )
         : [];
     const canLiveRun = Boolean(defaultForensicRunParameters(toolId));
+    const runBusy = running || isOpenRun(run?.status);
 
     useEffect(() => {
         if (gate?.state === "locked") {
@@ -183,6 +279,46 @@ const ForensicToolPage = ({ toolId }: Props) => {
     }, [
         live.enabled,
         liveActiveId,
+        session?.accessToken,
+        session?.projectId,
+        tool,
+    ]);
+
+    useEffect(() => {
+        if (
+            !live.enabled ||
+            !session?.accessToken ||
+            !session.projectId ||
+            !liveActiveId ||
+            !tool ||
+            !isOpenRun(run?.status)
+        ) {
+            return;
+        }
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const moduleSlug = tool.id;
+        let cancelled = false;
+        const timer = window.setInterval(() => {
+            void listForensicRuns(token, projectId, liveActiveId)
+                .then((payload) => {
+                    if (cancelled) return;
+                    const latest =
+                        (payload.runs ?? []).find(
+                            (item) => item.module_slug === moduleSlug
+                        ) ?? null;
+                    if (latest) setRun(latest);
+                })
+                .catch(() => undefined);
+        }, 2000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [
+        live.enabled,
+        liveActiveId,
+        run?.status,
         session?.accessToken,
         session?.projectId,
         tool,
@@ -301,15 +437,17 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 <h2 className="text-label-xs uppercase tracking-[0.16em] text-soft-400">
                                     {live.enabled ? "Live engine" : "Mock finding"}
                                 </h2>
-                                <p className="mt-2 text-label-sm leading-6 text-sub-600">
-                                    {live.enabled
-                                        ? summarizeRun(run)
-                                        : `${tool.label} ran against ${
-                                              activeProgrammes
-                                                  .map((file) => file.name)
-                                                  .join(" · ") || "the selected set"
-                                          }. This is a deterministic mock result for product review — live engine output comes later.`}
-                                </p>
+                                {live.enabled ? (
+                                    <ForensicLiveResult run={run} />
+                                ) : (
+                                    <p className="mt-2 text-label-sm leading-6 text-sub-600">
+                                        {`${tool.label} ran against ${
+                                            activeProgrammes
+                                                .map((file) => file.name)
+                                                .join(" · ") || "the selected set"
+                                        }. This is a deterministic mock result for product review — live engine output comes later.`}
+                                    </p>
+                                )}
                                 {runError ? (
                                     <p className="mt-3 text-label-sm text-red-500">
                                         {runError}
@@ -318,11 +456,11 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 {live.enabled ? (
                                     <button
                                         type="button"
-                                        disabled={!canLiveRun || running}
+                                        disabled={!canLiveRun || runBusy}
                                         onClick={() => void runLive()}
                                         className="mt-4 h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 disabled:cursor-not-allowed disabled:bg-soft-200 disabled:text-soft-400"
                                     >
-                                        {running
+                                        {runBusy
                                             ? "Running…"
                                             : canLiveRun
                                               ? `Run ${tool.label}`
@@ -336,7 +474,7 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 </h2>
                                 <p className="mt-3 text-label-sm leading-7 text-sub-600">
                                     {live.enabled
-                                        ? "Open Intake to swap the XER set, then run this analysis against the live forensic engine."
+                                        ? "The checks above are the live engine result for this workspace. Run again after you change the XER set."
                                         : `The selected programmes support a readable ${tool.label.toLowerCase()} position. Open Intake to swap the XER set, or keep this workspace and move through the native COAir analyses in the left nav.`}
                                 </p>
                             </section>
