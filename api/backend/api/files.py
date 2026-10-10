@@ -278,8 +278,8 @@ async def upload_file(
         if is_duplicate:
             return UploadResult(
                 file_id=file_id,
-                filename=file.filename,
-                status="completed",
+                filename=file.filename or "",
+                status="skipped",
             )
         from backend.tasks.ingestion_jobs import get_ingestion_job_store
         from src.project_store import get_project_store

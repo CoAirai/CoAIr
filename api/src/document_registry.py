@@ -180,25 +180,22 @@ class DocumentRegistry:
 
     def find_duplicate(self, file_name: str, file_size_kb: int,
                        file_path: str = "", project_id: str = "") -> Optional[DocumentRecord]:
-        """Find existing completed record with same name+size or same file hash."""
-        # Check by file hash (strongest dedup) if file_path provided
-        if file_path:
-            try:
-                import hashlib
-                h = hashlib.md5(open(file_path, "rb").read()).hexdigest()
-                for rec in self._records.values():
-                    if (getattr(rec, 'file_hash', None) == h
-                            and (not project_id or rec.project_id == project_id)
-                            and rec.status == "completed"):
-                        return rec
-            except Exception:
-                pass
-        # Fallback: name + size
+        """Return a file already stored for this project under the same name.
+
+        Indexing does not have to be finished. A record left in error is not a
+        match, so that file can be sent again. Name match does not read the PDF.
+        """
+        del file_path, file_size_kb  # identity is the project file name
+        wanted = (file_name or "").strip()
+        if not wanted:
+            return None
+        wanted_key = wanted.casefold()
         for rec in self._records.values():
-            if (rec.file_name == file_name
-                    and rec.file_size_kb == file_size_kb
-                    and (not project_id or rec.project_id == project_id)
-                    and rec.status == "completed"):
+            if project_id and (rec.project_id or "") != project_id:
+                continue
+            if (rec.status or "") == "error":
+                continue
+            if (rec.file_name or "").casefold() == wanted_key:
                 return rec
         return None
 

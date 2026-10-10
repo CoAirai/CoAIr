@@ -681,7 +681,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                         "success"
                     );
                 }
-                return { ok: true };
+                return { ok: true, skipped: result.status === "skipped" };
             } catch (err) {
                 const status = err instanceof CoairApiError ? err.status : 0;
                 if (status === 401 && !options?.authRetried) {
@@ -755,9 +755,14 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             ]);
             let cursor = 0;
             let uploaded = 0;
+            let skipped = 0;
             let failed = 0;
             const publish = () => {
-                const finished = uploaded + failed;
+                const finished = uploaded + skipped + failed;
+                const already =
+                    skipped > 0
+                        ? ` · ${skipped.toLocaleString()} already saved`
+                        : "";
                 setFileTransfers((prev) =>
                     prev.map((transfer) =>
                         transfer.id === batchId
@@ -765,7 +770,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                                   ...transfer,
                                   phase: finished >= list.length ? "injecting" : "uploading",
                                   percent: Math.round((finished / list.length) * 100),
-                                  stage: `Uploaded ${finished.toLocaleString()} of ${list.length.toLocaleString()}`,
+                                  stage: `Uploaded ${finished.toLocaleString()} of ${list.length.toLocaleString()}${already}`,
                                   error:
                                       failed > 0
                                           ? `${failed.toLocaleString()} failed`
@@ -798,24 +803,36 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                             skipTrack: true,
                         });
                     }
-                    if (result.ok) uploaded += 1;
-                    else failed += 1;
+                    if (result.ok) {
+                        if (result.skipped) skipped += 1;
+                        else uploaded += 1;
+                    } else failed += 1;
                     publish();
                 }
             };
             const workers = Math.min(3, list.length);
             await Promise.all(Array.from({ length: workers }, () => worker()));
             await refreshLibrary();
-            if (failed === 0) {
+            const skippedNote =
+                skipped > 0
+                    ? `${skipped.toLocaleString()} already in the library were skipped`
+                    : "";
+            if (failed === 0 && uploaded === 0 && skipped > 0) {
+                pushToast(skippedNote, "success");
+            } else if (failed === 0) {
                 pushToast(
-                    `Uploaded ${uploaded} documents — injecting into AI…`,
+                    skippedNote
+                        ? `Uploaded ${uploaded} documents. ${skippedNote}.`
+                        : `Uploaded ${uploaded} documents — injecting into AI…`,
                     "success"
                 );
-            } else if (uploaded === 0) {
+            } else if (uploaded === 0 && skipped === 0) {
                 pushToast(`All ${failed} uploads failed`, "error");
             } else {
                 pushToast(
-                    `Uploaded ${uploaded} of ${list.length}; ${failed} failed`,
+                    `Uploaded ${uploaded} of ${list.length}; ${failed} failed${
+                        skippedNote ? `. ${skippedNote}` : ""
+                    }`,
                     "error"
                 );
             }
