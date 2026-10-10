@@ -193,10 +193,11 @@ class TableCatalog:
 
             logger.info(f"[Catalog] Saved {len(data)} entries")
 
-            # Sync to GCS synchronously (Cloud Run is stateless!)
+            # Local catalog is the source of truth. Object storage is a backup
+            # and must not run once per extracted page.
             try:
                 from . import gcs_storage
-                gcs_storage.sync_catalog_to_gcs()
+                gcs_storage.schedule_object_sync("catalog", gcs_storage.sync_catalog_to_gcs)
             except Exception:
                 pass
         except Exception as e:
@@ -303,11 +304,12 @@ class TableCatalog:
         entry.tables.append(table_meta)
         self._save_catalog()
 
-        # Sync parquet to GCS
         try:
             from . import gcs_storage
             if table_meta.parquet_path and Path(table_meta.parquet_path).exists():
-                gcs_storage.sync_parquet_to_gcs(table_meta.parquet_path)
+                gcs_storage.enqueue_object_sync(
+                    gcs_storage.sync_parquet_to_gcs, table_meta.parquet_path
+                )
         except Exception:
             pass
 

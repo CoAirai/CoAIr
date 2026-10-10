@@ -183,8 +183,8 @@ class ChunkStore:
         except Exception:
             pass
         try:
-            from .gcs_storage import sync_chunks_to_gcs
-            sync_chunks_to_gcs()
+            from .gcs_storage import schedule_object_sync, sync_chunks_to_gcs
+            schedule_object_sync("chunks", sync_chunks_to_gcs)
         except Exception:
             pass
 

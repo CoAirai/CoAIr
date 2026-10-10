@@ -23,6 +23,8 @@ async def lifespan(app: FastAPI):
     start_report_workers()
     start_forensic_workers()
     start_event_index_workers()
+    from backend.main import start_health_warm
+    start_health_warm()
     try:
         yield
     finally:

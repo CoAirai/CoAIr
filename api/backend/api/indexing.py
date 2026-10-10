@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.get("/indexing/status", response_model=List[IndexingStatus])
-async def get_indexing_status(project: ProjectContext = Depends(get_current_project)):
+def get_indexing_status(project: ProjectContext = Depends(get_current_project)):
     items = get_ingestion_job_store().list_project(project.project_id)
     return [
         IndexingStatus(
@@ -30,7 +30,7 @@ async def get_indexing_status(project: ProjectContext = Depends(get_current_proj
 
 
 @router.get("/indexing/summary")
-async def get_indexing_summary(project: ProjectContext = Depends(get_current_project)):
+def get_indexing_summary(project: ProjectContext = Depends(get_current_project)):
     return get_ingestion_job_store().project_summary(project.project_id)
 
 

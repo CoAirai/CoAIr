@@ -193,6 +193,16 @@ export async function listIndexingStatus(token: string, projectId: string) {
     return coairFetch<IndexingStatus[]>("/indexing/status", { token, projectId });
 }
 
+export async function readIndexingSummary(token: string, projectId: string) {
+    return coairFetch<{
+        queued?: number;
+        processing?: number;
+        ready?: number;
+        failed?: number;
+        eta_seconds?: number | null;
+    }>("/indexing/summary", { token, projectId });
+}
+
 export async function deleteProjectFile(
     token: string,
     projectId: string,

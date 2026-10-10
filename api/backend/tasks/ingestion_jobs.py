@@ -74,8 +74,11 @@ class IngestionJobStore:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(str(self.db_path), timeout=20)
+        conn = sqlite3.connect(str(self.db_path), timeout=5)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA synchronous=NORMAL")
         try:
             yield conn
             conn.commit()
@@ -129,36 +132,49 @@ class IngestionJobStore:
         return self._row(row)
 
     def claim_next(self) -> Optional[Dict]:
+        terminals = tuple(TERMINAL)
+        placeholders = ",".join("?" * len(terminals))
+        sql = f"""
+            WITH ranked AS (
+                SELECT job_id, project_id, status,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY project_id ORDER BY created_at, rowid
+                       ) AS rn
+                FROM ingestion_jobs
+            ),
+            open_calibration AS (
+                SELECT DISTINCT project_id FROM ranked
+                WHERE rn <= ? AND status NOT IN ({placeholders})
+            )
+            SELECT i.job_id
+            FROM ingestion_jobs AS i
+            JOIN ranked AS r ON r.job_id = i.job_id
+            WHERE i.status = 'queued'
+              AND (
+                r.rn <= ?
+                OR i.project_id NOT IN (SELECT project_id FROM open_calibration)
+              )
+            ORDER BY i.created_at, i.rowid
+            LIMIT 1
+        """
+        params = [CALIBRATION_BATCH_SIZE, *terminals, CALIBRATION_BATCH_SIZE]
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            candidates = conn.execute(
-                "SELECT * FROM ingestion_jobs WHERE status='queued' "
-                "ORDER BY created_at, rowid"
-            ).fetchall()
-            row = None
-            for candidate in candidates:
-                first_batch = conn.execute(
-                    "SELECT job_id,status FROM ingestion_jobs WHERE project_id=? "
-                    "ORDER BY created_at,rowid LIMIT ?",
-                    [candidate["project_id"], CALIBRATION_BATCH_SIZE],
-                ).fetchall()
-                first_ids = {item["job_id"] for item in first_batch}
-                calibrated = bool(first_batch) and all(
-                    item["status"] in TERMINAL for item in first_batch
-                )
-                if candidate["job_id"] in first_ids or calibrated:
-                    row = candidate
-                    break
-            if not row:
+            picked = conn.execute(sql, params).fetchone()
+            if not picked:
                 return None
             now = _now()
-            conn.execute(
+            updated = conn.execute(
                 "UPDATE ingestion_jobs SET status='processing', stage='extracting', "
                 "progress=0.03, attempts=attempts+1, started_at=COALESCE(started_at,?), "
                 "updated_at=? WHERE job_id=? AND status='queued'",
-                [now, now, row["job_id"]],
+                [now, now, picked["job_id"]],
             )
-            row = conn.execute("SELECT * FROM ingestion_jobs WHERE job_id=?", [row["job_id"]]).fetchone()
+            if updated.rowcount != 1:
+                return None
+            row = conn.execute(
+                "SELECT * FROM ingestion_jobs WHERE job_id=?", [picked["job_id"]]
+            ).fetchone()
         return self._row(row)
 
     def update(self, job_id: str, *, stage: Optional[str] = None,
@@ -232,34 +248,50 @@ class IngestionJobStore:
         return [self._row(r) for r in rows]
 
     def project_summary(self, project_id: str) -> Dict:
-        jobs = self.list_project(project_id)
-        queued = sum(j["status"] == "queued" for j in jobs)
-        processing = sum(j["status"] == "processing" for j in jobs)
-        ready = sum(j["status"] == "ready" for j in jobs)
-        failed = sum(j["status"] in ("failed", "credit_balance_exhausted") for j in jobs)
+        with self._connect() as conn:
+            counts = {
+                row["status"]: int(row["n"])
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS n FROM ingestion_jobs "
+                    "WHERE project_id=? GROUP BY status",
+                    [project_id],
+                )
+            }
+            duration_rows = conn.execute(
+                "SELECT started_at, completed_at FROM ingestion_jobs "
+                "WHERE project_id=? AND status='ready' AND started_at IS NOT NULL "
+                "AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 20",
+                [project_id],
+            ).fetchall()
+            first_batch = conn.execute(
+                "SELECT status FROM ingestion_jobs WHERE project_id=? "
+                "ORDER BY created_at, rowid LIMIT ?",
+                [project_id, CALIBRATION_BATCH_SIZE],
+            ).fetchall()
+        queued = counts.get("queued", 0)
+        processing = counts.get("processing", 0)
+        ready = counts.get("ready", 0)
+        failed = counts.get("failed", 0) + counts.get("credit_balance_exhausted", 0)
         durations = []
-        for job in jobs:
-            if not job.get("started_at") or not job.get("completed_at") or job["status"] != "ready":
-                continue
+        for row in duration_rows:
             try:
                 durations.append(
-                    (datetime.fromisoformat(job["completed_at"]) -
-                     datetime.fromisoformat(job["started_at"])).total_seconds()
+                    (datetime.fromisoformat(row["completed_at"]) -
+                     datetime.fromisoformat(row["started_at"])).total_seconds()
                 )
             except Exception:
                 pass
         remaining = queued + processing
-        first_batch = sorted(jobs, key=lambda j: (j["created_at"], j["job_id"]))[:CALIBRATION_BATCH_SIZE]
         calibration_complete = bool(first_batch) and all(
-            j["status"] in TERMINAL for j in first_batch
+            row["status"] in TERMINAL for row in first_batch
         )
         eta = None
         if remaining and durations:
-            mean = sum(durations[-20:]) / len(durations[-20:])
+            mean = sum(durations) / len(durations)
             eta = int(mean * remaining / max(1, int(INGEST_MAX_CONCURRENCY)))
         return {"queued": queued, "processing": processing, "ready": ready,
                 "failed": failed, "eta_seconds": eta,
-                "calibration_size": min(len(jobs), CALIBRATION_BATCH_SIZE),
+                "calibration_size": len(first_batch),
                 "calibration_complete": calibration_complete}
 
 

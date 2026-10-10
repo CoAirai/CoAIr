@@ -32,6 +32,7 @@ import {
     listIndexingStatus,
     listLibrary,
     listProjects,
+    readIndexingSummary,
     uploadProjectFile,
     type IndexingStatus,
 } from "@/lib/coair/workspace";
@@ -82,6 +83,7 @@ type FileTransfer = {
     percent: number;
     stage?: string;
     error?: string;
+    batchTotal?: number;
 };
 
 type LiveWorkspaceValue = {
@@ -321,12 +323,16 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 .catch(() => undefined);
         };
         pullBalance();
-        const timer = window.setInterval(pullBalance, 15000);
-        const onFocus = () => pullBalance();
+        const timer = window.setInterval(pullBalance, 30000);
+        const onFocus = () => {
+            if (document.visibilityState === "visible") pullBalance();
+        };
+        document.addEventListener("visibilitychange", onFocus);
         window.addEventListener("focus", onFocus);
         return () => {
             cancelled = true;
             window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", onFocus);
             window.removeEventListener("focus", onFocus);
         };
     }, [enabled, session?.accessToken]);
@@ -441,6 +447,41 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
 
         const tick = async () => {
             try {
+                const batch = fileTransfers.find((transfer) => transfer.batchTotal);
+                if (batch && (batch.phase === "injecting" || batch.phase === "uploading")) {
+                    if (batch.phase === "uploading") return;
+                    const summary = await readIndexingSummary(token, projectId);
+                    if (cancelled) return;
+                    const queued = summary.queued ?? 0;
+                    const processing = summary.processing ?? 0;
+                    const ready = summary.ready ?? 0;
+                    const failed = summary.failed ?? 0;
+                    const remaining = queued + processing;
+                    const done = ready + failed;
+                    const total = Math.max(batch.batchTotal ?? 0, done + remaining);
+                    setFileTransfers((prev) =>
+                        prev.map((transfer) =>
+                            transfer.id === batch.id
+                                ? {
+                                      ...transfer,
+                                      phase: remaining === 0 && done > 0 ? "ready" : "injecting",
+                                      percent:
+                                          total > 0
+                                              ? Math.min(100, Math.round((done / total) * 100))
+                                              : transfer.percent,
+                                      stage:
+                                          remaining === 0
+                                              ? "Ready for the demo"
+                                              : `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`,
+                                  }
+                                : transfer
+                        )
+                    );
+                    if (remaining === 0 && done > 0) {
+                        await refreshLibrary();
+                    }
+                    return;
+                }
                 const jobs = await listIndexingStatus(token, projectId);
                 if (cancelled) return;
                 applyIndexingJobs(jobs);
@@ -482,7 +523,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         void tick();
         const timer = window.setInterval(() => {
             void tick();
-        }, 2500);
+        }, fileTransfers.some((transfer) => transfer.batchTotal) ? 8000 : 2500);
         return () => {
             cancelled = true;
             window.clearInterval(timer);
@@ -516,8 +557,12 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     }, [fileTransfers]);
 
     const uploadFile = useCallback(
-        async (file: File, options?: { quiet?: boolean }) => {
+        async (
+            file: File,
+            options?: { quiet?: boolean; skipRefresh?: boolean; skipTrack?: boolean }
+        ) => {
             const quiet = Boolean(options?.quiet);
+            const skipTrack = Boolean(options?.skipTrack);
             if (!session?.accessToken || !session.projectId) {
                 return { ok: false, error: "No project selected" };
             }
@@ -532,53 +577,61 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 return { ok: false, error: message };
             }
             const transferId = `xfer-${Date.now()}-${++transferSeq.current}`;
-            setFileTransfers((prev) => [
-                {
-                    id: transferId,
-                    name: file.name,
-                    phase: "uploading",
-                    percent: 0,
-                    stage: "Uploading",
-                },
-                ...prev,
-            ]);
+            if (!skipTrack) {
+                setFileTransfers((prev) => [
+                    {
+                        id: transferId,
+                        name: file.name,
+                        phase: "uploading",
+                        percent: 0,
+                        stage: "Uploading",
+                    },
+                    ...prev,
+                ]);
+            }
             if (!quiet) pushToast(`Uploading ${file.name}…`, "info");
             try {
                 const result = await uploadProjectFile(
                     session.accessToken,
                     session.projectId,
                     file,
-                    (percent) => {
-                        setFileTransfers((prev) =>
-                            prev.map((transfer) =>
-                                transfer.id === transferId
-                                    ? {
-                                          ...transfer,
-                                          percent,
-                                          stage: `Uploading ${percent}%`,
-                                      }
-                                    : transfer
-                            )
-                        );
-                    }
+                    skipTrack
+                        ? undefined
+                        : (percent) => {
+                              setFileTransfers((prev) =>
+                                  prev.map((transfer) =>
+                                      transfer.id === transferId
+                                          ? {
+                                                ...transfer,
+                                                percent,
+                                                stage: `Uploading ${percent}%`,
+                                            }
+                                          : transfer
+                                  )
+                              );
+                          }
                 );
                 const fileId = result.file_id || "";
                 const alreadyDone =
                     result.status === "completed" || result.status === "ready";
-                setFileTransfers((prev) =>
-                    prev.map((transfer) =>
-                        transfer.id === transferId
-                            ? {
-                                  ...transfer,
-                                  fileId: fileId || undefined,
-                                  phase: alreadyDone ? "ready" : "injecting",
-                                  percent: alreadyDone ? 100 : Math.max(transfer.percent, 100),
-                                  stage: alreadyDone ? "Ready" : "Queued",
-                              }
-                            : transfer
-                    )
-                );
-                await refreshLibrary();
+                if (!skipTrack) {
+                    setFileTransfers((prev) =>
+                        prev.map((transfer) =>
+                            transfer.id === transferId
+                                ? {
+                                      ...transfer,
+                                      fileId: fileId || undefined,
+                                      phase: alreadyDone ? "ready" : "injecting",
+                                      percent: alreadyDone ? 100 : Math.max(transfer.percent, 100),
+                                      stage: alreadyDone ? "Ready" : "Queued",
+                                  }
+                                : transfer
+                        )
+                    );
+                }
+                if (!options?.skipRefresh) {
+                    await refreshLibrary();
+                }
                 if (!quiet) {
                     pushToast(
                         alreadyDone
@@ -595,19 +648,21 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     .replace(/^mac_sidecar:\s*/i, "")
                     .replace(/^invalid_pdf:\s*/i, "")
                     .replace(/^unsupported_file_type:\s*/i, "Unsupported file type: ");
-                setFileTransfers((prev) =>
-                    prev.map((transfer) =>
-                        transfer.id === transferId
-                            ? {
-                                  ...transfer,
-                                  phase: "failed",
-                                  percent: 100,
-                                  stage: "Failed",
-                                  error: message,
-                              }
-                            : transfer
-                    )
-                );
+                if (!skipTrack) {
+                    setFileTransfers((prev) =>
+                        prev.map((transfer) =>
+                            transfer.id === transferId
+                                ? {
+                                      ...transfer,
+                                      phase: "failed",
+                                      percent: 100,
+                                      stage: "Failed",
+                                      error: message,
+                                  }
+                                : transfer
+                        )
+                    );
+                }
                 if (!quiet) pushToast(message, "error");
                 return {
                     ok: false,
@@ -633,12 +688,69 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     error: result.error,
                 };
             }
-            pushToast(`Uploading ${list.length} documents…`, "info");
-            const results = await Promise.all(
-                list.map((file) => uploadFile(file, { quiet: true }))
+            pushToast(
+                `Uploading ${list.length.toLocaleString()} documents, 3 at a time. Keep this tab open until the upload count finishes.`,
+                "info"
             );
-            const uploaded = results.filter((r) => r.ok).length;
-            const failed = results.length - uploaded;
+            const batchId = `batch-${Date.now()}`;
+            setFileTransfers((prev) => [
+                {
+                    id: batchId,
+                    name: `${list.length.toLocaleString()} PDFs`,
+                    phase: "uploading",
+                    percent: 0,
+                    stage: `Uploaded 0 of ${list.length.toLocaleString()}`,
+                    batchTotal: list.length,
+                },
+                ...prev,
+            ]);
+            let cursor = 0;
+            let uploaded = 0;
+            let failed = 0;
+            const publish = () => {
+                const finished = uploaded + failed;
+                setFileTransfers((prev) =>
+                    prev.map((transfer) =>
+                        transfer.id === batchId
+                            ? {
+                                  ...transfer,
+                                  phase: finished >= list.length ? "injecting" : "uploading",
+                                  percent: Math.round((finished / list.length) * 100),
+                                  stage: `Uploaded ${finished.toLocaleString()} of ${list.length.toLocaleString()}`,
+                                  error:
+                                      failed > 0
+                                          ? `${failed.toLocaleString()} failed`
+                                          : undefined,
+                              }
+                            : transfer
+                    )
+                );
+            };
+            const worker = async () => {
+                while (cursor < list.length) {
+                    const file = list[cursor];
+                    cursor += 1;
+                    let result = await uploadFile(file, {
+                        quiet: true,
+                        skipRefresh: true,
+                        skipTrack: true,
+                    });
+                    if (!result.ok && /network|timeout|502|503|429/i.test(result.error || "")) {
+                        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+                        result = await uploadFile(file, {
+                            quiet: true,
+                            skipRefresh: true,
+                            skipTrack: true,
+                        });
+                    }
+                    if (result.ok) uploaded += 1;
+                    else failed += 1;
+                    publish();
+                }
+            };
+            const workers = Math.min(3, list.length);
+            await Promise.all(Array.from({ length: workers }, () => worker()));
+            await refreshLibrary();
             if (failed === 0) {
                 pushToast(
                     `Uploaded ${uploaded} documents — injecting into AI…`,
@@ -659,7 +771,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 error: failed ? `${failed} upload(s) failed` : undefined,
             };
         },
-        [pushToast, uploadFile]
+        [pushToast, refreshLibrary, uploadFile]
     );
 
     const removeFile = useCallback(

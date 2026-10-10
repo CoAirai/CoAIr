@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 
 import sys
+import threading
 from pathlib import Path
 
 # Ensure project root is on sys.path so `from src.*` imports work
@@ -18,6 +19,30 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+_health_ready = False
+_health_error = ""
+
+
+def warm_health() -> None:
+    """Validate runtime once, off the request path."""
+    global _health_ready, _health_error
+    try:
+        from src.chronology_prompts import validate_chronology_runtime
+        from src.vector_runtime import validate_vector_runtime_dependencies
+
+        validate_chronology_runtime()
+        validate_vector_runtime_dependencies()
+    except Exception as exc:
+        _health_error = str(exc)
+        return
+    _health_ready = True
+    _health_error = ""
+
+
+def start_health_warm() -> None:
+    threading.Thread(target=warm_health, name="health-warm", daemon=True).start()
+
 
 from backend.core.config import CORS_ORIGINS
 from backend.core.lifespan import lifespan
@@ -239,16 +264,13 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health", tags=["health"])
     async def health():
-        try:
-            from src.chronology_prompts import validate_chronology_runtime
-            from src.vector_runtime import validate_vector_runtime_dependencies
-
-            validate_chronology_runtime()
-            validate_vector_runtime_dependencies()
-        except Exception as exc:
+        # Validation used to run inside this handler. During a large PDF batch
+        # that import blocked the only API worker, so admin and company
+        # requests sat behind a health check. The result is warmed at startup.
+        if _health_error and not _health_ready:
             return JSONResponse(
                 status_code=503,
-                content={"status": "unhealthy", "component": "runtime", "error": str(exc)},
+                content={"status": "unhealthy", "component": "runtime", "error": _health_error},
             )
         return {"status": "ok", "chronology": "ready", "vector_runtime": "ready"}
 

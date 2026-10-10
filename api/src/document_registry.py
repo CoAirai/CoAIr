@@ -126,10 +126,9 @@ class DocumentRegistry:
         REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
         data = {doc_id: asdict(rec) for doc_id, rec in self._records.items()}
         REGISTRY_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        # Sync to GCS synchronously (Cloud Run is stateless - data MUST persist!)
         try:
-            from .gcs_storage import sync_document_registry_to_gcs
-            sync_document_registry_to_gcs()
+            from .gcs_storage import schedule_object_sync, sync_document_registry_to_gcs
+            schedule_object_sync("document-registry", sync_document_registry_to_gcs)
         except Exception:
             pass
 

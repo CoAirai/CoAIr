@@ -5,6 +5,8 @@ Uses Amazon S3 when S3_BUCKET_NAME is set, otherwise Google Cloud Storage when
 GCS_BUCKET_NAME is set. Disabled (local disk only) if neither is configured.
 """
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
@@ -206,6 +208,48 @@ def delete_blob(blob_name: str) -> bool:
 
 
 # ── High-level sync functions ────────────────────────────────
+
+
+_sync_pool: Optional[ThreadPoolExecutor] = None
+_sync_guard = threading.Lock()
+_sync_timers: dict = {}
+
+
+def _sync_pool_executor() -> ThreadPoolExecutor:
+    global _sync_pool
+    with _sync_guard:
+        if _sync_pool is None:
+            _sync_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="object-sync")
+        return _sync_pool
+
+
+def enqueue_object_sync(fn, *args) -> None:
+    """Run an object-storage upload off the ingestion and request threads."""
+
+    def run():
+        try:
+            fn(*args)
+        except Exception as exc:
+            logger.warning(f"[{_tag()}] background sync failed: {exc}")
+
+    _sync_pool_executor().submit(run)
+
+
+def schedule_object_sync(key: str, fn, delay: float = 20.0) -> None:
+    """Coalesce repeated uploads of the same snapshot. Local disk stays immediate."""
+
+    def fire():
+        with _sync_guard:
+            _sync_timers.pop(key, None)
+        enqueue_object_sync(fn)
+
+    with _sync_guard:
+        if key in _sync_timers:
+            return
+        timer = threading.Timer(delay, fire)
+        timer.daemon = True
+        _sync_timers[key] = timer
+        timer.start()
 
 
 def sync_catalog_to_gcs():

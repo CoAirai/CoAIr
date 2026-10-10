@@ -224,6 +224,18 @@ def _index_data_document(
         logger.warning(f"[FileRouter] data document index skipped: {exc}")
 
 
+def _bulk_backlog(project_id: str) -> int:
+    """How many documents are still waiting or running for this project."""
+    if not project_id:
+        return 0
+    try:
+        from backend.tasks.ingestion_jobs import get_ingestion_job_store
+        stats = get_ingestion_job_store().project_summary(project_id)
+    except Exception:
+        return 0
+    return int(stats.get("queued") or 0) + int(stats.get("processing") or 0)
+
+
 def _prepare_event_artifact(
     result: ProcessingResult, *, file_path: str, project_id: str, doc_id: str,
     file_name: str, source_kind: str, page_texts: Optional[Dict[int, str]] = None,
@@ -234,7 +246,9 @@ def _prepare_event_artifact(
     Failure is visible but non-fatal: document search has already completed.
     """
     from .config import EVENT_INDEX_ENABLED
-    if not EVENT_INDEX_ENABLED:
+    if not EVENT_INDEX_ENABLED or _bulk_backlog(project_id) >= 25:
+        # A large batch stays on document search. Per-document event calls
+        # would spend the demo CA budget and not finish overnight.
         result.event_index_status = "not_started"
         return
     try:
@@ -332,7 +346,7 @@ def _process_document(
                         doc_text_by_page[page_num] = doc.text
 
                 from .config import INGEST_EXTRACT_NOTICES
-                if doc_text_by_page and INGEST_EXTRACT_NOTICES:
+                if doc_text_by_page and INGEST_EXTRACT_NOTICES and _bulk_backlog(project_id) < 25:
                     doc_id = generate_doc_id(file_path)
                     notice_summary = extract_document_notice(
                         doc_id=doc_id,
@@ -375,7 +389,11 @@ def _process_document(
             # Table extraction for PDFs (direct — skips duplicate OCR analysis).
             # Gated: skip on fast bulk embedding runs (INGEST_EXTRACT_TABLES=false).
             from .config import INGEST_EXTRACT_TABLES
-            if INGEST_EXTRACT_TABLES and filename.lower().endswith(".pdf"):
+            if (
+                INGEST_EXTRACT_TABLES
+                and filename.lower().endswith(".pdf")
+                and _bulk_backlog(project_id) < 25
+            ):
                 report("tables", 0.95)
                 try:
                     from .pdf_table_extractor import extract_pdf_tables
