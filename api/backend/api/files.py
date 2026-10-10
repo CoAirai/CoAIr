@@ -1,5 +1,6 @@
 """File upload, listing, deletion, stats, and export endpoints."""
 
+import asyncio
 import os
 from pathlib import Path
 from typing import List
@@ -15,6 +16,12 @@ from backend.tasks.indexing import index_file_background
 
 router = APIRouter()
 _file_service = FileService()
+# One uvicorn worker. A few hundred parallel uploads pin every connection and
+# the admin and company apps stop answering. Extra files get 429 and the
+# browser uploader retries them.
+_UPLOAD_LIMIT = 6
+_upload_gate = asyncio.Lock()
+_uploads_active = 0
 
 
 def _delete_legacy_project_file(file_id: str, project_id: str) -> dict | None:
@@ -254,30 +261,41 @@ async def upload_file(
 
     # Fail before accepting bytes into the index queue when CA is exhausted.
     enforce_uploader_budget(user.username)
+    global _uploads_active
+    async with _upload_gate:
+        if _uploads_active >= _UPLOAD_LIMIT:
+            raise HTTPException(
+                429, "Too many uploads are in progress. This file will retry."
+            )
+        _uploads_active += 1
     try:
-        saved_path, file_id, is_duplicate = await _file_service.save(
-            file, project.project_id, username=user.username,
+        try:
+            saved_path, file_id, is_duplicate = await _file_service.save(
+                file, project.project_id, username=user.username,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if is_duplicate:
+            return UploadResult(
+                file_id=file_id,
+                filename=file.filename,
+                status="completed",
+            )
+        from backend.tasks.ingestion_jobs import get_ingestion_job_store
+        from src.project_store import get_project_store
+        get_project_store().set_vector_state(project.project_id, "provisioning")
+        job = get_ingestion_job_store().enqueue(
+            project.project_id, file_id, saved_path, file.filename or "upload",
+            requested_by=user.username,
         )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    if is_duplicate:
         return UploadResult(
             file_id=file_id,
             filename=file.filename,
-            status="completed",
+            status=job["status"],
         )
-    from backend.tasks.ingestion_jobs import get_ingestion_job_store
-    from src.project_store import get_project_store
-    get_project_store().set_vector_state(project.project_id, "provisioning")
-    job = get_ingestion_job_store().enqueue(
-        project.project_id, file_id, saved_path, file.filename or "upload",
-        requested_by=user.username,
-    )
-    return UploadResult(
-        file_id=file_id,
-        filename=file.filename,
-        status=job["status"],
-    )
+    finally:
+        async with _upload_gate:
+            _uploads_active -= 1
 
 
 @router.get("/files", response_model=List[FileInfo])

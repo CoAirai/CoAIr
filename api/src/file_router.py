@@ -224,6 +224,11 @@ def _index_data_document(
         logger.warning(f"[FileRouter] data document index skipped: {exc}")
 
 
+# Once a project has this many documents waiting, skip table extraction,
+# notice extraction, and the event-index LLM. Document search still runs.
+_BULK_BACKLOG = 5
+
+
 def _bulk_backlog(project_id: str) -> int:
     """How many documents are still waiting or running for this project."""
     if not project_id:
@@ -246,7 +251,7 @@ def _prepare_event_artifact(
     Failure is visible but non-fatal: document search has already completed.
     """
     from .config import EVENT_INDEX_ENABLED
-    if not EVENT_INDEX_ENABLED or _bulk_backlog(project_id) >= 25:
+    if not EVENT_INDEX_ENABLED or _bulk_backlog(project_id) >= _BULK_BACKLOG:
         # A large batch stays on document search. Per-document event calls
         # would spend the demo CA budget and not finish overnight.
         result.event_index_status = "not_started"
@@ -303,7 +308,6 @@ def _process_document(
 ) -> ProcessingResult:
     """Process a document file (PDF, DOCX, TXT) through RAG pipeline."""
     from .document_rag import get_document_rag
-    from .data_analyzer_sql import get_data_analyzer
 
     result = ProcessingResult(success=False, file_path=file_path, file_type="document")
     filename = Path(file_path).name
@@ -346,7 +350,7 @@ def _process_document(
                         doc_text_by_page[page_num] = doc.text
 
                 from .config import INGEST_EXTRACT_NOTICES
-                if doc_text_by_page and INGEST_EXTRACT_NOTICES and _bulk_backlog(project_id) < 25:
+                if doc_text_by_page and INGEST_EXTRACT_NOTICES and _bulk_backlog(project_id) < _BULK_BACKLOG:
                     doc_id = generate_doc_id(file_path)
                     notice_summary = extract_document_notice(
                         doc_id=doc_id,
@@ -392,7 +396,7 @@ def _process_document(
             if (
                 INGEST_EXTRACT_TABLES
                 and filename.lower().endswith(".pdf")
-                and _bulk_backlog(project_id) < 25
+                and _bulk_backlog(project_id) < _BULK_BACKLOG
             ):
                 report("tables", 0.95)
                 try:
@@ -404,8 +408,13 @@ def _process_document(
                     )
 
                     if result.tables_extracted > 0:
-                        analyzer = get_data_analyzer()
-                        analyzer.load_from_catalog()
+                        # Parquet is already on disk. Registering every view on
+                        # the shared DuckDB connection from ingest workers
+                        # deadlocks the API. Views load on the next data question.
+                        logger.info(
+                            "[FileRouter] %s PDF tables saved; SQL views deferred",
+                            result.tables_extracted,
+                        )
                 except Exception as e:
                     logger.warning(f"[FileRouter] PDF table extraction error: {e}")
         else:

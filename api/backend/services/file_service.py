@@ -92,24 +92,22 @@ class FileService:
             raise
         file_size_kb = total // 1024
 
-        # Check for duplicate (same name + same size)
-        # If the file was already processed AND is in the RAG index, skip re-upload.
-        # Otherwise re-index it (handles cases where indexing failed silently).
+        # Same name and size already in this project: keep the first copy.
+        # A failed extract (status "error") is the one case that re-indexes.
         registry = get_document_registry()
         existing = registry.find_duplicate(
             safe_name, file_size_kb, file_path=str(temp), project_id=project_id,
         )
-        if existing:
-            if existing.status == "completed":
-                temp.unlink(missing_ok=True)
-                if username and project_id:
-                    from src.billing_store import get_billing_store
-                    get_billing_store().register_storage(
-                        username=username, project_id=project_id,
-                        file_id=existing.doc_id, file_path=existing.file_path,
-                        size_bytes=total,
-                    )
-                return existing.file_path, existing.doc_id, True
+        if existing and existing.status != "error":
+            temp.unlink(missing_ok=True)
+            if username and project_id:
+                from src.billing_store import get_billing_store
+                get_billing_store().register_storage(
+                    username=username, project_id=project_id,
+                    file_id=existing.doc_id, file_path=existing.file_path,
+                    size_bytes=total,
+                )
+            return existing.file_path, existing.doc_id, True
 
         dest = target_dir / safe_name
         if dest.exists():

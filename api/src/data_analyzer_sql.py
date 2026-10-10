@@ -12,6 +12,7 @@ Hardening features:
   - Per-query telemetry
 """
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
@@ -26,6 +27,92 @@ from .config import (
 )
 from .logger import logger, log_separator, log_document_processing
 from .catalog import _active_corpus, _active_project
+
+
+class _LockedResult:
+    """One DuckDB statement. Holds the connection lock until the result is read.
+
+    DuckDB connections are not thread-safe. Two ingest workers calling
+    execute() on the shared connection deadlock inside DuckDB and freeze the
+    only API worker, including health and sign-in.
+    """
+
+    def __init__(self, conn, lock, args, kwargs):
+        self._lock = lock
+        self._closed = False
+        self._lock.acquire()
+        try:
+            self._result = conn.execute(*args, **kwargs)
+        except BaseException:
+            self._closed = True
+            self._lock.release()
+            raise
+
+    def _release(self):
+        if self._closed:
+            return
+        self._closed = True
+        self._lock.release()
+
+    def fetchdf(self, *args, **kwargs):
+        try:
+            return self._result.fetchdf(*args, **kwargs)
+        finally:
+            self._release()
+
+    def fetchall(self, *args, **kwargs):
+        try:
+            return self._result.fetchall(*args, **kwargs)
+        finally:
+            self._release()
+
+    def fetchone(self, *args, **kwargs):
+        try:
+            return self._result.fetchone(*args, **kwargs)
+        finally:
+            self._release()
+
+    def __getattr__(self, name):
+        attr = getattr(self._result, name)
+        if not callable(attr):
+            return attr
+
+        def wrapped(*args, **kwargs):
+            try:
+                return attr(*args, **kwargs)
+            finally:
+                self._release()
+
+        return wrapped
+
+    def __del__(self):
+        try:
+            self._release()
+        except Exception:
+            return
+
+
+class _LockedDuck:
+    """Serialize every call on the shared in-memory DuckDB connection."""
+
+    def __init__(self, conn, lock):
+        self._conn = conn
+        self._lock = lock
+
+    def execute(self, *args, **kwargs):
+        return _LockedResult(self._conn, self._lock, args, kwargs)
+
+    def register(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.register(*args, **kwargs)
+
+    def unregister(self, *args, **kwargs):
+        with self._lock:
+            return self._conn.unregister(*args, **kwargs)
+
+    def close(self):
+        with self._lock:
+            return self._conn.close()
 
 
 class UnsafeSqlError(Exception):
@@ -437,7 +524,8 @@ class DataAnalyzerSQL:
     def __init__(self):
         """Initialize SQL-based data analyzer."""
         log_separator("Initializing SQL Data Analyzer")
-        self.conn = duckdb.connect(':memory:')
+        self._conn_lock = threading.RLock()
+        self.conn = _LockedDuck(duckdb.connect(':memory:'), self._conn_lock)
         self.tables: Dict[str, Dict[str, Any]] = {}
         self.file_paths: Dict[str, str] = {}
         self._jargon = None
@@ -996,6 +1084,10 @@ class DataAnalyzerSQL:
         return None
 
     def load_excel(self, file_path: str, sheet_name: Optional[str] = None) -> bool:
+        with self._conn_lock:
+            return self._load_excel(file_path, sheet_name)
+
+    def _load_excel(self, file_path: str, sheet_name: Optional[str] = None) -> bool:
         """Load Excel file into DuckDB table with smart header detection."""
         path = Path(file_path)
         table_name = sanitize_table_name(path.name)
@@ -1076,6 +1168,10 @@ class DataAnalyzerSQL:
             return False
 
     def load_csv(self, file_path: str) -> bool:
+        with self._conn_lock:
+            return self._load_csv(file_path)
+
+    def _load_csv(self, file_path: str) -> bool:
         """Load CSV file into DuckDB table."""
         path = Path(file_path)
         table_name = sanitize_table_name(path.name)
@@ -1122,6 +1218,10 @@ class DataAnalyzerSQL:
             return False
 
     def register_parquet_view(self, parquet_path: str, view_name: Optional[str] = None) -> bool:
+        with self._conn_lock:
+            return self._register_parquet_view(parquet_path, view_name)
+
+    def _register_parquet_view(self, parquet_path: str, view_name: Optional[str] = None) -> bool:
         """Register a parquet file as a DuckDB view."""
         path = Path(parquet_path)
 
@@ -1156,10 +1256,15 @@ class DataAnalyzerSQL:
             logger.info(f"   View: {view_name}")
             logger.info(f"   Rows: {info.get('row_count', 0)}, Columns: {len(info.get('columns', []))}")
 
-            # Normalize parquet data for clean/raw views
+            # Normalize small tables only. Pulling every PDF page table into
+            # pandas on the shared connection is what froze the API.
             try:
-                df = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
-                self._register_normalized_views(view_name, df)
+                row_count = int(info.get("row_count") or 0)
+                if row_count > 4000:
+                    logger.info(f"   Parquet normalization skipped: {row_count} rows")
+                else:
+                    df = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
+                    self._register_normalized_views(view_name, df)
             except Exception as norm_err:
                 logger.warning(f"   Parquet normalization skipped: {norm_err}")
 
@@ -1188,6 +1293,10 @@ class DataAnalyzerSQL:
 
     def load_from_catalog(self) -> int:
         """Load tables from the catalog as parquet views. Skips already-loaded tables."""
+        with self._conn_lock:
+            return self._load_from_catalog()
+
+    def _load_from_catalog(self) -> int:
         try:
             from .catalog import get_catalog
             catalog = get_catalog()

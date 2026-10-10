@@ -15,6 +15,7 @@ import { useToast } from "@/context/ToastContext";
 import type { CompanyDocument } from "@/lib/admin/companyDocuments";
 import type { ModuleId } from "@/lib/admin/types";
 import type { WorkspaceUser } from "@/lib/chat/threads";
+import { CoairApiError } from "@/lib/coair/client";
 import { mapLibraryDocuments } from "@/lib/coair/mapLibrary";
 import {
     ensureSelfInWorkspaceUsers,
@@ -36,6 +37,7 @@ import {
     uploadProjectFile,
     type IndexingStatus,
 } from "@/lib/coair/workspace";
+import { getSupabaseBrowser } from "@/lib/supabase/browser";
 import { addOnsFromModuleGrants } from "@/lib/workspace/companyForSession";
 
 const INDEXING_DONE = new Set([
@@ -151,6 +153,9 @@ const LiveWorkspaceContext = createContext<LiveWorkspaceValue | null>(null);
 
 export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const { session, updateSession } = useAuth();
+    const accessTokenRef = useRef(session?.accessToken ?? "");
+    const tokenRefreshRef = useRef<Promise<string | null> | null>(null);
+    const lastTokenRefreshAt = useRef(0);
     const { pushToast } = useToast();
     const enabled = session?.source === "live" && Boolean(session.accessToken);
     const canListTeammates =
@@ -172,6 +177,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const [fileTransfers, setFileTransfers] = useState<FileTransfer[]>([]);
     const lastProjectId = useRef<string | null | undefined>(undefined);
     const transferSeq = useRef(0);
+
+    useEffect(() => {
+        accessTokenRef.current = session?.accessToken ?? "";
+    }, [session?.accessToken]);
 
     // After login, reuse the /projects payload already fetched for session seeding.
     useEffect(() => {
@@ -556,14 +565,46 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         return () => window.clearTimeout(timer);
     }, [fileTransfers]);
 
+    const refreshUploadAccess = useCallback(async (): Promise<string | null> => {
+        if (tokenRefreshRef.current) return tokenRefreshRef.current;
+        const run = (async () => {
+            try {
+                const supabase = getSupabaseBrowser();
+                if (!supabase) return accessTokenRef.current || null;
+                const { data, error } = await supabase.auth.refreshSession();
+                const next = data.session?.access_token?.trim() || "";
+                if (error || !next) {
+                    lastTokenRefreshAt.current = Date.now();
+                    return accessTokenRef.current || null;
+                }
+                accessTokenRef.current = next;
+                lastTokenRefreshAt.current = Date.now();
+                updateSession({ accessToken: next });
+                return next;
+            } catch {
+                return accessTokenRef.current || null;
+            } finally {
+                tokenRefreshRef.current = null;
+            }
+        })();
+        tokenRefreshRef.current = run;
+        return run;
+    }, [updateSession]);
+
     const uploadFile = useCallback(
         async (
             file: File,
-            options?: { quiet?: boolean; skipRefresh?: boolean; skipTrack?: boolean }
+            options?: {
+                quiet?: boolean;
+                skipRefresh?: boolean;
+                skipTrack?: boolean;
+                authRetried?: boolean;
+            }
         ) => {
             const quiet = Boolean(options?.quiet);
             const skipTrack = Boolean(options?.skipTrack);
-            if (!session?.accessToken || !session.projectId) {
+            const token = accessTokenRef.current || session?.accessToken || "";
+            if (!token || !session?.projectId) {
                 return { ok: false, error: "No project selected" };
             }
             if (
@@ -592,7 +633,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             if (!quiet) pushToast(`Uploading ${file.name}…`, "info");
             try {
                 const result = await uploadProjectFile(
-                    session.accessToken,
+                    token,
                     session.projectId,
                     file,
                     skipTrack
@@ -642,6 +683,13 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 }
                 return { ok: true };
             } catch (err) {
+                const status = err instanceof CoairApiError ? err.status : 0;
+                if (status === 401 && !options?.authRetried) {
+                    const next = await refreshUploadAccess();
+                    if (next) {
+                        return uploadFile(file, { ...options, authRetried: true });
+                    }
+                }
                 const raw =
                     err instanceof Error ? err.message : "Upload failed";
                 const message = raw
@@ -670,7 +718,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 };
             }
         },
-        [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
+        [pushToast, refreshLibrary, refreshUploadAccess, session?.accessToken, session?.projectId]
     );
 
     const uploadFiles = useCallback(
@@ -688,6 +736,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     error: result.error,
                 };
             }
+            await refreshUploadAccess();
             pushToast(
                 `Uploading ${list.length.toLocaleString()} documents, 3 at a time. Keep this tab open until the upload count finishes.`,
                 "info"
@@ -728,6 +777,9 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             };
             const worker = async () => {
                 while (cursor < list.length) {
+                    if (Date.now() - lastTokenRefreshAt.current > 12 * 60 * 1000) {
+                        await refreshUploadAccess();
+                    }
                     const file = list[cursor];
                     cursor += 1;
                     let result = await uploadFile(file, {
@@ -771,7 +823,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 error: failed ? `${failed} upload(s) failed` : undefined,
             };
         },
-        [pushToast, refreshLibrary, uploadFile]
+        [pushToast, refreshLibrary, refreshUploadAccess, uploadFile]
     );
 
     const removeFile = useCallback(
