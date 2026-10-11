@@ -6,6 +6,7 @@ import {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from "react";
@@ -153,16 +154,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
     const [activeKbId, setActiveKbId] = useState("assistant");
     const [openCitation, setOpenCitation] = useState<Citation | null>(null);
-    const [liveConversationId, setLiveConversationId] = useState<string | null>(
-        null
-    );
+    const liveConversationIdRef = useRef<string | null>(null);
+    const chatEpoch = useRef(0);
+    const rememberConversation = useCallback((id: string | null) => {
+        liveConversationIdRef.current = id;
+    }, []);
     const [archivedByUserId, setArchivedByUserId] = useState<
         Record<string, RecentQuery[]>
     >({});
 
     useEffect(() => {
-        setLiveConversationId(null);
-    }, [session?.userId, session?.projectId, requestedWorkspaceUserId]);
+        rememberConversation(null);
+    }, [rememberConversation, session?.userId, session?.projectId, requestedWorkspaceUserId]);
 
     const reloadQueries = useCallback(async () => {
         if (
@@ -342,10 +345,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 }));
             }
             setSelectedQueryId(null);
-            setLiveConversationId(null);
+            rememberConversation(null);
             setOpenCitation(null);
         },
-        [activeWorkspaceUserId, selectedQueryId]
+        [activeWorkspaceUserId, rememberConversation, selectedQueryId]
     );
 
     const deleteQuery = useCallback(
@@ -471,13 +474,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const clearChat = useCallback(() => {
         if (!activeWorkspaceUserId) return;
+        chatEpoch.current += 1;
+        rememberConversation(null);
         setThreadsByUserId((prev) => ({
             ...prev,
             [activeWorkspaceUserId]: [],
         }));
         setSelectedQueryId(null);
         setOpenCitation(null);
-    }, [activeWorkspaceUserId]);
+        setSendError(null);
+    }, [activeWorkspaceUserId, rememberConversation]);
 
     const selectQuery = useCallback(
         (queryId: string) => {
@@ -497,7 +503,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 Boolean(session.projectId);
 
             if (live) {
-                setLiveConversationId(queryId);
+                rememberConversation(queryId);
                 if (query?.messages?.length) {
                     setThreadsByUserId((prev) => ({
                         ...prev,
@@ -612,6 +618,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             session?.projectId,
             session?.source,
             session?.userId,
+            rememberConversation,
         ]
     );
 
@@ -633,11 +640,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setSendError(null);
             setSelectedQueryId(null);
             setIsReplying(true);
+            const epoch = chatEpoch.current;
 
             const userMessageId = makeId("u");
             const assistantMessageId = makeId("a");
             const now = new Date().toISOString();
-            let conversationIdForRecent: string | null = liveConversationId;
+            let conversationIdForRecent: string | null =
+                liveConversationIdRef.current;
 
             // Show the user message immediately; assistant fills in when the API returns.
             setThreadsByUserId((prev) => ({
@@ -666,15 +675,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                             "This account has no project yet. Seed the sandbox, then sign in again."
                         );
                     }
-                    let conversationId = liveConversationId;
+                    let conversationId = liveConversationIdRef.current;
                     if (!conversationId) {
                         const created = await createConversation(
                             session.accessToken!,
                             session.projectId,
                             trimmed.slice(0, 80)
                         );
+                        if (chatEpoch.current !== epoch) return;
                         conversationId = created.conversation_id;
-                        setLiveConversationId(conversationId);
+                        rememberConversation(conversationId);
                     }
                     conversationIdForRecent = conversationId;
                     const response = await sendLiveChat({
@@ -686,6 +696,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     });
                     assistantText = response.assistant_text;
                     citations = mapLiveCitations(response.citations);
+                    if (chatEpoch.current !== epoch) return;
                 } else {
                     await new Promise((resolve) => setTimeout(resolve, 600));
                     const company = companies.find(
@@ -769,7 +780,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             companyDocs,
             companyWorkspaces,
             consumeUserTokens,
-            liveConversationId,
+            rememberConversation,
             session,
         ]
     );
