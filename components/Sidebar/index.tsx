@@ -60,11 +60,13 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
     return (
         <>
             <div
-                    className={`fixed top-5 left-5 bottom-5 flex flex-col w-80 bg-white-0 rounded-3xl shadow-[0_0_1.25rem_0_rgba(0,0,0,0.03)] max-3xl:w-65 max-lg:top-0 max-lg:left-0 max-lg:bottom-0 max-lg:z-20 max-lg:w-75 max-lg:shadow-2xl max-lg:rounded-none max-lg:transition-transform max-lg:duration-300 max-lg:ease-out max-md:w-full max-md:p-4 ${
+                    className={`fixed top-5 left-5 bottom-5 z-20 flex flex-col w-80 bg-white-0 rounded-3xl shadow-[0_0_1.25rem_0_rgba(0,0,0,0.03)] transition-transform duration-300 ease-out max-3xl:w-65 max-lg:top-0 max-lg:left-0 max-lg:bottom-0 max-lg:w-75 max-lg:shadow-2xl max-lg:rounded-none max-md:w-full max-md:p-4 ${
                     visible
-                        ? "max-lg:translate-x-0"
-                        : "max-lg:-translate-x-full"
+                        ? "translate-x-0"
+                        : "pointer-events-none -translate-x-[calc(100%+3rem)]"
                 }`}
+                aria-hidden={!visible}
+                inert={!visible}
             >
                 <div className="grow overflow-auto scrollbar-none p-5 flex flex-col">
                     <div className="flex items-center gap-2 mb-5 max-lg:pr-2 max-md:mb-3">
@@ -95,9 +97,10 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                             ) : null}
                         </button>
                         <button
-                            className="group hidden ml-2 max-lg:flex"
+                            className="group ml-2 flex size-8 shrink-0 items-center justify-center rounded-lg hover:bg-weak-50"
                             onClick={onClose}
                             type="button"
+                            aria-label="Close sidebar"
                         >
                             <Icon
                                 className="text-label-sm fill-strong-950 transition-colors group-hover:fill-blue-500"

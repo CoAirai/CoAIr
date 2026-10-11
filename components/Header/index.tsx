@@ -15,6 +15,7 @@ import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { chatTransition } from "@/lib/chat/motion";
 import { activeWorkspaceUsers } from "@/lib/chat/threads";
 type Props = {
+    sidebarOpen: boolean;
     onOpenSidebar: () => void;
 };
 
@@ -27,7 +28,7 @@ function initials(name: string) {
         .join("");
 }
 
-const Header = ({ onOpenSidebar }: Props) => {
+const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
     const router = useRouter();
     const pathname = usePathname();
     const isChronology = pathname.startsWith("/workspace/chronology");
@@ -89,9 +90,12 @@ const Header = ({ onOpenSidebar }: Props) => {
         <>
             <div className="flex items-center gap-4 mb-3.5 max-md:gap-2 max-md:mb-3">
                 <button
-                    className="hidden size-10 mr-2 justify-center items-center max-lg:flex max-md:mr-0"
+                    className={`size-10 mr-2 items-center justify-center max-md:mr-0 ${
+                        sidebarOpen ? "hidden" : "flex"
+                    }`}
                     onClick={onOpenSidebar}
                     type="button"
+                    aria-label="Open sidebar"
                 >
                     <Icon className="!size-6 fill-strong-950" name="burger" />
                 </button>
