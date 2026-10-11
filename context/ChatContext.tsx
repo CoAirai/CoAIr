@@ -155,7 +155,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const [activeKbId, setActiveKbId] = useState("assistant");
     const [openCitation, setOpenCitation] = useState<Citation | null>(null);
     const liveConversationIdRef = useRef<string | null>(null);
-    const chatEpoch = useRef(0);
     const rememberConversation = useCallback((id: string | null) => {
         liveConversationIdRef.current = id;
     }, []);
@@ -165,7 +164,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         rememberConversation(null);
-    }, [rememberConversation, session?.userId, session?.projectId, requestedWorkspaceUserId]);
+    }, [
+        rememberConversation,
+        session?.userId,
+        session?.projectId,
+        requestedWorkspaceUserId,
+    ]);
 
     const reloadQueries = useCallback(async () => {
         if (
@@ -474,15 +478,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const clearChat = useCallback(() => {
         if (!activeWorkspaceUserId) return;
-        chatEpoch.current += 1;
-        rememberConversation(null);
         setThreadsByUserId((prev) => ({
             ...prev,
             [activeWorkspaceUserId]: [],
         }));
         setSelectedQueryId(null);
         setOpenCitation(null);
-        setSendError(null);
+        rememberConversation(null);
     }, [activeWorkspaceUserId, rememberConversation]);
 
     const selectQuery = useCallback(
@@ -616,9 +618,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             session?.accessToken,
             session?.name,
             session?.projectId,
+            rememberConversation,
             session?.source,
             session?.userId,
-            rememberConversation,
         ]
     );
 
@@ -640,7 +642,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setSendError(null);
             setSelectedQueryId(null);
             setIsReplying(true);
-            const epoch = chatEpoch.current;
 
             const userMessageId = makeId("u");
             const assistantMessageId = makeId("a");
@@ -682,7 +683,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                             session.projectId,
                             trimmed.slice(0, 80)
                         );
-                        if (chatEpoch.current !== epoch) return;
                         conversationId = created.conversation_id;
                         rememberConversation(conversationId);
                     }
@@ -696,7 +696,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     });
                     assistantText = response.assistant_text;
                     citations = mapLiveCitations(response.citations);
-                    if (chatEpoch.current !== epoch) return;
                 } else {
                     await new Promise((resolve) => setTimeout(resolve, 600));
                     const company = companies.find(
