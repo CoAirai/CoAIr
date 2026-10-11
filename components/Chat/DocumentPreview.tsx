@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import Icon from "@/components/Icon";
 import { useAuth } from "@/context/AuthContext";
@@ -58,10 +59,24 @@ const DocumentPreview = () => {
     const [live, setLive] = useState<CoairDocContent | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
         if (openCitation) setPage(openCitation.page);
     }, [openCitation]);
+
+    useEffect(() => {
+        if (!open) setExpanded(false);
+    }, [open]);
+
+    useEffect(() => {
+        if (!expanded) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setExpanded(false);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [expanded]);
 
     useEffect(() => {
         if (!open || !citation || !isLive || !session?.accessToken || !session.projectId) {
@@ -137,7 +152,99 @@ const DocumentPreview = () => {
         Boolean(live?.image_base64) &&
         /^[A-Za-z0-9+/=\s]+$/.test(live?.image_base64 || "");
 
+    const reader =
+        expanded && open && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 backdrop-blur-sm"
+                    onClick={() => setExpanded(false)}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={displayName}
+                        className="flex h-[min(92vh,56rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white-0 shadow-xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-3 border-b border-stroke-soft-200 px-5 py-3">
+                            <span className="rounded-md bg-weak-50 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sub-600">
+                                {kind}
+                            </span>
+                            <div className="min-w-0 grow truncate text-label-sm text-strong-950">
+                                {displayName}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1 text-label-sm text-sub-600">
+                                <button
+                                    type="button"
+                                    className="rounded-lg px-2 py-1 hover:bg-weak-50 disabled:opacity-40"
+                                    disabled={page <= 1 || loading}
+                                    onClick={() =>
+                                        setPage((value) => Math.max(1, value - 1))
+                                    }
+                                >
+                                    ‹
+                                </button>
+                                <span className="tabular-nums">
+                                    {page}/{pageCount}
+                                </span>
+                                <button
+                                    type="button"
+                                    className="rounded-lg px-2 py-1 hover:bg-weak-50 disabled:opacity-40"
+                                    disabled={page >= pageCount || loading}
+                                    onClick={() =>
+                                        setPage((value) =>
+                                            Math.min(pageCount, value + 1)
+                                        )
+                                    }
+                                >
+                                    ›
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                className="rounded-lg px-2 py-1 text-label-xs text-strong-950 hover:bg-weak-50"
+                                onClick={() => setExpanded(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-auto bg-soft-200 p-6">
+                            <div className="mx-auto w-full max-w-4xl rounded-xl bg-white-0 p-6 shadow-sm">
+                                {loading && (
+                                    <div className="py-16 text-center text-label-sm text-soft-400">
+                                        Loading page {page}…
+                                    </div>
+                                )}
+                                {!loading && hasImage && (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        src={`data:image/png;base64,${live!.image_base64}`}
+                                        alt={`Page ${page} of ${displayName}`}
+                                        className="mx-auto w-full"
+                                    />
+                                )}
+                                {!loading && !hasImage && (
+                                    <div>
+                                        <div className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
+                                            Page {page}
+                                        </div>
+                                        <p className="mt-4 whitespace-pre-wrap text-p-md leading-8 text-strong-950">
+                                            {extracted ||
+                                                citation?.excerpt ||
+                                                "No text available for this page."}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )
+            : null;
+
     return (
+        <>
         <motion.aside
             initial={false}
             animate={{
@@ -186,6 +293,14 @@ const DocumentPreview = () => {
                             ›
                         </button>
                     </div>
+                    <button
+                        type="button"
+                        className="rounded-lg px-2 py-1 text-label-xs text-strong-950 hover:bg-weak-50"
+                        aria-label="Expand document"
+                        onClick={() => setExpanded(true)}
+                    >
+                        Expand
+                    </button>
                     <button
                         type="button"
                         className="rounded-lg p-1 hover:bg-weak-50"
@@ -353,6 +468,8 @@ const DocumentPreview = () => {
                 </div>
             </div>
         </motion.aside>
+        {reader}
+        </>
     );
 };
 
