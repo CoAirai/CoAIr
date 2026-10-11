@@ -334,7 +334,9 @@ const MODULE_MARK: Record<ModuleId, string> = {
 
 function ModuleArt({ id, locked }: { id: ModuleId; locked: boolean }) {
     return (
-        <div className={`flex h-28 items-center ${locked ? "opacity-50" : ""}`}>
+        <div
+            className={`flex h-28 items-center justify-center ${locked ? "opacity-50" : ""}`}
+        >
             <Image
                 src={MODULE_MARK[id]}
                 alt=""

@@ -39,7 +39,7 @@ export const MODULES: {
         id: "forensic",
         number: "03",
         title: "FORENSIS",
-        keywords: "Forensic Analysis",
+        keywords: "Forensic Analysis Module",
         description:
             "Programme reviews, preliminary delay findings and EoT claim assessments — a defensible first pass, aligned to SCL and AACE.",
         href: "/workspace/forensic",
