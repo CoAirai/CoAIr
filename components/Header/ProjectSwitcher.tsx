@@ -8,14 +8,26 @@ import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 
 const ProjectSwitcher = () => {
     const { session } = useAuth();
-    const { enabled, loading, projects, selectProject, createProject } =
-        useLiveWorkspace();
+    const {
+        enabled,
+        loading,
+        projects,
+        selectProject,
+        createProject,
+        renameProject,
+        deleteProject,
+    } = useLiveWorkspace();
     const [draft, setDraft] = useState("");
     const [creating, setCreating] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [renameDraft, setRenameDraft] = useState("");
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const current = projects.find(
         (project) => project.project_id === session?.projectId
     );
+    const canManage =
+        session?.role === "company_admin" || session?.role === "super_admin";
 
     if (!enabled) return null;
 
@@ -29,6 +41,26 @@ const ProjectSwitcher = () => {
             setDraft("");
             setCreating(false);
         }
+    };
+
+    const onRename = async (event: FormEvent, projectId: string) => {
+        event.preventDefault();
+        if (!renameDraft.trim() || busy) return;
+        setBusy(true);
+        const result = await renameProject(projectId, renameDraft);
+        setBusy(false);
+        if (result.ok) {
+            setEditingId(null);
+            setRenameDraft("");
+        }
+    };
+
+    const onDelete = async (projectId: string) => {
+        if (busy) return;
+        setBusy(true);
+        const result = await deleteProject(projectId);
+        setBusy(false);
+        if (result.ok) setConfirmDeleteId(null);
     };
 
     return (
@@ -45,7 +77,7 @@ const ProjectSwitcher = () => {
                 transition
                 anchor="bottom start"
                 modal={false}
-                className="z-30 w-72 origin-top-left rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-xl outline-0 [--anchor-gap:0.5rem]"
+                className="z-30 w-80 origin-top-left rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-xl outline-0 [--anchor-gap:0.5rem]"
             >
                 <div className="max-h-64 overflow-auto">
                     {projects.length === 0 ? (
@@ -54,15 +86,97 @@ const ProjectSwitcher = () => {
                         </div>
                     ) : (
                         projects.map((project) => (
-                            <MenuItem key={project.project_id}>
-                                <button
-                                    type="button"
-                                    className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-sm text-strong-950 data-focus:bg-weak-50"
-                                    onClick={() => selectProject(project.project_id)}
-                                >
-                                    <span className="truncate">{project.name}</span>
-                                </button>
-                            </MenuItem>
+                            <div
+                                key={project.project_id}
+                                className="flex items-center gap-1"
+                            >
+                                {editingId === project.project_id ? (
+                                    <form
+                                        className="flex min-w-0 grow items-center gap-1 px-1 py-1"
+                                        onSubmit={(event) =>
+                                            void onRename(event, project.project_id)
+                                        }
+                                    >
+                                        <input
+                                            autoFocus
+                                            value={renameDraft}
+                                            className="h-8 min-w-0 grow rounded-lg bg-weak-50 px-2 text-label-sm text-strong-950 outline-none"
+                                            onChange={(event) =>
+                                                setRenameDraft(event.target.value)
+                                            }
+                                            onKeyDown={(event) => {
+                                                if (event.key === "Escape") {
+                                                    setEditingId(null);
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={busy || !renameDraft.trim()}
+                                            className="h-8 shrink-0 rounded-lg bg-strong-950 px-2 text-label-xs text-white-0 disabled:opacity-40"
+                                        >
+                                            Save
+                                        </button>
+                                    </form>
+                                ) : (
+                                    <>
+                                        <MenuItem>
+                                            <button
+                                                type="button"
+                                                className="flex h-9 min-w-0 grow items-center rounded-lg px-3 text-left text-label-sm text-strong-950 data-focus:bg-weak-50"
+                                                onClick={() =>
+                                                    selectProject(project.project_id)
+                                                }
+                                            >
+                                                <span className="truncate">
+                                                    {project.name}
+                                                </span>
+                                            </button>
+                                        </MenuItem>
+                                        {canManage ? (
+                                            confirmDeleteId === project.project_id ? (
+                                                <button
+                                                    type="button"
+                                                    disabled={busy}
+                                                    className="h-8 shrink-0 rounded-lg px-2 text-label-xs text-red-500 hover:bg-weak-50 disabled:opacity-40"
+                                                    onClick={() =>
+                                                        void onDelete(project.project_id)
+                                                    }
+                                                >
+                                                    Confirm
+                                                </button>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        className="h-8 shrink-0 rounded-lg px-2 text-label-xs text-sub-600 hover:bg-weak-50 hover:text-strong-950"
+                                                        onClick={() => {
+                                                            setCreating(false);
+                                                            setConfirmDeleteId(null);
+                                                            setEditingId(project.project_id);
+                                                            setRenameDraft(project.name);
+                                                        }}
+                                                    >
+                                                        Rename
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="h-8 shrink-0 rounded-lg px-2 text-label-xs text-sub-600 hover:bg-weak-50 hover:text-red-500"
+                                                        onClick={() => {
+                                                            setEditingId(null);
+                                                            setConfirmDeleteId(
+                                                                project.project_id
+                                                            );
+                                                        }}
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </>
+                                            )
+                                        ) : null}
+                                    </>
+                                )}
+                            </div>
                         ))
                     )}
                 </div>
@@ -94,7 +208,10 @@ const ProjectSwitcher = () => {
                         <button
                             type="button"
                             className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-sm text-blue-500 hover:bg-weak-50"
-                            onClick={() => setCreating(true)}
+                            onClick={() => {
+                                setEditingId(null);
+                                setCreating(true);
+                            }}
                         >
                             Create project
                         </button>

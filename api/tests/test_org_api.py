@@ -585,6 +585,44 @@ def test_members_can_create_projects(client, acme, stores):
     assert created.json()["org_id"] == acme["org"]["org_id"]
 
 
+def test_company_and_platform_admins_can_rename_and_delete_projects(client, acme, stores):
+    users, projects, orgs = stores
+    users.create_user("ops", "pw", role="admin")
+    users.create_user("reader", "pw", role="user")
+    orgs.add_member(acme["org"]["org_id"], "reader", "member")
+
+    created = client.post("/api/projects", headers=_auth(client, "engineer"),
+                          json={"name": "Member project"})
+    assert created.status_code == 201
+    project_id = created.json()["project_id"]
+    # Company admin keeps rename and delete even when their project role is editor.
+    projects.add_member(project_id, "acme-admin", "editor")
+    projects.add_member(project_id, "reader", "viewer")
+
+    def scoped(username):
+        return {**_auth(client, username), "X-Project-ID": project_id}
+
+    denied = client.patch(f"/api/projects/{project_id}", headers=scoped("reader"),
+                          json={"name": "Nope"})
+    assert denied.status_code == 403
+
+    renamed = client.patch(f"/api/projects/{project_id}", headers=scoped("acme-admin"),
+                           json={"name": "Renamed tower"})
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Renamed tower"
+
+    again = client.patch(f"/api/projects/{project_id}", headers=scoped("ops"),
+                         json={"name": "Ops name"})
+    assert again.status_code == 200
+    assert again.json()["name"] == "Ops name"
+
+    removed = client.delete(f"/api/projects/{project_id}", headers=scoped("acme-admin"))
+    assert removed.status_code == 200
+    assert removed.json()["ok"] is True
+    listed = client.get("/api/projects", headers=_auth(client, "acme-admin")).json()
+    assert project_id not in {row["project_id"] for row in listed["projects"]}
+
+
 def test_unaffiliated_accounts_keep_creating_projects_freely(client, stores):
     """Nothing may change for installations that have no organizations yet."""
     users, _projects, _orgs = stores

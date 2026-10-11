@@ -301,7 +301,9 @@ class ProjectStore:
     # half-assigned row surfaces as a support ticket, never as a breach.
 
     _VISIBILITY_SELECT = (
-        "SELECT p.*, COALESCE(m.role,'owner') AS role, "
+        "SELECT p.*, "
+        "       CASE WHEN om.org_id IS NOT NULL THEN 'owner' "
+        "            ELSE COALESCE(m.role,'viewer') END AS role, "
         "       CASE WHEN m.username IS NOT NULL THEN 'member' ELSE 'org' END AS role_source "
         "FROM projects p "
         "LEFT JOIN project_members m ON m.project_id=p.project_id AND m.username=? "

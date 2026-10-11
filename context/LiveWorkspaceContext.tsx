@@ -34,6 +34,8 @@ import {
     listIndexingStatus,
     listLibrary,
     createProject as createProjectRequest,
+    deleteProject as deleteProjectRequest,
+    renameProject as renameProjectRequest,
     listProjects,
     pinProjectFile,
     readIndexingSummary,
@@ -109,6 +111,11 @@ type LiveWorkspaceValue = {
     fileTransfers: FileTransfer[];
     selectProject: (projectId: string) => void;
     createProject: (name: string) => Promise<{ ok: boolean; error?: string }>;
+    renameProject: (
+        projectId: string,
+        name: string
+    ) => Promise<{ ok: boolean; error?: string }>;
+    deleteProject: (projectId: string) => Promise<{ ok: boolean; error?: string }>;
     uploadFile: (
         file: File,
         options?: { quiet?: boolean }
@@ -408,6 +415,68 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             }
         },
         [pushToast, session?.accessToken, updateSession]
+    );
+
+    const renameProject = useCallback(
+        async (projectId: string, name: string) => {
+            const trimmed = name.trim();
+            if (!session?.accessToken) {
+                return { ok: false, error: "Not signed in" };
+            }
+            if (!trimmed) {
+                return { ok: false, error: "Project name required" };
+            }
+            try {
+                const updated = await renameProjectRequest(
+                    session.accessToken,
+                    projectId,
+                    trimmed
+                );
+                setProjects((current) =>
+                    current.map((project) =>
+                        project.project_id === projectId
+                            ? { ...project, name: updated.name }
+                            : project
+                    )
+                );
+                pushToast(`Renamed to ${updated.name}`, "info");
+                return { ok: true };
+            } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Could not rename project";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
+        },
+        [pushToast, session?.accessToken]
+    );
+
+    const deleteProject = useCallback(
+        async (projectId: string) => {
+            if (!session?.accessToken) {
+                return { ok: false, error: "Not signed in" };
+            }
+            try {
+                await deleteProjectRequest(session.accessToken, projectId);
+                const remaining = projects.filter(
+                    (project) => project.project_id !== projectId
+                );
+                setProjects(remaining);
+                if (session.projectId === projectId) {
+                    updateSession({
+                        projectId: remaining[0]?.project_id ?? null,
+                    });
+                }
+                pushToast("Project deleted", "info");
+                return { ok: true };
+            } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Could not delete project";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
+        },
+        [projects, pushToast, session?.accessToken, session?.projectId, updateSession]
     );
 
     const applyIndexingJobs = useCallback(
@@ -1095,6 +1164,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             fileTransfers,
             selectProject,
             createProject,
+            renameProject,
+            deleteProject,
             uploadFile,
             uploadFiles,
             removeFile,
@@ -1122,6 +1193,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             removeFile,
             selectProject,
             createProject,
+            renameProject,
+            deleteProject,
             teammates,
             uploadFile,
             uploadFiles,

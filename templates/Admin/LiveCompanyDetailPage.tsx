@@ -11,6 +11,7 @@ import RightsToggleCells from "@/components/Admin/RightsToggleCells";
 import { AdminCompanyDetailSkeleton } from "@/components/Skeleton/sections";
 import StatusBadge from "@/components/Admin/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
+import { deleteProject, renameProject } from "@/lib/coair/workspace";
 import type { Invoice } from "@/lib/admin/billingTypes";
 import { downloadInvoicePdf } from "@/lib/admin/invoiceDocument";
 import InvoiceDetailModal from "@/components/Billing/InvoiceDetailModal";
@@ -99,6 +100,8 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     const [missing, setMissing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+    const [projectDraft, setProjectDraft] = useState("");
     const [suspendConfirmOpen, setSuspendConfirmOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [creditUser, setCreditUser] = useState("");
@@ -182,6 +185,62 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
     useEffect(() => {
         void load();
     }, [load]);
+
+    const onRenameProject = async (projectId: string) => {
+        const name = projectDraft.trim();
+        if (!token || !name) return;
+        setActionError(null);
+        setBusy(true);
+        try {
+            const updated = await renameProject(token, projectId, name);
+            setOrg((prev) =>
+                prev
+                    ? {
+                          ...prev,
+                          projects: (prev.projects ?? []).map((project) =>
+                              project.project_id === projectId
+                                  ? { ...project, name: updated.name }
+                                  : project
+                          ),
+                      }
+                    : prev
+            );
+            setEditingProjectId(null);
+            setProjectDraft("");
+        } catch (err) {
+            setActionError(
+                err instanceof Error ? err.message : "Could not rename project"
+            );
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const onDeleteProject = async (projectId: string, name: string) => {
+        if (!token) return;
+        if (!window.confirm(`Delete project “${name}”?`)) return;
+        setActionError(null);
+        setBusy(true);
+        try {
+            await deleteProject(token, projectId);
+            setOrg((prev) =>
+                prev
+                    ? {
+                          ...prev,
+                          projects: (prev.projects ?? []).filter(
+                              (project) => project.project_id !== projectId
+                          ),
+                      }
+                    : prev
+            );
+        } catch (err) {
+            setActionError(
+                err instanceof Error ? err.message : "Could not delete project"
+            );
+        } finally {
+            setBusy(false);
+        }
+    };
 
     useEffect(() => {
         if (!token) return;
@@ -1301,6 +1360,9 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                     <th className="px-5 py-3 font-medium">
                                         Status
                                     </th>
+                                    <th className="px-5 py-3 font-medium">
+                                        Actions
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stroke-soft-200">
@@ -1310,7 +1372,38 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                         className="text-label-sm"
                                     >
                                         <td className="px-5 py-4 text-strong-950">
-                                            {project.name}
+                                            {editingProjectId ===
+                                            project.project_id ? (
+                                                <form
+                                                    className="flex items-center gap-2"
+                                                    onSubmit={(event) => {
+                                                        event.preventDefault();
+                                                        void onRenameProject(
+                                                            project.project_id
+                                                        );
+                                                    }}
+                                                >
+                                                    <input
+                                                        autoFocus
+                                                        value={projectDraft}
+                                                        onChange={(event) =>
+                                                            setProjectDraft(
+                                                                event.target.value
+                                                            )
+                                                        }
+                                                        className="h-9 min-w-0 grow rounded-lg border border-stroke-soft-200 px-2 text-label-sm"
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        disabled={busy}
+                                                        className="h-9 rounded-lg bg-strong-950 px-3 text-label-xs text-white-0 disabled:opacity-40"
+                                                    >
+                                                        Save
+                                                    </button>
+                                                </form>
+                                            ) : (
+                                                project.name
+                                            )}
                                         </td>
                                         <td className="px-5 py-4 text-sub-600">
                                             {project.member_count ?? "—"}
@@ -1329,6 +1422,39 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                                         : "active"
                                                 }
                                             />
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            {project.archived_at ? null : (
+                                                <div className="flex items-center gap-3">
+                                                    <button
+                                                        type="button"
+                                                        className="text-label-xs text-sub-600 hover:text-strong-950"
+                                                        onClick={() => {
+                                                            setEditingProjectId(
+                                                                project.project_id
+                                                            );
+                                                            setProjectDraft(
+                                                                project.name
+                                                            );
+                                                        }}
+                                                    >
+                                                        Rename
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy}
+                                                        className="text-label-xs text-red-500 disabled:opacity-40"
+                                                        onClick={() =>
+                                                            void onDeleteProject(
+                                                                project.project_id,
+                                                                project.name
+                                                            )
+                                                        }
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

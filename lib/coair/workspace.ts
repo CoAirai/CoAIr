@@ -84,6 +84,24 @@ export async function createProject(token: string, name: string) {
     });
 }
 
+export async function renameProject(
+    token: string,
+    projectId: string,
+    name: string
+) {
+    return coairFetch<CoairProject>(
+        `/projects/${encodeURIComponent(projectId)}`,
+        { method: "PATCH", token, projectId, body: { name } }
+    );
+}
+
+export async function deleteProject(token: string, projectId: string) {
+    return coairFetch<{ ok: boolean }>(
+        `/projects/${encodeURIComponent(projectId)}`,
+        { method: "DELETE", token, projectId }
+    );
+}
+
 export async function listOrgProjects(token: string) {
     return coairFetch<{ projects: CoairProject[] }>("/org/projects", { token });
 }

@@ -9,9 +9,11 @@ import { listOrgUsers, type CoairOrgUser } from "@/lib/coair/org";
 import type { CoairProject } from "@/lib/coair/types";
 import {
     createProject,
+    deleteProject,
     grantOrgProjectAccess,
     listOrgProjectMembers,
     listOrgProjects,
+    renameProject,
     revokeOrgProjectAccess,
 } from "@/lib/coair/workspace";
 
@@ -29,6 +31,7 @@ const LiveProjectsPage = () => {
     const [selectedId, setSelectedId] = useState<string>("");
     const [members, setMembers] = useState<ProjectMember[]>([]);
     const [name, setName] = useState("");
+    const [rename, setRename] = useState("");
     const [assignUser, setAssignUser] = useState("");
     const [assignRole, setAssignRole] = useState<"editor" | "viewer" | "owner">(
         "editor"
@@ -108,6 +111,37 @@ const LiveProjectsPage = () => {
             await grantOrgProjectAccess(token, selectedId, assignUser, assignRole);
             setMessage(`Assigned ${assignUser} as ${assignRole}.`);
             await refreshMembers();
+            await refresh();
+        } catch (err) {
+            setError(apiErrorMessage(err));
+        }
+    };
+
+    const onRename = async (event: FormEvent) => {
+        event.preventDefault();
+        if (!token || !selectedId || !rename.trim()) return;
+        setError(null);
+        setMessage(null);
+        try {
+            const updated = await renameProject(token, selectedId, rename.trim());
+            setRename("");
+            setMessage(`Renamed project to “${updated.name}”.`);
+            await refresh();
+        } catch (err) {
+            setError(apiErrorMessage(err));
+        }
+    };
+
+    const onDelete = async () => {
+        const project = projects.find((item) => item.project_id === selectedId);
+        if (!token || !selectedId || !project) return;
+        if (!window.confirm(`Delete project “${project.name}”?`)) return;
+        setError(null);
+        setMessage(null);
+        try {
+            await deleteProject(token, selectedId);
+            setMessage(`Deleted project “${project.name}”.`);
+            setSelectedId("");
             await refresh();
         } catch (err) {
             setError(apiErrorMessage(err));
@@ -204,6 +238,38 @@ const LiveProjectsPage = () => {
                             <h2 className="text-label-lg text-strong-950">
                                 {selected.name}
                             </h2>
+                            <form
+                                onSubmit={(event) => void onRename(event)}
+                                className="mt-4 flex flex-wrap items-end gap-3"
+                            >
+                                <label className="min-w-[180px] grow">
+                                    <span className="mb-1 block text-label-xs text-sub-600">
+                                        Rename project
+                                    </span>
+                                    <input
+                                        required
+                                        value={rename}
+                                        onChange={(event) =>
+                                            setRename(event.target.value)
+                                        }
+                                        placeholder={selected.name}
+                                        className="h-10 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm"
+                                    />
+                                </label>
+                                <button
+                                    type="submit"
+                                    className="h-10 rounded-full border border-stroke-soft-200 px-4 text-label-sm text-strong-950"
+                                >
+                                    Rename
+                                </button>
+                                <button
+                                    type="button"
+                                    className="h-10 rounded-full px-4 text-label-sm text-red-500"
+                                    onClick={() => void onDelete()}
+                                >
+                                    Delete
+                                </button>
+                            </form>
 
                             <form
                                 onSubmit={(event) => void onAssign(event)}
