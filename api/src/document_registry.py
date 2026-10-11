@@ -273,6 +273,17 @@ class DocumentRegistry:
                 rec.event_partial_reasons = list(partial_reasons)
             self._save()
 
+    def mark_processing(self, doc_id: str) -> None:
+        """Send an already saved file back through indexing."""
+        with self._file_lock:
+            rec = self._records.get(doc_id)
+            if not rec:
+                return
+            rec.status = "processing"
+            rec.error = None
+            rec.completed_at = ""
+            self._save()
+
     def mark_error(self, doc_id: str, error: str) -> None:
         with self._file_lock:
             rec = self._records.get(doc_id)

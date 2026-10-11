@@ -137,10 +137,10 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                         <input
                             ref={csvInputRef}
                             type="file"
-                            accept=".csv,text/csv"
+                            accept=".xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                             multiple
                             className="hidden"
-                            onChange={(event) => onPickFile(event, "csv")}
+                            onChange={(event) => onPickFile(event, "spreadsheet")}
                         />
                         <Button
                             className="grow"
@@ -154,7 +154,7 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                             isStroke
                             onClick={() => csvInputRef.current?.click()}
                         >
-                            CSV
+                            Sheets
                         </Button>
                     </div>
                     ) : (

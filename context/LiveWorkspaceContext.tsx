@@ -34,6 +34,7 @@ import {
     listLibrary,
     listProjects,
     readIndexingSummary,
+    reindexProjectFile,
     uploadProjectFile,
     type IndexingStatus,
 } from "@/lib/coair/workspace";
@@ -113,6 +114,7 @@ type LiveWorkspaceValue = {
         files: File[]
     ) => Promise<{ ok: boolean; uploaded: number; failed: number; error?: string }>;
     removeFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
+    reinjectFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
     refresh: () => Promise<void>;
 };
 
@@ -923,6 +925,30 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
     );
 
+    const reinjectFile = useCallback(
+        async (fileId: string) => {
+            if (!session?.accessToken || !session.projectId) {
+                return { ok: false, error: "No project selected" };
+            }
+            try {
+                await reindexProjectFile(
+                    session.accessToken,
+                    session.projectId,
+                    fileId
+                );
+                await refreshLibrary();
+                pushToast("Reinjecting document", "info");
+                return { ok: true };
+            } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Reinject failed";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
+        },
+        [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
+    );
+
     const teammates = useMemo(() => {
         if (!canListTeammates || !session?.companyId) return [];
         const mapped = mapLiveOrgUsersToWorkspaceUsers(
@@ -965,6 +991,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             uploadFile,
             uploadFiles,
             removeFile,
+            reinjectFile,
             refresh,
         }),
         [
@@ -980,6 +1007,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             orgUsers,
             projects,
             refresh,
+            reinjectFile,
             removeFile,
             selectProject,
             teammates,

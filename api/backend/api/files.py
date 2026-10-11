@@ -370,35 +370,26 @@ async def reindex_file(
     background_tasks: BackgroundTasks,
     project: ProjectContext = Depends(require_project_editor),
 ):
-    """Delete and re-index a single file (clean slate)."""
+    """Index the saved file again. The original stays on disk."""
     from pathlib import Path
     from src.document_registry import get_document_registry
-    from src.file_router import delete_document
-    from src.document_rag import generate_doc_id
 
     registry = get_document_registry()
     rec = registry.get(file_id)
-    if not rec or getattr(rec, "project_id", "") != project.project_id:
-        return {"ok": False, "detail": "Document not found"}
+    if not rec or (getattr(rec, "project_id", "") or "") != project.project_id:
+        raise HTTPException(404, "file_not_found")
 
     file_path = rec.file_path
     file_name = rec.file_name
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(404, "file_not_on_disk")
 
-    # 1. Full cleanup from all stores
-    delete_document(file_id)
-
-    # 2. Check file still on disk (downloaded from GCS at startup)
-    if not Path(file_path).exists():
-        return {"ok": False, "detail": f"File not on disk: {file_path}"}
-
-    # 3. Re-index in background
-    new_doc_id = generate_doc_id(file_path)
+    registry.mark_processing(file_id)
     from backend.tasks.ingestion_jobs import get_ingestion_job_store
     get_ingestion_job_store().enqueue(
-        project.project_id, new_doc_id, file_path, file_name,
+        project.project_id, file_id, file_path, file_name, force=True,
     )
-
-    return {"ok": True, "file_name": file_name, "new_file_id": new_doc_id, "status": "reindexing"}
+    return {"ok": True, "file_name": file_name, "status": "reindexing"}
 
 
 @router.post("/files/reindex-stuck")

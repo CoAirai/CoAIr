@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Icon from "@/components/Icon";
 import TokenUsage from "./TokenUsage";
@@ -14,26 +14,115 @@ import { getTokenMeter } from "@/lib/chat/tokenMeter";
 
 const PAGE_SIZE = 10;
 
+function DocumentActions({
+    onRemove,
+    onReinject,
+}: {
+    onRemove: () => void;
+    onReinject?: () => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [position, setPosition] = useState({ top: 0, left: 0 });
+    const rootRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const close = (event: Event) => {
+            if (event.target instanceof Node && rootRef.current?.contains(event.target)) {
+                return;
+            }
+            setOpen(false);
+        };
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setOpen(false);
+        };
+        document.addEventListener("pointerdown", close);
+        document.addEventListener("keydown", onKey);
+        window.addEventListener("scroll", close, true);
+        return () => {
+            document.removeEventListener("pointerdown", close);
+            document.removeEventListener("keydown", onKey);
+            window.removeEventListener("scroll", close, true);
+        };
+    }, [open]);
+
+    return (
+        <div ref={rootRef} className="relative shrink-0">
+            <button
+                ref={buttonRef}
+                type="button"
+                className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-weak-50"
+                aria-label="Document actions"
+                aria-expanded={open}
+                onClick={() => {
+                    const rect = buttonRef.current?.getBoundingClientRect();
+                    if (rect) {
+                        setPosition({
+                            top: rect.bottom + 4,
+                            left: Math.max(8, rect.right - 144),
+                        });
+                    }
+                    setOpen((value) => !value);
+                }}
+            >
+                <Icon className="fill-strong-950" name="dots" />
+            </button>
+            {open && (
+                <div
+                    className="fixed z-50 w-36 rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+                    style={{ top: position.top, left: position.left }}
+                >
+                    {onReinject && (
+                        <button
+                            type="button"
+                            className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-xs text-strong-950 hover:bg-weak-50"
+                            onClick={() => {
+                                setOpen(false);
+                                onReinject();
+                            }}
+                        >
+                            Reinject
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-xs text-red-500 hover:bg-weak-50"
+                        onClick={() => {
+                            setOpen(false);
+                            onRemove();
+                        }}
+                    >
+                        Remove
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 type GroupProps = {
     title: string;
     icon: string;
     items: CompanyDocument[];
-    canRemove: boolean;
+    canManage: boolean;
     defaultOpen?: boolean;
     loading?: boolean;
     onOpen: (name: string) => void;
     onRemove: (id: string) => void;
+    onReinject?: (id: string) => void;
 };
 
 const DocumentGroup = ({
     title,
     icon,
     items,
-    canRemove,
+    canManage,
     defaultOpen = false,
     loading = false,
     onOpen,
     onRemove,
+    onReinject,
 }: GroupProps) => {
     const [open, setOpen] = useState(defaultOpen);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -114,14 +203,15 @@ const DocumentGroup = ({
                                             </span>
                                         )}
                                 </button>
-                                {canRemove && (
-                                    <button
-                                        type="button"
-                                        className="shrink-0 px-2 text-label-xs text-sub-600 transition-colors hover:text-red-500"
-                                        onClick={() => onRemove(doc.id)}
-                                    >
-                                        Remove
-                                    </button>
+                                {canManage && (
+                                    <DocumentActions
+                                        onRemove={() => onRemove(doc.id)}
+                                        onReinject={
+                                            onReinject
+                                                ? () => onReinject(doc.id)
+                                                : undefined
+                                        }
+                                    />
                                 )}
                             </motion.div>
                         ))}
@@ -168,6 +258,7 @@ const KnowledgeBase = () => {
     );
     const sheets = documents.filter((doc) => doc.kind === "spreadsheet");
     const canRemove = session?.role === "company_admin";
+    const canManage = live.enabled || canRemove;
     const docsLoading = live.enabled && live.libraryLoading;
     const transfers = live.enabled ? live.fileTransfers : [];
 
@@ -315,29 +406,44 @@ const KnowledgeBase = () => {
                     title="Documents"
                     icon="document"
                     items={files}
-                    canRemove={canRemove}
+                    canManage={canManage}
                     defaultOpen
                     loading={docsLoading}
                     onOpen={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
+                    onReinject={
+                        live.enabled
+                            ? (id) => void live.reinjectFile(id)
+                            : undefined
+                    }
                 />
                 <DocumentGroup
                     title="Communications"
                     icon="comment"
                     items={communications}
-                    canRemove={canRemove}
+                    canManage={canManage}
                     loading={docsLoading}
                     onOpen={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
+                    onReinject={
+                        live.enabled
+                            ? (id) => void live.reinjectFile(id)
+                            : undefined
+                    }
                 />
                 <DocumentGroup
                     title="Spreadsheets"
                     icon="analytic"
                     items={sheets}
-                    canRemove={canRemove}
+                    canManage={canManage}
                     loading={docsLoading}
                     onOpen={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
+                    onReinject={
+                        live.enabled
+                            ? (id) => void live.reinjectFile(id)
+                            : undefined
+                    }
                 />
             </div>
         </div>

@@ -203,6 +203,17 @@ export async function readIndexingSummary(token: string, projectId: string) {
     }>("/indexing/summary", { token, projectId });
 }
 
+export async function reindexProjectFile(
+    token: string,
+    projectId: string,
+    fileId: string
+) {
+    return coairFetch<{ ok?: boolean; status?: string; file_name?: string }>(
+        `/files/${encodeURIComponent(fileId)}/reindex`,
+        { method: "POST", token, projectId }
+    );
+}
+
 export async function deleteProjectFile(
     token: string,
     projectId: string,

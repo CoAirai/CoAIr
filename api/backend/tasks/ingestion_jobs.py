@@ -104,7 +104,7 @@ class IngestionJobStore:
         return cur.rowcount
 
     def enqueue(self, project_id: str, file_id: str, file_path: str, filename: str,
-                requested_by: str = "") -> Dict:
+                requested_by: str = "", force: bool = False) -> Dict:
         if not project_id:
             raise ValueError("project_id is required")
         job_id = uuid.uuid4().hex[:20]
@@ -118,12 +118,13 @@ class IngestionJobStore:
                 "file_path=excluded.file_path, filename=excluded.filename, "
                 "requested_by=CASE WHEN excluded.requested_by<>'' THEN excluded.requested_by "
                 "ELSE ingestion_jobs.requested_by END, "
-                "status=CASE WHEN ingestion_jobs.status='ready' THEN 'ready' ELSE 'queued' END, "
-                "stage=CASE WHEN ingestion_jobs.status='ready' THEN 'ready' ELSE 'queued' END, "
-                "progress=CASE WHEN ingestion_jobs.status='ready' THEN ingestion_jobs.progress ELSE 0 END, "
-                "error=NULL, completed_at=CASE WHEN ingestion_jobs.status='ready' "
-                "THEN ingestion_jobs.completed_at ELSE NULL END, updated_at=excluded.updated_at",
-                [job_id, project_id, file_id, file_path, filename, requested_by, now, now],
+                "status=CASE WHEN ? = 1 OR ingestion_jobs.status!='ready' THEN 'queued' ELSE 'ready' END, "
+                "stage=CASE WHEN ? = 1 OR ingestion_jobs.status!='ready' THEN 'queued' ELSE 'ready' END, "
+                "progress=CASE WHEN ? = 1 OR ingestion_jobs.status!='ready' THEN 0 ELSE ingestion_jobs.progress END, "
+                "error=NULL, completed_at=CASE WHEN ? = 1 OR ingestion_jobs.status!='ready' "
+                "THEN NULL ELSE ingestion_jobs.completed_at END, updated_at=excluded.updated_at",
+                [job_id, project_id, file_id, file_path, filename, requested_by, now, now,
+                 1 if force else 0, 1 if force else 0, 1 if force else 0, 1 if force else 0],
             )
             row = conn.execute(
                 "SELECT * FROM ingestion_jobs WHERE project_id=? AND file_id=?",
