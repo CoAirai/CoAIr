@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent, type PointerEvent } from "react";
 import { usePathname } from "next/navigation";
 import Icon from "@/components/Icon";
 import Image from "@/components/Image";
@@ -19,11 +19,25 @@ import type { CompanyDocumentKind } from "@/lib/admin/companyDocuments";
 
 type Props = {
     visible: boolean;
+    width: number;
+    sized: boolean;
+    resizable: boolean;
+    resizing: boolean;
+    onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
     onClose: () => void;
     onClickNewChat: () => void;
 };
 
-const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
+const Sidebar = ({
+    visible,
+    width,
+    sized,
+    resizable,
+    resizing,
+    onResizeStart,
+    onClose,
+    onClickNewChat,
+}: Props) => {
     const [open, setOpen] = useState(false);
     const pathname = usePathname();
     const isChronology = pathname.startsWith("/workspace/chronology");
@@ -60,14 +74,29 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
     return (
         <>
             <div
-                    className={`fixed top-5 left-5 bottom-5 z-20 flex flex-col w-80 bg-white-0 rounded-3xl shadow-[0_0_1.25rem_0_rgba(0,0,0,0.03)] transition-transform duration-300 ease-out max-3xl:w-65 max-lg:top-0 max-lg:left-0 max-lg:bottom-0 max-lg:w-75 max-lg:shadow-2xl max-lg:rounded-none max-md:w-full max-md:p-4 ${
+                    className={`fixed top-5 left-5 bottom-5 z-20 flex flex-col bg-white-0 rounded-3xl shadow-[0_0_1.25rem_0_rgba(0,0,0,0.03)] ease-out max-lg:top-0 max-lg:left-0 max-lg:bottom-0 max-lg:!w-75 max-lg:shadow-2xl max-lg:rounded-none max-md:!w-full max-md:p-4 ${
+                    resizing ? "" : "transition-transform duration-300"
+                } ${
                     visible
                         ? "translate-x-0"
                         : "pointer-events-none -translate-x-[calc(100%+3rem)]"
                 }`}
+                style={sized ? { width } : undefined}
                 aria-hidden={!visible}
                 inert={!visible}
             >
+                {resizable && (
+                    <div
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label="Resize sidebar"
+                        aria-valuemin={260}
+                        aria-valuemax={560}
+                        aria-valuenow={width}
+                        className="absolute inset-y-0 -right-1 z-30 w-2 cursor-col-resize touch-none"
+                        onPointerDown={onResizeStart}
+                    />
+                )}
                 <div className="grow overflow-auto scrollbar-none p-5 flex flex-col">
                     <div className="flex items-center gap-2 mb-5 max-lg:pr-2 max-md:mb-3">
                         <button
@@ -83,12 +112,12 @@ const Sidebar = ({ visible, onClose, onClickNewChat }: Props) => {
                                 src="/images/coair-logo.png"
                                 width={120}
                                 height={32}
-                                alt="COAir"
+                                alt="COAIr"
                             />
                             {isForensic ? (
                                 <span className="min-w-0">
                                     <span className="block truncate text-label-sm text-strong-950">
-                                        COAir - forensic
+                                        COAIr - forensic
                                     </span>
                                     <span className="mt-0.5 block truncate text-[11px] leading-4 text-sub-600">
                                         Programme / deterministic engine.

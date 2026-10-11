@@ -34,10 +34,10 @@ const HomePage = () => {
                                             src="/images/coair-logo.png"
                                             width={160}
                                             height={64}
-                                            alt="COAir"
+                                            alt="COAIr"
                                         />
                                         <div className="mb-2 text-h3 tracking-tight max-md:mb-1.5 max-md:text-[1.6rem]">
-                                            COAir
+                                            COAIr
                                         </div>
                                         <div className="mx-auto max-w-120 text-p-xl leading-relaxed text-sub-600 max-md:text-p-sm">
                                             Chat, cite, and verify against your

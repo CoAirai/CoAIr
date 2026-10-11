@@ -1,18 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Icon from "@/components/Icon";
 import ModalSettings from "@/components/ModalSettings";
 import Image from "@/components/Image";
 import AvatarMenu from "@/components/AvatarMenu";
+import ProjectSwitcher from "@/components/Header/ProjectSwitcher";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { useChat } from "@/context/ChatContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
-import { chatTransition } from "@/lib/chat/motion";
 import { activeWorkspaceUsers } from "@/lib/chat/threads";
 type Props = {
     sidebarOpen: boolean;
@@ -30,14 +29,6 @@ function initials(name: string) {
 
 const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
     const router = useRouter();
-    const pathname = usePathname();
-    const isChronology = pathname.startsWith("/workspace/chronology");
-    const isForensic = pathname.startsWith("/workspace/forensic");
-    const moduleLabel = isChronology
-        ? "chronology"
-        : isForensic
-          ? "forensic"
-          : "chat";
     const [openSettings, setOpenSettings] = useState(false);
     const { session, signOut } = useAuth();
     const { users } = useAdminData();
@@ -45,8 +36,6 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
     const {
         enabled: liveEnabled,
         loading: liveLoading,
-        projects,
-        selectProject,
         teammates: liveTeammates,
     } = useLiveWorkspace();
 
@@ -81,11 +70,6 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
         session?.userId,
         users,
     ]);
-    const workspaceUser =
-        teammates.find((user) => user.id === activeWorkspaceUserId) ??
-        teammates.find((user) => user.id === session?.userId) ??
-        null;
-
     return (
         <>
             <div className="flex items-center gap-4 mb-3.5 max-md:gap-2 max-md:mb-3">
@@ -99,75 +83,17 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
                 >
                     <Icon className="!size-6 fill-strong-950" name="burger" />
                 </button>
-                <div className="grow flex items-center gap-3 min-w-0">
+                <div className="flex min-w-0 grow items-center gap-3">
                     <Image
                         className="h-8 w-auto shrink-0 rounded-xl object-contain opacity-100 max-md:h-7"
                         src="/images/coair-logo.png"
                         width={120}
                         height={32}
-                        alt="COAir"
+                        alt="COAIr"
                     />
-                    <div className="min-w-0">
-                        <div className="text-label-xl max-md:text-label-md">
-                            {isChronology
-                                ? "COAir - chronology"
-                                : isForensic
-                                  ? "COAir - forensic"
-                                  : "COAir - workspace"}
-                        </div>
-                        <div className="mt-1 line-clamp-1 text-label-md text-sub-600 max-lg:hidden">
-                            <AnimatePresence mode="wait" initial={false}>
-                                <motion.span
-                                    key={
-                                        session?.role === "company_admin"
-                                            ? `${moduleLabel}-${workspaceUser?.id ?? "admin"}`
-                                            : moduleLabel
-                                    }
-                                    initial={{ opacity: 0, y: 4 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -4 }}
-                                    transition={chatTransition}
-                                    className="block"
-                                >
-                                    {session?.role === "company_admin" &&
-                                    workspaceUser
-                                        ? `Working in ${workspaceUser.name}'s ${moduleLabel}`
-                                        : isChronology
-                                          ? "Build timelines from verified project sources."
-                                          : isForensic
-                                            ? "Programme / deterministic engine."
-                                            : "AI-powered analytics. Verify critical decisions."}
-                                </motion.span>
-                            </AnimatePresence>
-                        </div>
-                    </div>
+                    <ProjectSwitcher />
                 </div>
-                <div className="flex shrink-0 gap-1.5 items-center">
-                    {liveEnabled && projects.length > 0 && (
-                        <select
-                            aria-label="Project"
-                            className="h-10 max-w-52 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none transition-colors duration-200 hover:border-stroke-sub-300"
-                            value={session?.projectId ?? ""}
-                            onChange={(event) =>
-                                selectProject(event.target.value)
-                            }
-                        >
-                            {projects.map((project) => (
-                                <option
-                                    key={project.project_id}
-                                    value={project.project_id}
-                                >
-                                    {project.name}
-                                </option>
-                            ))}
-                        </select>
-                    )}
-                    {liveEnabled && liveLoading && projects.length === 0 && (
-                        <div
-                            aria-hidden
-                            className="h-10 w-36 animate-pulse rounded-xl border border-stroke-soft-200 bg-weak-50"
-                        />
-                    )}
+                <div className="flex shrink-0 gap-3 items-center">
                     {session?.role === "company_admin" && (
                         <label className="sr-only" htmlFor="workspace-user">
                             Switch user
@@ -198,6 +124,16 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
                                 className="h-10 w-32 animate-pulse rounded-xl border border-stroke-soft-200 bg-weak-50"
                             />
                         )}
+                    <div className="min-w-0 max-w-40 text-right max-md:hidden">
+                        {session?.companyName ? (
+                            <div className="truncate text-label-sm text-strong-950">
+                                {session.companyName}
+                            </div>
+                        ) : null}
+                        <div className="truncate text-label-xs text-sub-600">
+                            COAIr
+                        </div>
+                    </div>
                     <AvatarMenu
                         initials={initials(session?.name ?? "U") || "U"}
                         name={session?.name}

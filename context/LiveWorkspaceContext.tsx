@@ -33,6 +33,7 @@ import {
     downloadProjectFile,
     listIndexingStatus,
     listLibrary,
+    createProject as createProjectRequest,
     listProjects,
     pinProjectFile,
     readIndexingSummary,
@@ -107,6 +108,7 @@ type LiveWorkspaceValue = {
     /** In-flight uploads + indexing jobs for Knowledge Base progress UI. */
     fileTransfers: FileTransfer[];
     selectProject: (projectId: string) => void;
+    createProject: (name: string) => Promise<{ ok: boolean; error?: string }>;
     uploadFile: (
         file: File,
         options?: { quiet?: boolean }
@@ -373,6 +375,39 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             updateSession({ projectId });
         },
         [updateSession]
+    );
+
+    const createProject = useCallback(
+        async (name: string) => {
+            const trimmed = name.trim();
+            if (!session?.accessToken) {
+                return { ok: false, error: "Not signed in" };
+            }
+            if (!trimmed) {
+                return { ok: false, error: "Project name required" };
+            }
+            try {
+                const created = await createProjectRequest(
+                    session.accessToken,
+                    trimmed
+                );
+                setProjects((current) => [
+                    created,
+                    ...current.filter(
+                        (project) => project.project_id !== created.project_id
+                    ),
+                ]);
+                updateSession({ projectId: created.project_id });
+                pushToast(`Created ${created.name}`, "info");
+                return { ok: true };
+            } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Could not create project";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
+        },
+        [pushToast, session?.accessToken, updateSession]
     );
 
     const applyIndexingJobs = useCallback(
@@ -1059,6 +1094,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             moduleAddOns,
             fileTransfers,
             selectProject,
+            createProject,
             uploadFile,
             uploadFiles,
             removeFile,
@@ -1085,6 +1121,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             reinjectFile,
             removeFile,
             selectProject,
+            createProject,
             teammates,
             uploadFile,
             uploadFiles,

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import Image from "@/components/Image";
+import ProjectSwitcher from "@/components/Header/ProjectSwitcher";
 import PageEnter from "@/components/Motion/PageEnter";
 import UserAvatar from "@/components/UserAvatar";
 import UpgradePackageModal from "@/components/Workspace/UpgradePackageModal";
@@ -122,24 +123,26 @@ const HubPage = () => {
             <div className="min-h-screen bg-weak-50/80 text-strong-950">
                 <header className="border-b border-stroke-soft-200 bg-white-0/80 backdrop-blur-sm">
                     <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
-                        <div className="min-w-40">
-                            <p className="truncate text-label-sm font-medium tracking-tight text-strong-950">
-                                {company.name}
-                            </p>
-                            <p className="mt-0.5 truncate text-label-xs text-sub-600">
-                                {plan.name} plan · Workspace
-                            </p>
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <Image
+                                className="h-8 w-auto rounded-xl object-contain opacity-100"
+                                src="/images/coair-logo.png"
+                                width={120}
+                                height={32}
+                                alt="COAIr"
+                            />
+                            <ProjectSwitcher />
                         </div>
 
-                        <Image
-                            className="h-8 w-auto rounded-xl object-contain opacity-100"
-                            src="/images/coair-logo.png"
-                            width={120}
-                            height={32}
-                            alt="COAir"
-                        />
-
-                        <div className="flex min-w-40 items-center justify-end">
+                        <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+                            <div className="min-w-0 text-right">
+                                <p className="truncate text-label-sm font-medium tracking-tight text-strong-950">
+                                    {company.name}
+                                </p>
+                                <p className="mt-0.5 truncate text-label-xs text-sub-600">
+                                    COAIr · {plan.name}
+                                </p>
+                            </div>
                             <Menu as="div" className="relative">
                                 <MenuButton
                                     className="rounded-xl outline-0 transition-opacity hover:opacity-90"

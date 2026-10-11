@@ -576,19 +576,13 @@ def test_project_limit_is_enforced(client, stores):
     assert second.json()["detail"] == "org_project_limit_reached"
 
 
-def test_members_cannot_create_projects_unless_allowed(client, acme, stores):
-    _users, _projects, orgs = stores
+def test_members_can_create_projects(client, acme, stores):
+    _users, _projects, _orgs = stores
 
-    denied = client.post("/api/projects", headers=_auth(client, "engineer"),
-                         json={"name": "Rogue"})
-    assert denied.status_code == 403
-    assert denied.json()["detail"] == "org_owner_required"
-
-    orgs.update_org(acme["org"]["org_id"], allow_member_projects=True)
-    allowed = client.post("/api/projects", headers=_auth(client, "engineer"),
-                          json={"name": "Sanctioned"})
-    assert allowed.status_code == 201
-    assert allowed.json()["org_id"] == acme["org"]["org_id"]
+    created = client.post("/api/projects", headers=_auth(client, "engineer"),
+                          json={"name": "Member project"})
+    assert created.status_code == 201
+    assert created.json()["org_id"] == acme["org"]["org_id"]
 
 
 def test_unaffiliated_accounts_keep_creating_projects_freely(client, stores):

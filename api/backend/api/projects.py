@@ -204,8 +204,8 @@ def create_project(
     # that belong to no company keep the historical behaviour: unlimited,
     # unaffiliated projects.
     if org.org_id and not org.is_platform:
-        if org.role != "owner" and not org.policy.get("allow_member_projects"):
-            raise HTTPException(403, "org_owner_required")
+        # Company owners and member users can both open a project. The org
+        # project cap still applies.
         limit = int(org.policy.get("project_limit") or 0)
         if limit and store.count_for_org(org.org_id) >= limit:
             raise HTTPException(409, "org_project_limit_reached")
