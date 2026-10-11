@@ -125,10 +125,10 @@ const HubPage = () => {
                     <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
                         <div className="flex min-w-0 flex-1 items-center gap-3">
                             <Image
-                                className="h-14 w-[10.5rem] shrink-0 overflow-hidden rounded-full object-cover"
-                                src="/images/coair-wordmark.png"
-                                width={168}
-                                height={56}
+                                className="h-8 w-auto rounded-xl object-contain opacity-100"
+                                src="/images/coair-logo.png"
+                                width={120}
+                                height={32}
                                 alt="COAIr"
                             />
                             <ProjectSwitcher />
@@ -198,11 +198,11 @@ const HubPage = () => {
                 <PageEnter className="mx-auto max-w-6xl px-6 pb-16 pt-12">
                     <div className="text-center">
                         <h1 className="text-4xl font-medium tracking-tight text-strong-950 max-md:text-3xl">
-                            Where are you working?
+                            What are you working on?
                         </h1>
                         <p className="mx-auto mt-3 max-w-xl text-label-sm leading-relaxed text-sub-600">
-                            Choose a module for this project. Your company
-                            session carries through.
+                            Pick a module. Your project and documents stay
+                            loaded across all three.
                         </p>
                     </div>
 
