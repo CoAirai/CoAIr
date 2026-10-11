@@ -125,7 +125,7 @@ const HubPage = () => {
                     <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
                         <div className="flex min-w-0 flex-1 items-center gap-3">
                             <Image
-                                className="h-14 w-[10.5rem] shrink-0 rounded-lg object-contain"
+                                className="h-14 w-[10.5rem] shrink-0 overflow-hidden rounded-full object-cover"
                                 src="/images/coair-wordmark.png"
                                 width={168}
                                 height={56}

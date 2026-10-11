@@ -85,7 +85,7 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
                 </button>
                 <div className="flex min-w-0 grow items-center gap-3">
                     <Image
-                        className="h-14 w-[10.5rem] shrink-0 rounded-lg object-contain max-md:h-11 max-md:w-36"
+                        className="h-14 w-[10.5rem] shrink-0 overflow-hidden rounded-full object-cover max-md:h-11 max-md:w-36"
                         src="/images/coair-wordmark.png"
                         width={168}
                         height={56}

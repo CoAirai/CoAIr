@@ -21,7 +21,7 @@ export const MODULES: {
         id: "chatbot",
         number: "01",
         title: "QUERIS",
-        keywords: "Enquiry Module",
+        keywords: "Enquiry",
         description:
             "Ask anything about your project. Every answer cites the document and page it came from.",
         href: "/workspace/chat",
@@ -30,7 +30,7 @@ export const MODULES: {
         id: "chronology",
         number: "02",
         title: "CHRONOS",
-        keywords: "Event Chronology Module",
+        keywords: "Event Chronology",
         description:
             "A defensible sequence of events, built from the record rather than from memory.",
         href: "/workspace/chronology",
@@ -39,7 +39,7 @@ export const MODULES: {
         id: "forensic",
         number: "03",
         title: "FORENSIS",
-        keywords: "Forensic Analysis Module",
+        keywords: "Forensic Analysis",
         description:
             "Programme reviews, preliminary delay findings and EoT claim assessments — a defensible first pass, aligned to SCL and AACE.",
         href: "/workspace/forensic",
