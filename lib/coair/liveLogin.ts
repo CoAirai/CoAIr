@@ -375,11 +375,60 @@ export type CoairConversationMessage = {
     };
 };
 
-export async function listConversations(token: string, projectId: string) {
-    return coairFetch<CoairConversationMeta[]>("/conversations", {
-        token,
-        projectId,
-    });
+export async function listConversations(
+    token: string,
+    projectId: string,
+    archived = false
+) {
+    const path = archived ? "/conversations?archived=true" : "/conversations";
+    return coairFetch<CoairConversationMeta[]>(path, { token, projectId });
+}
+
+export async function renameConversation(
+    token: string,
+    projectId: string,
+    conversationId: string,
+    title: string
+) {
+    return coairFetch<{ ok?: boolean }>(
+        `/conversations/${encodeURIComponent(conversationId)}`,
+        { method: "PATCH", token, projectId, body: { title } }
+    );
+}
+
+export async function pinConversation(
+    token: string,
+    projectId: string,
+    conversationId: string,
+    pinned: boolean
+) {
+    return coairFetch<CoairConversationMeta>(
+        `/conversations/${encodeURIComponent(conversationId)}/pin`,
+        { method: "PATCH", token, projectId, body: { pinned } }
+    );
+}
+
+export async function archiveConversation(
+    token: string,
+    projectId: string,
+    conversationId: string,
+    archived: boolean
+) {
+    return coairFetch<CoairConversationMeta>(
+        `/conversations/${encodeURIComponent(conversationId)}/archive`,
+        { method: "PATCH", token, projectId, body: { archived } }
+    );
+}
+
+export async function deleteConversation(
+    token: string,
+    projectId: string,
+    conversationId: string
+) {
+    return coairFetch<{ ok?: boolean }>(
+        `/conversations/${encodeURIComponent(conversationId)}`,
+        { method: "DELETE", token, projectId }
+    );
 }
 
 export async function getConversation(

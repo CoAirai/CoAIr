@@ -29,4 +29,5 @@ export type RecentQuery = {
     id: string;
     title: string;
     messages?: Message[];
+    pinned?: boolean;
 };

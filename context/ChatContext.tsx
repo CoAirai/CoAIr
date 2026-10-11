@@ -11,12 +11,17 @@ import {
 } from "react";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { mapLiveCitations } from "@/lib/coair/mapCitations";
 import {
+    archiveConversation,
     createConversation,
+    deleteConversation,
     getConversation,
     listConversations,
+    pinConversation,
+    renameConversation,
     sendLiveChat,
 } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
@@ -41,6 +46,11 @@ type ChatContextValue = {
     setActiveWorkspaceUserId: (id: string) => void;
     sendMessage: (text: string) => Promise<void>;
     selectQuery: (queryId: string) => void;
+    archivedQueries: RecentQuery[];
+    pinQuery: (queryId: string, pinned: boolean) => Promise<void>;
+    renameQuery: (queryId: string, title: string) => Promise<void>;
+    deleteQuery: (queryId: string) => Promise<void>;
+    archiveQuery: (queryId: string, archived: boolean) => Promise<void>;
     clearChat: () => void;
     askAboutDocument: (name: string) => Promise<void>;
     openCitation: Citation | null;
@@ -54,6 +64,28 @@ function makeId(prefix: string) {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function orderQueries(items: RecentQuery[], limit?: number): RecentQuery[] {
+    const pinned = items.filter((row) => row.pinned);
+    const rest = items.filter((row) => !row.pinned);
+    const visible = limit == null ? rest : rest.slice(0, limit);
+    const seen = new Set(pinned.map((row) => row.id));
+    return [...pinned, ...visible.filter((row) => !seen.has(row.id))];
+}
+
+function toRecentQueries(
+    rows: Array<{ conversation_id: string; title?: string; pinned?: boolean }> | undefined,
+    limit?: number
+): RecentQuery[] {
+    return orderQueries(
+        (rows ?? []).map((row) => ({
+            id: row.conversation_id,
+            title: row.title || "Conversation",
+            pinned: Boolean(row.pinned),
+        })),
+        limit
+    );
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
     const { session } = useAuth();
     const {
@@ -63,6 +95,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         consumeUserTokens,
     } = useAdminData();
     const live = useLiveWorkspace();
+    const { pushToast } = useToast();
     const workspaceUsers = useMemo((): WorkspaceUser[] => {
         if (live.enabled && session?.role === "company_admin") {
             if (live.teammates.length > 0) return live.teammates;
@@ -123,13 +156,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const [liveConversationId, setLiveConversationId] = useState<string | null>(
         null
     );
+    const [archivedByUserId, setArchivedByUserId] = useState<
+        Record<string, RecentQuery[]>
+    >({});
 
     useEffect(() => {
         setLiveConversationId(null);
     }, [session?.userId, session?.projectId, requestedWorkspaceUserId]);
 
-    // Hydrate Recent Queries from the live conversations API (survives refresh).
-    useEffect(() => {
+    const reloadQueries = useCallback(async () => {
         if (
             session?.source !== "live" ||
             !session.accessToken ||
@@ -141,34 +176,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const token = session.accessToken;
         const projectId = session.projectId;
         const userId = session.userId;
-        let cancelled = false;
-        void listConversations(token, projectId)
-            .then((rows) => {
-                if (cancelled) return;
-                const mapped: RecentQuery[] = (rows ?? [])
-                    .filter((row) => !row.archived)
-                    .slice(0, 20)
-                    .map((row) => ({
-                        id: row.conversation_id,
-                        title: row.title || "Conversation",
-                    }));
-                setRecentsByUserId((prev) => ({
-                    ...prev,
-                    [userId]: mapped,
-                }));
-            })
-            .catch(() => {
-                /* keep whatever is already in memory */
-            });
-        return () => {
-            cancelled = true;
-        };
+        const [active, archived] = await Promise.all([
+            listConversations(token, projectId),
+            listConversations(token, projectId, true).catch(() => []),
+        ]);
+        setRecentsByUserId((prev) => ({
+            ...prev,
+            [userId]: toRecentQueries(
+                (active ?? []).filter((row) => !row.archived),
+                20
+            ),
+        }));
+        setArchivedByUserId((prev) => ({
+            ...prev,
+            [userId]: toRecentQueries(archived ?? []),
+        }));
     }, [
         session?.accessToken,
         session?.projectId,
         session?.source,
         session?.userId,
     ]);
+
+    // Hydrate Recent Queries from the live conversations API (survives refresh).
+    useEffect(() => {
+        void reloadQueries().catch(() => {
+            /* keep whatever is already in memory */
+        });
+    }, [reloadQueries]);
 
     const activeWorkspaceUserId = useMemo(() => {
         if (!session?.userId || !session.companyId) return null;
@@ -187,6 +222,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const recentQueries = activeWorkspaceUserId
         ? recentsForUser(recentsByUserId, activeWorkspaceUserId)
         : [];
+    const archivedQueries = activeWorkspaceUserId
+        ? archivedByUserId[activeWorkspaceUserId] ?? []
+        : [];
 
     const companyDocs = useMemo(() => {
         if (!session?.companyId) return [];
@@ -202,6 +240,233 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setOpenCitation(null);
         },
         [session?.role]
+    );
+
+    const liveSession = useCallback(() => {
+        if (
+            session?.source !== "live" ||
+            !session.accessToken ||
+            !session.projectId ||
+            !session.userId
+        ) {
+            return null;
+        }
+        return {
+            token: session.accessToken,
+            projectId: session.projectId,
+            userId: session.userId,
+        };
+    }, [session?.accessToken, session?.projectId, session?.source, session?.userId]);
+
+    const pinQuery = useCallback(
+        async (queryId: string, pinned: boolean) => {
+            if (!activeWorkspaceUserId) return;
+            setRecentsByUserId((prev) => {
+                const current = prev[activeWorkspaceUserId] ?? [];
+                return {
+                    ...prev,
+                    [activeWorkspaceUserId]: orderQueries(
+                        current.map((entry) =>
+                            entry.id === queryId ? { ...entry, pinned } : entry
+                        )
+                    ),
+                };
+            });
+            const auth = liveSession();
+            if (!auth) {
+                pushToast(pinned ? "Query pinned" : "Query unpinned", "info");
+                return;
+            }
+            try {
+                await pinConversation(auth.token, auth.projectId, queryId, pinned);
+                pushToast(pinned ? "Query pinned" : "Query unpinned", "info");
+                void reloadQueries();
+            } catch (err) {
+                pushToast(
+                    err instanceof Error ? err.message : "Could not pin query",
+                    "error"
+                );
+                void reloadQueries();
+            }
+        },
+        [activeWorkspaceUserId, liveSession, pushToast, reloadQueries]
+    );
+
+    const renameQuery = useCallback(
+        async (queryId: string, title: string) => {
+            const nextTitle = title.trim();
+            if (!nextTitle || !activeWorkspaceUserId) return;
+            const apply = (rows: RecentQuery[]) =>
+                rows.map((entry) =>
+                    entry.id === queryId ? { ...entry, title: nextTitle } : entry
+                );
+            setRecentsByUserId((prev) => ({
+                ...prev,
+                [activeWorkspaceUserId]: apply(prev[activeWorkspaceUserId] ?? []),
+            }));
+            setArchivedByUserId((prev) => ({
+                ...prev,
+                [activeWorkspaceUserId]: apply(prev[activeWorkspaceUserId] ?? []),
+            }));
+            const auth = liveSession();
+            if (!auth) {
+                pushToast("Query renamed", "info");
+                return;
+            }
+            try {
+                await renameConversation(
+                    auth.token,
+                    auth.projectId,
+                    queryId,
+                    nextTitle
+                );
+                pushToast("Query renamed", "info");
+            } catch (err) {
+                pushToast(
+                    err instanceof Error ? err.message : "Could not rename query",
+                    "error"
+                );
+                void reloadQueries();
+            }
+        },
+        [activeWorkspaceUserId, liveSession, pushToast, reloadQueries]
+    );
+
+    const forgetOpenQuery = useCallback(
+        (queryId: string) => {
+            if (selectedQueryId !== queryId) return;
+            if (activeWorkspaceUserId) {
+                setThreadsByUserId((prev) => ({
+                    ...prev,
+                    [activeWorkspaceUserId]: [],
+                }));
+            }
+            setSelectedQueryId(null);
+            setLiveConversationId(null);
+            setOpenCitation(null);
+        },
+        [activeWorkspaceUserId, selectedQueryId]
+    );
+
+    const deleteQuery = useCallback(
+        async (queryId: string) => {
+            if (!activeWorkspaceUserId) return;
+            setRecentsByUserId((prev) => ({
+                ...prev,
+                [activeWorkspaceUserId]: (prev[activeWorkspaceUserId] ?? []).filter(
+                    (entry) => entry.id !== queryId
+                ),
+            }));
+            setArchivedByUserId((prev) => ({
+                ...prev,
+                [activeWorkspaceUserId]: (prev[activeWorkspaceUserId] ?? []).filter(
+                    (entry) => entry.id !== queryId
+                ),
+            }));
+            forgetOpenQuery(queryId);
+            const auth = liveSession();
+            if (!auth) {
+                pushToast("Query deleted", "info");
+                return;
+            }
+            try {
+                await deleteConversation(auth.token, auth.projectId, queryId);
+                pushToast("Query deleted", "info");
+            } catch (err) {
+                pushToast(
+                    err instanceof Error ? err.message : "Could not delete query",
+                    "error"
+                );
+                void reloadQueries();
+            }
+        },
+        [activeWorkspaceUserId, forgetOpenQuery, liveSession, pushToast, reloadQueries]
+    );
+
+    const archiveQuery = useCallback(
+        async (queryId: string, archived: boolean) => {
+            if (!activeWorkspaceUserId) return;
+            const from = archived ? recentsByUserId : archivedByUserId;
+            const source = from[activeWorkspaceUserId] ?? [];
+            const moving = source.find((entry) => entry.id === queryId);
+            if (!moving && archived) {
+                const fallback = (recentsByUserId[activeWorkspaceUserId] ?? []).find(
+                    (entry) => entry.id === queryId
+                );
+                if (!fallback) return;
+            }
+            const item =
+                moving ??
+                (recentsByUserId[activeWorkspaceUserId] ?? []).find(
+                    (entry) => entry.id === queryId
+                );
+            if (!item) return;
+            const stored = archived ? { ...item, pinned: false } : item;
+            if (archived) {
+                setRecentsByUserId((prev) => ({
+                    ...prev,
+                    [activeWorkspaceUserId]: (prev[activeWorkspaceUserId] ?? []).filter(
+                        (entry) => entry.id !== queryId
+                    ),
+                }));
+                setArchivedByUserId((prev) => ({
+                    ...prev,
+                    [activeWorkspaceUserId]: [
+                        stored,
+                        ...(prev[activeWorkspaceUserId] ?? []).filter(
+                            (entry) => entry.id !== queryId
+                        ),
+                    ],
+                }));
+                forgetOpenQuery(queryId);
+            } else {
+                setArchivedByUserId((prev) => ({
+                    ...prev,
+                    [activeWorkspaceUserId]: (prev[activeWorkspaceUserId] ?? []).filter(
+                        (entry) => entry.id !== queryId
+                    ),
+                }));
+                setRecentsByUserId((prev) => ({
+                    ...prev,
+                    [activeWorkspaceUserId]: orderQueries([
+                        stored,
+                        ...(prev[activeWorkspaceUserId] ?? []).filter(
+                            (entry) => entry.id !== queryId
+                        ),
+                    ]),
+                }));
+            }
+            const auth = liveSession();
+            if (!auth) {
+                pushToast(archived ? "Query archived" : "Query restored", "info");
+                return;
+            }
+            try {
+                await archiveConversation(
+                    auth.token,
+                    auth.projectId,
+                    queryId,
+                    archived
+                );
+                pushToast(archived ? "Query archived" : "Query restored", "info");
+                void reloadQueries();
+            } catch (err) {
+                pushToast(
+                    err instanceof Error ? err.message : "Could not archive query",
+                    "error"
+                );
+                void reloadQueries();
+            }
+        },
+        [
+            activeWorkspaceUserId,
+            archivedByUserId,
+            forgetOpenQuery,
+            liveSession,
+            pushToast,
+            recentsByUserId,
+            reloadQueries,
+        ]
     );
 
     const clearChat = useCallback(() => {
@@ -469,17 +734,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 });
                 setRecentsByUserId((prevRecents) => {
                     const existing = prevRecents[activeWorkspaceUserId] ?? [];
+                    const previous = existing.find((entry) => entry.id === queryId);
                     const nextEntry: RecentQuery = {
                         id: queryId,
-                        title: trimmed,
+                        title: previous?.title || trimmed,
+                        pinned: previous?.pinned,
                         messages: [userMessage, assistantMessage],
                     };
                     return {
                         ...prevRecents,
-                        [activeWorkspaceUserId]: [
-                            nextEntry,
-                            ...existing.filter((entry) => entry.id !== queryId),
-                        ].slice(0, 20),
+                        [activeWorkspaceUserId]: orderQueries(
+                            [
+                                nextEntry,
+                                ...existing.filter((entry) => entry.id !== queryId),
+                            ],
+                            20
+                        ),
                     };
                 });
                 setSelectedQueryId(queryId);
@@ -524,6 +794,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         () => ({
             messages,
             recentQueries,
+            archivedQueries,
             isReplying,
             sendError,
             selectedQueryId,
@@ -533,6 +804,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setActiveWorkspaceUserId,
             sendMessage,
             selectQuery,
+            pinQuery,
+            renameQuery,
+            deleteQuery,
+            archiveQuery,
             clearChat,
             askAboutDocument,
             openCitation,
@@ -542,14 +817,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         [
             activeKbId,
             activeWorkspaceUserId,
+            archiveQuery,
+            archivedQueries,
             askAboutDocument,
             clearChat,
+            deleteQuery,
             closeDocumentPreview,
             isReplying,
             messages,
             openCitation,
             openDocumentPreview,
+            pinQuery,
             recentQueries,
+            renameQuery,
             selectQuery,
             selectedQueryId,
             sendError,
