@@ -125,10 +125,10 @@ const HubPage = () => {
                     <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
                         <div className="flex min-w-0 flex-1 items-center gap-3">
                             <Image
-                                className="h-8 w-auto rounded-xl object-contain opacity-100"
-                                src="/images/coair-logo.png"
-                                width={120}
-                                height={32}
+                                className="h-14 w-[10.5rem] shrink-0 rounded-lg object-contain"
+                                src="/images/coair-wordmark.png"
+                                width={168}
+                                height={56}
                                 alt="COAIr"
                             />
                             <ProjectSwitcher />

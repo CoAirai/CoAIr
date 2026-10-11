@@ -30,15 +30,12 @@ const HomePage = () => {
                                         className="mb-12 text-center max-md:mb-6"
                                     >
                                         <Image
-                                            className="mx-auto mb-4 w-40 rounded-xl object-contain opacity-100"
-                                            src="/images/coair-logo.png"
-                                            width={160}
-                                            height={64}
+                                            className="mx-auto mb-6 h-auto w-72 max-w-full rounded-xl object-contain"
+                                            src="/images/coair-wordmark.png"
+                                            width={288}
+                                            height={96}
                                             alt="COAIr"
                                         />
-                                        <div className="mb-2 text-h3 tracking-tight max-md:mb-1.5 max-md:text-[1.6rem]">
-                                            COAIr
-                                        </div>
                                         <div className="mx-auto max-w-120 text-p-xl leading-relaxed text-sub-600 max-md:text-p-sm">
                                             Chat, cite, and verify against your
                                             project documents.

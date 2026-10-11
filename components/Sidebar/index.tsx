@@ -108,10 +108,10 @@ const Sidebar = ({
                             }}
                         >
                             <Image
-                                className="h-8 w-auto shrink-0 rounded-xl object-contain opacity-100"
-                                src="/images/coair-logo.png"
-                                width={120}
-                                height={32}
+                                className="h-12 w-40 shrink-0 rounded-lg object-contain"
+                                src="/images/coair-wordmark.png"
+                                width={160}
+                                height={53}
                                 alt="COAIr"
                             />
                             {isForensic ? (
