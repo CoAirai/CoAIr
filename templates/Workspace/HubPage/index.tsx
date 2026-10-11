@@ -250,9 +250,14 @@ const HubPage = () => {
                                 >
                                     <ModuleArt id={module.id} locked={locked} />
                                     <div className="mt-8 flex items-start justify-between gap-3">
-                                        <h2 className="text-2xl font-medium tracking-tight text-strong-950">
-                                            {module.title}
-                                        </h2>
+                                        <div className="min-w-0">
+                                            <h2 className="text-2xl font-medium tracking-tight text-strong-950">
+                                                {module.title}
+                                            </h2>
+                                            <p className="mt-1 text-label-xs text-sub-600">
+                                                {module.keywords}
+                                            </p>
+                                        </div>
                                         <span
                                             className={`shrink-0 rounded-lg px-2.5 py-1 text-label-xs font-medium ${
                                                 locked
@@ -321,36 +326,22 @@ const HubPage = () => {
     );
 };
 
+const MODULE_MARK: Record<ModuleId, string> = {
+    chatbot: "/images/modules/queris.png",
+    chronology: "/images/modules/chronos.png",
+    forensic: "/images/modules/forensis.png",
+};
+
 function ModuleArt({ id, locked }: { id: ModuleId; locked: boolean }) {
-    const muted = locked ? "opacity-50" : "opacity-100";
-
-    if (id === "chatbot") {
-        return (
-            <div className={`relative h-28 ${muted}`}>
-                <div className="absolute left-2 top-6 h-16 w-24 rounded-2xl bg-blue-500" />
-                <div className="absolute left-16 top-0 h-16 w-24 rounded-2xl border border-stroke-soft-200 bg-white-0 shadow-sm" />
-            </div>
-        );
-    }
-
-    if (id === "chronology") {
-        return (
-            <div className={`relative h-28 ${muted}`}>
-                <div className="absolute left-6 top-2 h-24 w-1 rounded-full bg-stroke-sub-300" />
-                <div className="absolute left-4 top-4 h-5 w-16 rounded-full bg-soft-200" />
-                <div className="absolute left-4 top-12 h-5 w-20 rounded-full bg-warning-base" />
-                <div className="absolute left-4 top-20 h-5 w-14 rounded-full bg-soft-200" />
-            </div>
-        );
-    }
-
     return (
-        <div className={`relative h-28 ${muted}`}>
-            <div className="absolute left-2 top-8 h-4 w-20 rounded-sm bg-blue-500" />
-            <div className="absolute left-10 top-14 h-4 w-16 rounded-sm bg-blue-300" />
-            <div className="absolute left-6 top-20 h-4 w-14 rounded-sm bg-warning-base" />
-            <div className="absolute left-20 top-6 h-4 w-10 rounded-sm bg-green-500" />
-            <div className="absolute bottom-2 left-24 top-2 border-l border-dashed border-stroke-sub-300" />
+        <div className={`flex h-28 items-center ${locked ? "opacity-50" : ""}`}>
+            <Image
+                src={MODULE_MARK[id]}
+                alt=""
+                width={96}
+                height={96}
+                className="h-24 w-24 rounded-2xl object-contain"
+            />
         </div>
     );
 }

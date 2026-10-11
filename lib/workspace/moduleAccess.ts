@@ -20,28 +20,28 @@ export const MODULES: {
     {
         id: "chatbot",
         number: "01",
-        title: "Chatbot",
-        keywords: "ASK + CITE + VERIFY",
+        title: "QUERIS",
+        keywords: "Enquiry Module",
         description:
-            "Interrogate the record in plain language. Every answer comes back cited to its source document.",
+            "Ask anything about your project. Every answer cites the document and page it came from.",
         href: "/workspace/chat",
     },
     {
         id: "chronology",
         number: "02",
-        title: "Chronology",
-        keywords: "EVENT TIMELINE",
+        title: "CHRONOS",
+        keywords: "Event Chronology Module",
         description:
-            "Follow what happened and when, drawn straight from the project record. Filter by event, party or period.",
+            "A defensible sequence of events, built from the record rather than from memory.",
         href: "/workspace/chronology",
     },
     {
         id: "forensic",
         number: "03",
-        title: "Forensic Reports",
-        keywords: "DELAY ANALYSIS TOOLKIT",
+        title: "FORENSIS",
+        keywords: "Forensic Analysis",
         description:
-            "Run native programme forensics — DCMA, critical path, windows, retrospective and prospective delay analysis.",
+            "Programme reviews, preliminary delay findings and EoT claim assessments — a defensible first pass, aligned to SCL and AACE.",
         href: "/workspace/forensic",
     },
 ];

@@ -20,14 +20,14 @@ import {
 } from "@/lib/coair/ops";
 
 const MODULES: { id: ModuleId; label: string }[] = [
-    { id: "chatbot", label: "Module 1 · Chatbot" },
-    { id: "chronology", label: "Module 2 · Chronology" },
-    { id: "forensic", label: "Module 3 · Forensic Delay Analysis" },
+    { id: "chatbot", label: "Module 1 · QUERIS" },
+    { id: "chronology", label: "Module 2 · CHRONOS" },
+    { id: "forensic", label: "Module 3 · FORENSIS" },
 ];
 
 const MODULE_UNLOCK_LABEL: Record<string, string> = {
-    chronology: "Chronology",
-    forensic: "Forensic",
+    chronology: "CHRONOS",
+    forensic: "FORENSIS",
 };
 
 const LivePackagesPage = () => {
