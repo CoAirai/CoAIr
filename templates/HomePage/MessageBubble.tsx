@@ -1,6 +1,56 @@
 import Image from "@/components/Image";
 import { useChat } from "@/context/ChatContext";
-import type { Message } from "@/lib/chat/types";
+import {
+    citationForReference,
+    parseAnswer,
+    type AnswerPart,
+} from "@/lib/chat/answerText";
+import type { Citation, Message } from "@/lib/chat/types";
+
+function AnswerParts({
+    parts,
+    citations,
+    onOpen,
+}: {
+    parts: AnswerPart[];
+    citations?: Citation[];
+    onOpen: (citation: Citation) => void;
+}) {
+    return (
+        <>
+            {parts.map((part, index) => {
+                if (part.type === "bold") {
+                    return (
+                        <strong key={index} className="font-semibold">
+                            {part.text}
+                        </strong>
+                    );
+                }
+                if (part.type === "cite") {
+                    return (
+                        <button
+                            key={index}
+                            type="button"
+                            className="text-blue-500 underline decoration-blue-500/30 underline-offset-2 hover:decoration-blue-500"
+                            onClick={() =>
+                                onOpen(
+                                    citationForReference(
+                                        part.name,
+                                        part.page,
+                                        citations
+                                    )
+                                )
+                            }
+                        >
+                            {part.name}, p.{part.page}
+                        </button>
+                    );
+                }
+                return <span key={index}>{part.text}</span>;
+            })}
+        </>
+    );
+}
 
 type Props = { message: Message };
 
@@ -37,7 +87,34 @@ const MessageBubble = ({ message }: Props) => {
                             {message.authorName}
                         </div>
                     )}
-                <div className="whitespace-pre-wrap">{message.content}</div>
+                {isUser ? (
+                    <div className="whitespace-pre-wrap">{message.content}</div>
+                ) : (
+                    <div className="flex flex-col gap-2">
+                        {parseAnswer(message.content).map((block, index) =>
+                            block.type === "heading" ? (
+                                <div
+                                    key={index}
+                                    className="font-semibold text-strong-950"
+                                >
+                                    <AnswerParts
+                                        parts={block.parts}
+                                        citations={message.citations}
+                                        onOpen={openDocumentPreview}
+                                    />
+                                </div>
+                            ) : (
+                                <p key={index}>
+                                    <AnswerParts
+                                        parts={block.parts}
+                                        citations={message.citations}
+                                        onOpen={openDocumentPreview}
+                                    />
+                                </p>
+                            )
+                        )}
+                    </div>
+                )}
                 {!isUser && message.citations && message.citations.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
                         {message.citations.map((citation) => {
