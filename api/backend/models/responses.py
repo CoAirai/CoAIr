@@ -204,6 +204,7 @@ class LibraryDocument(BaseModel):
     notice_metadata: Optional[NoticeMetadataOut] = None
     cluster_id: Optional[str] = None
     cluster_label: Optional[str] = None
+    pinned: bool = False
 
 
 class LibraryClusterSummary(BaseModel):

@@ -17,9 +17,15 @@ const PAGE_SIZE = 10;
 function DocumentActions({
     onRemove,
     onReinject,
+    onPin,
+    pinLabel,
+    onDownload,
 }: {
     onRemove: () => void;
     onReinject?: () => void;
+    onPin?: () => void;
+    pinLabel?: string;
+    onDownload?: () => void;
 }) {
     const [open, setOpen] = useState(false);
     const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -60,7 +66,7 @@ function DocumentActions({
                     if (rect) {
                         setPosition({
                             top: rect.bottom + 4,
-                            left: Math.max(8, rect.right - 144),
+                            left: Math.max(8, rect.right - 160),
                         });
                     }
                     setOpen((value) => !value);
@@ -70,9 +76,33 @@ function DocumentActions({
             </button>
             {open && (
                 <div
-                    className="fixed z-50 w-36 rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
+                    className="fixed z-50 w-40 rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
                     style={{ top: position.top, left: position.left }}
                 >
+                    {onPin && (
+                        <button
+                            type="button"
+                            className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-xs text-strong-950 hover:bg-weak-50"
+                            onClick={() => {
+                                setOpen(false);
+                                onPin();
+                            }}
+                        >
+                            {pinLabel || "Pin"}
+                        </button>
+                    )}
+                    {onDownload && (
+                        <button
+                            type="button"
+                            className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-xs text-strong-950 hover:bg-weak-50"
+                            onClick={() => {
+                                setOpen(false);
+                                onDownload();
+                            }}
+                        >
+                            Download
+                        </button>
+                    )}
                     {onReinject && (
                         <button
                             type="button"
@@ -111,6 +141,8 @@ type GroupProps = {
     onOpen: (name: string) => void;
     onRemove: (id: string) => void;
     onReinject?: (id: string) => void;
+    onPin?: (id: string, pinned: boolean) => void;
+    onDownload?: (id: string, name: string) => void;
 };
 
 const DocumentGroup = ({
@@ -123,10 +155,15 @@ const DocumentGroup = ({
     onOpen,
     onRemove,
     onReinject,
+    onPin,
+    onDownload,
 }: GroupProps) => {
     const [open, setOpen] = useState(defaultOpen);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-    const visible = items.slice(0, visibleCount);
+    const ordered = [...items].sort(
+        (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+    );
+    const visible = ordered.slice(0, visibleCount);
     const hiddenCount = Math.max(0, items.length - visible.length);
 
     return (
@@ -188,6 +225,11 @@ const DocumentGroup = ({
                                     <span className="min-w-0 grow truncate">
                                         {doc.name}
                                     </span>
+                                    {doc.pinned && (
+                                        <span className="shrink-0 text-label-xs text-blue-500">
+                                            pinned
+                                        </span>
+                                    )}
                                     {doc.status &&
                                         doc.status !== "completed" && (
                                             <span
@@ -209,6 +251,25 @@ const DocumentGroup = ({
                                         onReinject={
                                             onReinject
                                                 ? () => onReinject(doc.id)
+                                                : undefined
+                                        }
+                                        onPin={
+                                            onPin
+                                                ? () =>
+                                                      onPin(
+                                                          doc.id,
+                                                          !doc.pinned
+                                                      )
+                                                : undefined
+                                        }
+                                        pinLabel={doc.pinned ? "Unpin" : "Pin"}
+                                        onDownload={
+                                            onDownload
+                                                ? () =>
+                                                      onDownload(
+                                                          doc.id,
+                                                          doc.name
+                                                      )
                                                 : undefined
                                         }
                                     />
@@ -416,6 +477,16 @@ const KnowledgeBase = () => {
                             ? (id) => void live.reinjectFile(id)
                             : undefined
                     }
+                    onPin={
+                        live.enabled
+                            ? (id, pinned) => void live.pinFile(id, pinned)
+                            : undefined
+                    }
+                    onDownload={
+                        live.enabled
+                            ? (id, name) => void live.downloadFile(id, name)
+                            : undefined
+                    }
                 />
                 <DocumentGroup
                     title="Communications"
@@ -430,6 +501,16 @@ const KnowledgeBase = () => {
                             ? (id) => void live.reinjectFile(id)
                             : undefined
                     }
+                    onPin={
+                        live.enabled
+                            ? (id, pinned) => void live.pinFile(id, pinned)
+                            : undefined
+                    }
+                    onDownload={
+                        live.enabled
+                            ? (id, name) => void live.downloadFile(id, name)
+                            : undefined
+                    }
                 />
                 <DocumentGroup
                     title="Spreadsheets"
@@ -442,6 +523,16 @@ const KnowledgeBase = () => {
                     onReinject={
                         live.enabled
                             ? (id) => void live.reinjectFile(id)
+                            : undefined
+                    }
+                    onPin={
+                        live.enabled
+                            ? (id, pinned) => void live.pinFile(id, pinned)
+                            : undefined
+                    }
+                    onDownload={
+                        live.enabled
+                            ? (id, name) => void live.downloadFile(id, name)
                             : undefined
                     }
                 />

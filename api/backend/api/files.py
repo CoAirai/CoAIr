@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 
 from backend.core.security import get_current_user, UserContext
 from backend.core.projects import ProjectContext, get_current_project, require_project_editor
@@ -16,6 +17,10 @@ from backend.tasks.indexing import index_file_background
 
 router = APIRouter()
 _file_service = FileService()
+
+
+class PinFileBody(BaseModel):
+    pinned: bool = True
 # One uvicorn worker. A few hundred parallel uploads pin every connection and
 # the admin and company apps stop answering. Extra files get 429 and the
 # browser uploader retries them.
@@ -390,6 +395,46 @@ async def reindex_file(
         project.project_id, file_id, file_path, file_name, force=True,
     )
     return {"ok": True, "file_name": file_name, "status": "reindexing"}
+
+
+@router.post("/files/{file_id}/pin")
+async def pin_file(
+    file_id: str,
+    body: PinFileBody,
+    project: ProjectContext = Depends(require_project_editor),
+):
+    """Pin or unpin a saved file. The file stays where it is."""
+    from src.document_registry import get_document_registry
+
+    registry = get_document_registry()
+    rec = registry.get(file_id)
+    if not rec or (getattr(rec, "project_id", "") or "") != project.project_id:
+        raise HTTPException(404, "file_not_found")
+    if not registry.set_pinned(file_id, body.pinned):
+        raise HTTPException(404, "file_not_found")
+    return {"ok": True, "file_name": rec.file_name, "pinned": bool(body.pinned)}
+
+
+@router.get("/files/{file_id}/download")
+async def download_file(
+    file_id: str,
+    project: ProjectContext = Depends(get_current_project),
+):
+    """Send the original saved file. Indexing copies are left alone."""
+    from pathlib import Path
+    from src.document_registry import get_document_registry
+
+    rec = get_document_registry().get(file_id)
+    if not rec or (getattr(rec, "project_id", "") or "") != project.project_id:
+        raise HTTPException(404, "file_not_found")
+    file_path = rec.file_path or ""
+    if not file_path or not Path(file_path).is_file():
+        raise HTTPException(404, "file_not_on_disk")
+    return FileResponse(
+        file_path,
+        filename=rec.file_name or Path(file_path).name,
+        content_disposition_type="attachment",
+    )
 
 
 @router.post("/files/reindex-stuck")

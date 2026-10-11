@@ -7,6 +7,7 @@ export type CoairLibraryDoc = {
     extension?: string;
     created_at?: string;
     status?: string;
+    pinned?: boolean;
 };
 
 export function kindFromLibraryDoc(doc: CoairLibraryDoc): CompanyDocumentKind {
@@ -37,5 +38,6 @@ export function mapLibraryDocuments(
         addedByUserId: "live",
         addedAt: doc.created_at || new Date().toISOString(),
         status: doc.status || "completed",
+        pinned: Boolean(doc.pinned),
     }));
 }

@@ -137,6 +137,7 @@ def _build_library_doc(r, include_notice: bool = True) -> LibraryDocument:
         notice_metadata=notice,
         cluster_id=getattr(r, "cluster_id", None),
         cluster_label=getattr(r, "cluster_label", None),
+        pinned=bool(getattr(r, "pinned", False)),
     )
 
 

@@ -30,9 +30,11 @@ import {
 import type { CoairProject } from "@/lib/coair/types";
 import {
     deleteProjectFile,
+    downloadProjectFile,
     listIndexingStatus,
     listLibrary,
     listProjects,
+    pinProjectFile,
     readIndexingSummary,
     reindexProjectFile,
     uploadProjectFile,
@@ -115,6 +117,14 @@ type LiveWorkspaceValue = {
     ) => Promise<{ ok: boolean; uploaded: number; failed: number; error?: string }>;
     removeFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
     reinjectFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
+    pinFile: (
+        fileId: string,
+        pinned: boolean
+    ) => Promise<{ ok: boolean; error?: string }>;
+    downloadFile: (
+        fileId: string,
+        fileName: string
+    ) => Promise<{ ok: boolean; error?: string }>;
     refresh: () => Promise<void>;
 };
 
@@ -949,6 +959,67 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
     );
 
+    const pinFile = useCallback(
+        async (fileId: string, pinned: boolean) => {
+            if (!session?.accessToken || !session.projectId) {
+                return { ok: false, error: "No project selected" };
+            }
+            const previous = documents.find((doc) => doc.id === fileId)?.pinned;
+            setDocuments((current) =>
+                current.map((doc) =>
+                    doc.id === fileId ? { ...doc, pinned } : doc
+                )
+            );
+            try {
+                await pinProjectFile(
+                    session.accessToken,
+                    session.projectId,
+                    fileId,
+                    pinned
+                );
+                pushToast(pinned ? "File pinned" : "File unpinned", "info");
+                void refreshLibrary();
+                return { ok: true };
+            } catch (err) {
+                setDocuments((current) =>
+                    current.map((doc) =>
+                        doc.id === fileId
+                            ? { ...doc, pinned: Boolean(previous) }
+                            : doc
+                    )
+                );
+                const message =
+                    err instanceof Error ? err.message : "Could not pin file";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
+        },
+        [documents, pushToast, refreshLibrary, session?.accessToken, session?.projectId]
+    );
+
+    const downloadFile = useCallback(
+        async (fileId: string, fileName: string) => {
+            if (!session?.accessToken || !session.projectId) {
+                return { ok: false, error: "No project selected" };
+            }
+            try {
+                await downloadProjectFile(
+                    session.accessToken,
+                    session.projectId,
+                    fileId,
+                    fileName
+                );
+                return { ok: true };
+            } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Download failed";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
+        },
+        [pushToast, session?.accessToken, session?.projectId]
+    );
+
     const teammates = useMemo(() => {
         if (!canListTeammates || !session?.companyId) return [];
         const mapped = mapLiveOrgUsersToWorkspaceUsers(
@@ -992,6 +1063,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             uploadFiles,
             removeFile,
             reinjectFile,
+            pinFile,
+            downloadFile,
             refresh,
         }),
         [
@@ -1006,6 +1079,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             moduleGrants,
             orgUsers,
             projects,
+            downloadFile,
+            pinFile,
             refresh,
             reinjectFile,
             removeFile,

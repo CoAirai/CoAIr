@@ -203,6 +203,52 @@ export async function readIndexingSummary(token: string, projectId: string) {
     }>("/indexing/summary", { token, projectId });
 }
 
+export async function pinProjectFile(
+    token: string,
+    projectId: string,
+    fileId: string,
+    pinned: boolean
+) {
+    return coairFetch<{ ok?: boolean; pinned?: boolean; file_name?: string }>(
+        `/files/${encodeURIComponent(fileId)}/pin`,
+        { method: "POST", token, projectId, body: { pinned } }
+    );
+}
+
+export async function downloadProjectFile(
+    token: string,
+    projectId: string,
+    fileId: string,
+    fileName: string
+) {
+    const response = await fetch(
+        `${resolveUploadApiBase()}/files/${encodeURIComponent(fileId)}/download`,
+        {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "X-Project-ID": projectId,
+            },
+        }
+    );
+    if (!response.ok) {
+        const raw = await response.text().catch(() => "");
+        throw new CoairApiError(
+            friendlyUploadError(response.status, raw) || "Download failed",
+            response.status,
+            raw
+        );
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName || "document";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
 export async function reindexProjectFile(
     token: string,
     projectId: string,

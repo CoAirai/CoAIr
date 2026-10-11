@@ -62,6 +62,7 @@ class DocumentRecord:
     event_cluster_count: int = 0
     event_index_version: str = ""
     event_partial_reasons: List[str] = field(default_factory=list)
+    pinned: bool = False
 
 
 class DocumentRegistry:
@@ -283,6 +284,16 @@ class DocumentRegistry:
             rec.error = None
             rec.completed_at = ""
             self._save()
+
+    def set_pinned(self, doc_id: str, pinned: bool) -> bool:
+        """Keep a file at the top of the library. The file itself is unchanged."""
+        with self._file_lock:
+            rec = self._records.get(doc_id)
+            if not rec:
+                return False
+            rec.pinned = bool(pinned)
+            self._save()
+            return True
 
     def mark_error(self, doc_id: str, error: str) -> None:
         with self._file_lock:

@@ -25,6 +25,8 @@ describe("mapLibraryDocuments", () => {
                 kind: "document",
                 addedByUserId: "live",
                 addedAt: expect.any(String),
+                status: "completed",
+                pinned: false,
             },
         ]);
     });

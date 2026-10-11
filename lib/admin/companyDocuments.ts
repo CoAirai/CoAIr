@@ -9,6 +9,7 @@ export type CompanyDocument = {
     addedAt: string;
     /** live registry status: completed | processing | error */
     status?: string;
+    pinned?: boolean;
 };
 
 export type DocumentActorRole = "super_admin" | "company_admin" | "member";
