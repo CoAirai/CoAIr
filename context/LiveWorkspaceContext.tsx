@@ -441,6 +441,56 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         [pushToast]
     );
 
+    // The upload chip lives in this tab. After a refresh, rebuild it from the
+    // server queue so indexing progress stays visible.
+    useEffect(() => {
+        if (!enabled || !session?.accessToken || !session.projectId) return;
+        let cancelled = false;
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const restore = async () => {
+            try {
+                const summary = await readIndexingSummary(token, projectId);
+                if (cancelled) return;
+                window.clearInterval(timer);
+                const queued = summary.queued ?? 0;
+                const processing = summary.processing ?? 0;
+                const ready = summary.ready ?? 0;
+                const failed = summary.failed ?? 0;
+                const remaining = queued + processing;
+                if (remaining <= 0) return;
+                const done = ready + failed;
+                const total = Math.max(1, done + remaining);
+                setFileTransfers((prev) => {
+                    if (prev.some((transfer) => transfer.batchTotal || transfer.id === "server-index")) {
+                        return prev;
+                    }
+                    return [
+                        {
+                            id: "server-index",
+                            name: "Indexing PDFs",
+                            phase: "injecting",
+                            percent: Math.min(100, Math.round((done / total) * 100)),
+                            stage: `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`,
+                            batchTotal: total,
+                        },
+                        ...prev,
+                    ];
+                });
+            } catch {
+                /* retry on the interval */
+            }
+        };
+        const timer = window.setInterval(() => {
+            void restore();
+        }, 8000);
+        void restore();
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [enabled, session?.accessToken, session?.projectId]);
+
     // Poll indexing while any transfer is still uploading/injecting.
     const hasActiveTransfers = fileTransfers.some(
         (transfer) =>
