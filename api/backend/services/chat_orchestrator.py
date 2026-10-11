@@ -356,6 +356,8 @@ class ChatOrchestrator:
             return ""
 
         suffix = file_path.suffix.lower()
+        if suffix == ".txt":
+            return file_path.read_text(encoding="utf-8", errors="replace")
         if suffix in (".msg", ".eml"):
             from src.email_parser import EmailParser
             parser = EmailParser()

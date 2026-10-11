@@ -13,8 +13,8 @@ class TestExtensionMap:
     def test_doc_is_document(self):
         assert EXTENSION_MAP[".doc"] == "document"
 
-    def test_txt_is_document(self):
-        assert EXTENSION_MAP[".txt"] == "document"
+    def test_txt_is_email(self):
+        assert EXTENSION_MAP[".txt"] == "email"
 
     def test_eml_is_email(self):
         assert EXTENSION_MAP[".eml"] == "email"

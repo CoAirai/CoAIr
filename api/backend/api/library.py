@@ -31,7 +31,7 @@ def _corpus_of(user: UserContext) -> str:
     except Exception:
         return ""
 
-_EMAIL_EXTS = {".eml", ".msg"}
+_EMAIL_EXTS = {".eml", ".msg", ".txt"}
 _DATA_EXTS = {".xlsx", ".xls", ".csv"}
 
 

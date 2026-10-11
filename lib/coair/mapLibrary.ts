@@ -13,7 +13,7 @@ export type CoairLibraryDoc = {
 export function kindFromLibraryDoc(doc: CoairLibraryDoc): CompanyDocumentKind {
     const type = (doc.file_type || "").toLowerCase();
     const ext = (doc.extension || "").toLowerCase();
-    if (type === "email" || ext === ".eml" || ext === ".msg") {
+    if (type === "email" || ext === ".eml" || ext === ".msg" || ext === ".txt") {
         return "communication";
     }
     if (type === "data" || ext === ".xlsx" || ext === ".xls") {

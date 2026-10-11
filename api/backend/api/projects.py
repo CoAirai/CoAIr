@@ -74,7 +74,7 @@ def _stats(project_id: str) -> Dict:
                 continue
             seen_names.add(file_name)
             ext = os.path.splitext(file_name)[1].lower()
-            kind = ("email" if ext in (".eml", ".msg") else
+            kind = ("email" if ext in (".eml", ".msg", ".txt") else
                     "data" if ext in (".xlsx", ".xls", ".csv") else "document")
             counts[kind] += 1
             status["ready"] += 1

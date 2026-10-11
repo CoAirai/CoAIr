@@ -49,6 +49,7 @@ const Sidebar = ({
     const live = useLiveWorkspace();
     const documentInputRef = useRef<HTMLInputElement>(null);
     const csvInputRef = useRef<HTMLInputElement>(null);
+    const mailInputRef = useRef<HTMLInputElement>(null);
 
     const onPickFile = (
         event: ChangeEvent<HTMLInputElement>,
@@ -174,6 +175,14 @@ const Sidebar = ({
                             className="hidden"
                             onChange={(event) => onPickFile(event, "spreadsheet")}
                         />
+                        <input
+                            ref={mailInputRef}
+                            type="file"
+                            accept=".txt,text/plain"
+                            multiple
+                            className="hidden"
+                            onChange={(event) => onPickFile(event, "communication")}
+                        />
                         <Button
                             className="grow"
                             icon="plus"
@@ -187,6 +196,12 @@ const Sidebar = ({
                             onClick={() => csvInputRef.current?.click()}
                         >
                             Sheets
+                        </Button>
+                        <Button
+                            isStroke
+                            onClick={() => mailInputRef.current?.click()}
+                        >
+                            Mail
                         </Button>
                     </div>
                     ) : (

@@ -20,7 +20,7 @@ EXTENSION_MAP = {
     ".pdf": "document",
     ".docx": "document",
     ".doc": "document",
-    ".txt": "document",
+    ".txt": "email",
     ".eml": "email",
     ".msg": "email",
     ".xlsx": "data",
@@ -96,7 +96,12 @@ def route_file(
     doc_id = record.doc_id
     file_id = file_id or doc_id
 
-    if file_type == "document":
+    if ext == ".txt":
+        # Plain-text mail. Index the body like a document, but keep the
+        # registry type as email so it appears under Communications.
+        result = _process_document(file_path, project_id=project_id, file_id=file_id)
+        result.file_type = "email"
+    elif file_type == "document":
         result = _process_document(file_path, project_id=project_id, file_id=file_id)
     elif file_type == "email":
         result = _process_email(file_path, project_id=project_id, file_id=file_id)

@@ -2527,9 +2527,9 @@ class QueryRouter:
     def _categorize_record(rec: Any) -> str:
         """Return 'correspondence' | 'documents' | 'spreadsheets' | 'other'."""
         ext = (rec.extension or "").lower()
-        if ext in (".msg", ".eml"):
+        if ext in (".msg", ".eml", ".txt"):
             return "correspondence"
-        if ext in (".pdf", ".docx", ".doc", ".txt"):
+        if ext in (".pdf", ".docx", ".doc"):
             return "documents"
         if ext in (".xlsx", ".xls", ".csv"):
             return "spreadsheets"

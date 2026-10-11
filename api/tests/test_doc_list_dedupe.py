@@ -169,7 +169,7 @@ class TestCategorize:
         (".pdf", "document", "documents"),
         (".docx", "document", "documents"),
         (".doc", "document", "documents"),
-        (".txt", "document", "documents"),
+        (".txt", "email", "correspondence"),
         (".xlsx", "data", "spreadsheets"),
         (".xls", "data", "spreadsheets"),
         (".csv", "data", "spreadsheets"),

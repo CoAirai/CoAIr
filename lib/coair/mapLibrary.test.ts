@@ -4,6 +4,7 @@ import { kindFromLibraryDoc, mapLibraryDocuments } from "./mapLibrary";
 describe("kindFromLibraryDoc", () => {
     it("maps email and spreadsheet types", () => {
         expect(kindFromLibraryDoc({ file_type: "email" })).toBe("communication");
+        expect(kindFromLibraryDoc({ extension: ".txt" })).toBe("communication");
         expect(kindFromLibraryDoc({ file_type: "data" })).toBe("spreadsheet");
         expect(kindFromLibraryDoc({ extension: ".csv" })).toBe("csv");
         expect(kindFromLibraryDoc({ file_type: "document" })).toBe("document");

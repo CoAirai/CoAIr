@@ -239,7 +239,7 @@ def _edinburgh_file_infos(project_id: str = "") -> List[FileInfo]:
         if file_name in reg_names:
             continue
         ext = os.path.splitext(file_name)[1].lower()
-        ftype = ("email" if ext in (".eml", ".msg")
+        ftype = ("email" if ext in (".eml", ".msg", ".txt")
                  else "data" if ext in (".xlsx", ".xls", ".csv") else "document")
         try:
             pages = int(max_page) if max_page else None

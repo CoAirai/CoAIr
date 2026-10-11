@@ -15,7 +15,7 @@ EXTENSION_MAP = {
     ".pdf": ("document", DOCUMENTS_DIR),
     ".docx": ("document", DOCUMENTS_DIR),
     ".doc": ("document", DOCUMENTS_DIR),
-    ".txt": ("document", DOCUMENTS_DIR),
+    ".txt": ("email", EMAILS_DIR),
     ".eml": ("email", EMAILS_DIR),
     ".msg": ("email", EMAILS_DIR),
     ".xlsx": ("data", TABLES_DIR),
