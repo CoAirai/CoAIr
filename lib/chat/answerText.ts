@@ -7,7 +7,8 @@ export type AnswerPart =
 
 export type AnswerBlock =
     | { type: "heading"; parts: AnswerPart[] }
-    | { type: "paragraph"; parts: AnswerPart[] };
+    | { type: "paragraph"; parts: AnswerPart[] }
+    | { type: "table"; headers: string[]; rows: string[][] };
 
 const FILE_NAME =
     "[A-Za-z0-9][A-Za-z0-9_.\\- ]{0,160}?\\.(?:pdf|docx|doc|xlsx|xls|csv|txt|msg|eml)";
@@ -84,9 +85,36 @@ function lineText(line: string, kind: "heading" | "bullet" | "text") {
     return trimmed;
 }
 
+function tableCells(line: string): string[] {
+    let text = line.trim();
+    if (text.startsWith("|")) text = text.slice(1);
+    if (text.endsWith("|")) text = text.slice(0, -1);
+    return text.split("|").map((cell) => cell.trim());
+}
+
+function isTableRow(line: string): boolean {
+    if (!line.includes("|")) return false;
+    return tableCells(line).length >= 2;
+}
+
+function isTableSeparator(line: string): boolean {
+    const cells = tableCells(line);
+    return (
+        cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+    );
+}
+
+export function tableCsv(headers: string[], rows: string[][]): string {
+    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    return [headers, ...rows]
+        .map((row) => row.map((cell) => escape(cell)).join(","))
+        .join("\n");
+}
+
 export function parseAnswer(content: string): AnswerBlock[] {
     const blocks: AnswerBlock[] = [];
     let paragraph: string[] = [];
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
 
     const flush = () => {
         const text = paragraph.join(" ").trim();
@@ -96,7 +124,25 @@ export function parseAnswer(content: string): AnswerBlock[] {
         if (parts.length) blocks.push({ type: "paragraph", parts });
     };
 
-    for (const line of content.replace(/\r\n/g, "\n").split("\n")) {
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const next = lines[index + 1] ?? "";
+        if (isTableRow(line) && isTableSeparator(next)) {
+            flush();
+            const headers = tableCells(line);
+            const rows: string[][] = [];
+            index += 2;
+            while (index < lines.length && isTableRow(lines[index])) {
+                const cells = tableCells(lines[index]);
+                rows.push(
+                    headers.map((_, column) => cells[column] ?? "")
+                );
+                index += 1;
+            }
+            index -= 1;
+            if (rows.length) blocks.push({ type: "table", headers, rows });
+            continue;
+        }
         const kind = lineKind(line);
         if (kind === "blank" || kind === "rule") {
             flush();

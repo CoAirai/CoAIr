@@ -69,27 +69,42 @@ class ForensicDraftUpdate(BaseModel):
     issue: bool = False
 
 
-def _assert_ready(project_id: str) -> None:
-    summary = get_ingestion_job_store().project_summary(project_id)
-    if summary["queued"] or summary["processing"]:
-        raise HTTPException(409, {
-            "error": "project_processing",
-            "queued": summary["queued"],
-            "processing": summary["processing"],
-            "eta_seconds": summary["eta_seconds"],
-        })
+def _has_ready_documents(project_id: str) -> bool:
     from src.document_registry import get_document_registry
     if get_document_registry().get_completed(project_id=project_id):
-        return
+        return True
     try:
         from src.chunk_store import get_chunk_store
         row = get_chunk_store().connection().execute(
             "SELECT 1 FROM chunks WHERE project_id=? LIMIT 1", [project_id]
         ).fetchone()
         if row:
-            return
+            return True
     except Exception:
         pass
+    return False
+
+
+def _processing_message(summary: dict) -> str:
+    queued = int(summary.get("queued") or 0)
+    processing = int(summary.get("processing") or 0)
+    return (
+        f"Documents are still being indexed ({queued:,} queued, {processing:,} processing). "
+        "Chronology can start once the first documents are ready."
+    )
+
+
+def _assert_ready(project_id: str, *, allow_partial: bool = False) -> None:
+    summary = get_ingestion_job_store().project_summary(project_id)
+    indexing = bool(summary["queued"] or summary["processing"])
+    # A long ingest queue must not block a chronology when indexed records
+    # already exist. The report uses those records and says so if coverage is partial.
+    if allow_partial and _has_ready_documents(project_id):
+        return
+    if indexing:
+        raise HTTPException(409, _processing_message(summary))
+    if _has_ready_documents(project_id):
+        return
     raise HTTPException(409, "project_has_no_ready_documents")
 
 
@@ -172,7 +187,7 @@ def preview_chronology_sources(
     project: ProjectContext = Depends(require_project_editor),
 ):
     _assert_chronology_enabled()
-    _assert_ready(project.project_id)
+    _assert_ready(project.project_id, allow_partial=True)
     from src.ai_reports import retrieve_evidence
     from src.chronology_v2 import prepare_chronology_query, source_preview
     from src.llm_client import begin_chronology_call_budget, end_chronology_call_budget
@@ -202,7 +217,7 @@ def generate_chronology_report(
     project: ProjectContext = Depends(require_project_editor),
 ):
     _assert_chronology_enabled()
-    _assert_ready(project.project_id)
+    _assert_ready(project.project_id, allow_partial=True)
     from src.user_store import get_user_store
     get_user_store().enforce_quota(user.username)
     preparation = None

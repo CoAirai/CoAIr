@@ -3,6 +3,7 @@ import { useChat } from "@/context/ChatContext";
 import {
     citationForReference,
     parseAnswer,
+    tableCsv,
     type AnswerPart,
 } from "@/lib/chat/answerText";
 import type { Citation, Message } from "@/lib/chat/types";
@@ -52,11 +53,103 @@ function AnswerParts({
     );
 }
 
+function downloadTable(headers: string[], rows: string[][]) {
+    const blob = new Blob([tableCsv(headers, rows)], {
+        type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "coair-table.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function AnswerTable({
+    headers,
+    rows,
+    citations,
+    onOpen,
+}: {
+    headers: string[];
+    rows: string[][];
+    citations?: Citation[];
+    onOpen: (citation: Citation) => void;
+}) {
+    return (
+        <div className="my-1 overflow-hidden rounded-xl border border-stroke-soft-200">
+            <div className="flex items-center justify-end border-b border-stroke-soft-200 bg-weak-50 px-3 py-2">
+                <button
+                    type="button"
+                    className="rounded-lg border border-stroke-soft-200 bg-white-0 px-2.5 py-1 text-label-xs text-strong-950 hover:border-stroke-sub-300"
+                    onClick={() => downloadTable(headers, rows)}
+                >
+                    Download CSV
+                </button>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[36rem] border-collapse text-left">
+                    <thead>
+                        <tr className="border-b border-stroke-soft-200 bg-weak-50">
+                            {headers.map((header, column) => (
+                                <th
+                                    key={`${header}-${column}`}
+                                    className={`px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-sub-600 ${
+                                        /value|amount|cost|£/i.test(header)
+                                            ? "text-right"
+                                            : ""
+                                    }`}
+                                >
+                                    {header}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row, rowIndex) => (
+                            <tr
+                                key={rowIndex}
+                                className="border-b border-stroke-soft-200 last:border-b-0"
+                            >
+                                {headers.map((header, column) => (
+                                    <td
+                                        key={`${rowIndex}-${column}`}
+                                        className={`px-3 py-2.5 align-top text-label-sm text-strong-950 ${
+                                            /value|amount|cost|£/i.test(header)
+                                                ? "whitespace-nowrap text-right tabular-nums"
+                                                : ""
+                                        } ${column === 1 ? "font-medium" : ""}`}
+                                    >
+                                        <AnswerParts
+                                            parts={inlinePartsSafe(row[column] ?? "")}
+                                            citations={citations}
+                                            onOpen={onOpen}
+                                        />
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+function inlinePartsSafe(text: string) {
+    const blocks = parseAnswer(text);
+    const paragraph = blocks.find((block) => block.type === "paragraph");
+    if (paragraph && paragraph.type === "paragraph") return paragraph.parts;
+    return [{ type: "text" as const, text }];
+}
+
 type Props = { message: Message };
 
 const MessageBubble = ({ message }: Props) => {
     const { openCitation, openDocumentPreview } = useChat();
     const isUser = message.role === "user";
+    const blocks = isUser ? [] : parseAnswer(message.content);
+    const hasTable = blocks.some((block) => block.type === "table");
 
     return (
         <div
@@ -72,7 +165,9 @@ const MessageBubble = ({ message }: Props) => {
                 />
             )}
             <div
-                className={`max-w-[min(40rem,85%)] rounded-2xl px-4 py-3 text-p-md leading-relaxed ${
+                className={`min-w-0 rounded-2xl px-4 py-3 text-p-md leading-relaxed ${
+                    hasTable ? "w-full max-w-full" : "max-w-[min(40rem,85%)]"
+                } ${
                     isUser
                         ? "bg-strong-950 text-white-0"
                         : "border border-stroke-soft-200 bg-white-0 text-strong-950 shadow-[0_1px_2px_rgba(14,18,27,0.04)]"
@@ -91,8 +186,16 @@ const MessageBubble = ({ message }: Props) => {
                     <div className="whitespace-pre-wrap">{message.content}</div>
                 ) : (
                     <div className="flex flex-col gap-2">
-                        {parseAnswer(message.content).map((block, index) =>
-                            block.type === "heading" ? (
+                        {blocks.map((block, index) =>
+                            block.type === "table" ? (
+                                <AnswerTable
+                                    key={index}
+                                    headers={block.headers}
+                                    rows={block.rows}
+                                    citations={message.citations}
+                                    onOpen={openDocumentPreview}
+                                />
+                            ) : block.type === "heading" ? (
                                 <div
                                     key={index}
                                     className="font-semibold text-strong-950"

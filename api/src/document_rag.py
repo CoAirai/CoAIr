@@ -179,7 +179,15 @@ class DocumentRAG:
         "equipment hours, progress percentages), note that the answer may be more accurately found "
         "in the project data tables rather than document text.\n"
         "12. Write plain sentences. Do not use markdown headings, asterisks, bullet symbols, or horizontal rules. "
-        "Start each section with a numbered heading on its own line, such as '1. Award Date'."
+        "Start each section with a numbered heading on its own line, such as '1. Award Date'. "
+        "A markdown table is allowed only when rule 13 asks for one.\n"
+        "13. When the answer ranks or compares several records — variations, costs, dates, quantities, "
+        "parties, or line items — include one markdown table after a short introduction. "
+        "Use a header row, a separator row of dashes, and one data row per record. "
+        "Put the source file name in the last column. Add a short paragraph after the table. Example:\n"
+        "| Rank | Description | Category | Agreed Value (£) | Source |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 1 | NR Immunisation | NR | £4,700,000.00 | cec00825621 |"
     )
 
     @staticmethod

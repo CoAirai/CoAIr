@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { citationForReference, parseAnswer } from "./answerText";
+import { citationForReference, parseAnswer, tableCsv } from "./answerText";
 
 const SAMPLE = `Based on the provided document excerpts, the details are as follows:
 
@@ -51,6 +51,39 @@ describe("parseAnswer", () => {
         });
         expect(blocks[1].parts).toEqual(
             expect.arrayContaining([{ type: "cite", name: "CEC01821403.pdf", page: 80 }])
+        );
+    });
+});
+
+describe("parseAnswer tables", () => {
+    it("keeps a markdown table as columns and leaves the prose around it", () => {
+        const blocks = parseAnswer(
+            [
+                "The largest agreed variations are below.",
+                "",
+                "| Rank | Description | Agreed Value (£) | Source |",
+                "| --- | --- | --- | --- |",
+                "| 1 | NR Immunisation | £4,700,000.00 | cec00825621 |",
+                "| 2 | Depot design changes | £2,000,000.00 | cec01431386 |",
+                "",
+                "The top item is about 36% of the savings.",
+            ].join("\n")
+        );
+        expect(blocks.map((block) => block.type)).toEqual([
+            "paragraph",
+            "table",
+            "paragraph",
+        ]);
+        expect(blocks[1]).toMatchObject({
+            type: "table",
+            headers: ["Rank", "Description", "Agreed Value (£)", "Source"],
+            rows: [
+                ["1", "NR Immunisation", "£4,700,000.00", "cec00825621"],
+                ["2", "Depot design changes", "£2,000,000.00", "cec01431386"],
+            ],
+        });
+        expect(tableCsv(["Rank", "Source"], [["1", 'say "a"']])).toBe(
+            '"Rank","Source"\n"1","say ""a"""'
         );
     });
 });

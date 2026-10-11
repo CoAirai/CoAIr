@@ -92,6 +92,29 @@ async function once<T>(
                 const parsed = JSON.parse(text) as { detail?: unknown };
                 if (typeof parsed?.detail === "string") {
                     clean = parsed.detail;
+                } else if (
+                    parsed?.detail &&
+                    typeof parsed.detail === "object" &&
+                    !Array.isArray(parsed.detail)
+                ) {
+                    const detail = parsed.detail as {
+                        error?: unknown;
+                        message?: unknown;
+                        queued?: unknown;
+                        processing?: unknown;
+                    };
+                    if (detail.error === "project_processing") {
+                        const queued = Number(detail.queued || 0);
+                        const processing = Number(detail.processing || 0);
+                        clean =
+                            `Documents are still being indexed (${queued.toLocaleString()} queued, ` +
+                            `${processing.toLocaleString()} processing). ` +
+                            "Chronology can start once the first documents are ready.";
+                    } else if (typeof detail.message === "string") {
+                        clean = detail.message;
+                    } else if (typeof detail.error === "string") {
+                        clean = detail.error.replaceAll("_", " ");
+                    }
                 } else if (Array.isArray(parsed?.detail)) {
                     clean = parsed.detail
                         .map((d) =>
