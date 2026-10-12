@@ -15,7 +15,32 @@ import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
+import { useToast } from "@/context/ToastContext";
 import type { CompanyDocumentKind } from "@/lib/admin/companyDocuments";
+
+const FILE_KINDS: Record<CompanyDocumentKind, { exts: string[]; hint: string }> = {
+    document: {
+        exts: [".pdf", ".doc", ".docx"],
+        hint: "Add documents takes PDF and Word files. Use Sheets or Mail for the others.",
+    },
+    spreadsheet: {
+        exts: [".xls", ".xlsx", ".csv"],
+        hint: "Sheets takes Excel and CSV files.",
+    },
+    csv: {
+        exts: [".csv"],
+        hint: "Sheets takes Excel and CSV files.",
+    },
+    communication: {
+        exts: [".txt"],
+        hint: "Mail takes text files.",
+    },
+};
+
+function fileExtension(name: string) {
+    const dot = name.lastIndexOf(".");
+    return dot >= 0 ? name.slice(dot).toLowerCase() : "";
+}
 
 type Props = {
     visible: boolean;
@@ -47,6 +72,7 @@ const Sidebar = ({
     const { session } = useAuth();
     const { addCompanyDocument } = useAdminData();
     const live = useLiveWorkspace();
+    const { pushToast } = useToast();
     const documentInputRef = useRef<HTMLInputElement>(null);
     const csvInputRef = useRef<HTMLInputElement>(null);
     const mailInputRef = useRef<HTMLInputElement>(null);
@@ -58,11 +84,20 @@ const Sidebar = ({
         const files = Array.from(event.target.files || []);
         event.target.value = "";
         if (!files.length || !session?.companyId || !session.userId) return;
-        if (live.enabled) {
-            void live.uploadFiles(files);
+        const allowed = new Set(FILE_KINDS[kind].exts);
+        const matched = files.filter((file) => allowed.has(fileExtension(file.name)));
+        if (!matched.length) {
+            pushToast(FILE_KINDS[kind].hint, "info");
             return;
         }
-        for (const file of files) {
+        if (matched.length < files.length) {
+            pushToast(FILE_KINDS[kind].hint, "info");
+        }
+        if (live.enabled) {
+            void live.uploadFiles(matched);
+            return;
+        }
+        for (const file of matched) {
             addCompanyDocument({
                 companyId: session.companyId,
                 name: file.name,
@@ -159,10 +194,11 @@ const Sidebar = ({
                     {isForensic ? null : <RecentQueries />}
 
                     {!isModuleSidebar ? (
-                    <div className="mt-auto pt-4 flex items-center gap-2">
+                    <div className="mt-auto flex w-full min-w-0 flex-wrap items-center gap-2 pt-4">
                         <input
                             ref={documentInputRef}
                             type="file"
+                            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                             multiple
                             className="hidden"
                             onChange={(event) => onPickFile(event, "document")}
@@ -184,7 +220,7 @@ const Sidebar = ({
                             onChange={(event) => onPickFile(event, "communication")}
                         />
                         <Button
-                            className="grow"
+                            className="grow shrink-0"
                             icon="plus"
                             isBlack
                             onClick={() => documentInputRef.current?.click()}
@@ -192,12 +228,14 @@ const Sidebar = ({
                             Add documents
                         </Button>
                         <Button
+                            className="shrink-0"
                             isStroke
                             onClick={() => csvInputRef.current?.click()}
                         >
                             Sheets
                         </Button>
                         <Button
+                            className="shrink-0"
                             isStroke
                             onClick={() => mailInputRef.current?.click()}
                         >
