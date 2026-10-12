@@ -992,7 +992,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             }
             await refreshUploadAccess();
             pushToast(
-                `Sending ${list.length.toLocaleString()} files to Amazon, 3 at a time. Keep this tab open only until that count finishes. The server then indexes them one by one.`,
+                `Sending ${list.length.toLocaleString()} files to Amazon, 8 at a time. Keep this tab open only until that count finishes. The server then indexes them one by one.`,
                 "info"
             );
             const batchId = `batch-${Date.now()}`;
@@ -1079,7 +1079,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     }
                 }
             };
-            const workers = Math.min(3, list.length);
+            const workers = Math.min(8, list.length);
             await Promise.all(Array.from({ length: workers }, () => worker()));
             await refreshLibrary();
             const skippedNote =
