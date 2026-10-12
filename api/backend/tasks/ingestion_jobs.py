@@ -330,6 +330,51 @@ def _worker() -> None:
                 )
             else:
                 store.fail(job["job_id"], str(exc))
+        _maybe_email_indexing_done(job)
+
+
+def _maybe_email_indexing_done(job: Dict) -> None:
+    """One email when this project's queue reaches zero, if the user allows it."""
+    try:
+        summary = get_ingestion_job_store().project_summary(str(job.get("project_id") or ""))
+        remaining = int(summary.get("queued") or 0) + int(summary.get("processing") or 0)
+        if remaining > 0:
+            return
+        ready = int(summary.get("ready") or 0)
+        failed = int(summary.get("failed") or 0)
+        if ready + failed <= 0:
+            return
+        username = str(job.get("requested_by") or "").strip()
+        if "@" not in username:
+            return
+        from src.auth_notify import user_email_notifications_enabled
+        from src.email_delivery import recipient_address, send_coair_email
+        from src.logger import logger
+        from src.user_store import get_user_store
+
+        user = get_user_store().get_user(username)
+        if not user_email_notifications_enabled(user):
+            return
+        detail = (
+            f"{ready:,} files are indexed."
+            if failed == 0
+            else f"{ready:,} files are indexed and {failed:,} failed."
+        )
+        result = send_coair_email(
+            "indexing_finished",
+            recipient_address(username),
+            name=str((user or {}).get("display_name") or username),
+            description=detail,
+        )
+        logger.info(
+            "indexing_finished_email user=%s ok=%s",
+            username,
+            result.get("ok"),
+        )
+    except Exception:
+        from src.logger import logger
+
+        logger.exception("indexing_finished_email_failed")
 
 
 def start_ingestion_workers() -> None:

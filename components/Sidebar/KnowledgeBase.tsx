@@ -356,60 +356,62 @@ const DocumentGroup = ({
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -4 }}
                                 transition={chatTransition}
-                                className="flex items-center gap-1 rounded-xl px-1"
+                                className="flex items-start gap-1 rounded-xl px-1"
                             >
-                                <div className="flex min-h-10 min-w-0 grow items-center gap-2 rounded-xl px-2 py-1 text-left text-label-sm">
-                                    <Icon
-                                        className="shrink-0 fill-strong-950"
-                                        name={icon}
-                                    />
-                                    <span className="min-w-0 grow">
-                                        <span className="block truncate">
+                                <div className="min-w-0 grow rounded-xl px-2 py-1.5 text-left text-label-sm">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <Icon
+                                            className="shrink-0 fill-strong-950"
+                                            name={icon}
+                                        />
+                                        <span className="min-w-0 grow truncate">
                                             {doc.name}
                                         </span>
-                                        {fileState(doc.status) === "failed" &&
-                                        shortError(doc.error) ? (
-                                            <span className="block truncate text-label-xs text-red-500">
-                                                {shortError(doc.error)}
+                                    </div>
+                                    {fileState(doc.status) === "failed" &&
+                                    shortError(doc.error) ? (
+                                        <span className="mt-0.5 block truncate pl-6 text-label-xs text-red-500">
+                                            {shortError(doc.error)}
+                                        </span>
+                                    ) : null}
+                                    <div className="mt-1 flex items-center gap-2 pl-6">
+                                        {doc.pinned && (
+                                            <span className="shrink-0 text-label-xs text-blue-500">
+                                                pinned
                                             </span>
-                                        ) : null}
-                                    </span>
-                                    {doc.pinned && (
-                                        <span className="shrink-0 text-label-xs text-blue-500">
-                                            pinned
-                                        </span>
-                                    )}
-                                    {isIndexed(doc.status) ? (
-                                        <span
-                                            className="flex h-5 w-5 shrink-0 items-center justify-center"
-                                            title="Indexed"
-                                            aria-label="Indexed"
+                                        )}
+                                        {isIndexed(doc.status) ? (
+                                            <span
+                                                className="flex h-5 w-5 shrink-0 items-center justify-center"
+                                                title="Indexed"
+                                                aria-label="Indexed"
+                                            >
+                                                <Icon
+                                                    className="fill-green-600"
+                                                    name="check"
+                                                />
+                                            </span>
+                                        ) : (
+                                            <span
+                                                className={`shrink-0 text-label-xs ${
+                                                    doc.status === "error"
+                                                        ? "text-red-500"
+                                                        : "text-soft-400"
+                                                }`}
+                                            >
+                                                {doc.status === "error"
+                                                    ? "failed"
+                                                    : "indexing"}
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            className="shrink-0 rounded-lg px-1.5 py-1 text-label-xs text-blue-500 hover:bg-weak-50"
+                                            onClick={() => onAsk(doc.name)}
                                         >
-                                            <Icon
-                                                className="fill-green-600"
-                                                name="check"
-                                            />
-                                        </span>
-                                    ) : (
-                                        <span
-                                            className={`shrink-0 text-label-xs ${
-                                                doc.status === "error"
-                                                    ? "text-red-500"
-                                                    : "text-soft-400"
-                                            }`}
-                                        >
-                                            {doc.status === "error"
-                                                ? "failed"
-                                                : "indexing"}
-                                        </span>
-                                    )}
-                                    <button
-                                        type="button"
-                                        className="shrink-0 rounded-lg px-1.5 py-1 text-label-xs text-blue-500 hover:bg-weak-50"
-                                        onClick={() => onAsk(doc.name)}
-                                    >
-                                        Ask
-                                    </button>
+                                            Ask
+                                        </button>
+                                    </div>
                                 </div>
                                 {canManage && (
                                     <DocumentActions
@@ -477,13 +479,13 @@ const KnowledgeBase = () => {
         : (session?.companyId
               ? companyWorkspaces[session.companyId]?.documents
               : []) ?? [];
-    const files = documents.filter(
-        (doc) => doc.kind === "document" || doc.kind === "csv"
-    );
+    const files = documents.filter((doc) => doc.kind === "document");
     const communications = documents.filter(
         (doc) => doc.kind === "communication"
     );
-    const sheets = documents.filter((doc) => doc.kind === "spreadsheet");
+    const sheets = documents.filter(
+        (doc) => doc.kind === "spreadsheet" || doc.kind === "csv"
+    );
     const libraryCounts = documents.reduce(
         (counts, doc) => {
             counts[fileState(doc.status)] += 1;
@@ -559,6 +561,24 @@ const KnowledgeBase = () => {
             <div className="mb-2 px-3 text-label-xs text-soft-400">
                 Knowledge Base
             </div>
+            {live.enabled && live.interruptedUpload ? (
+                <div className="mb-3 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 py-2">
+                    <p className="text-label-xs leading-5 text-strong-950">
+                        The last send stopped.{" "}
+                        {live.interruptedUpload.sent.toLocaleString()} of{" "}
+                        {live.interruptedUpload.total.toLocaleString()} reached
+                        Amazon. Choose the same files again. Ones already there
+                        are skipped.
+                    </p>
+                    <button
+                        type="button"
+                        className="mt-1.5 text-label-xs text-blue-500"
+                        onClick={() => live.dismissInterruptedUpload()}
+                    >
+                        Dismiss
+                    </button>
+                </div>
+            ) : null}
             {transfers.length > 0 && (
                 <div className="mb-3 flex flex-col gap-2 px-1">
                     {transfers.map((transfer) => (

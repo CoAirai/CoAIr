@@ -155,18 +155,18 @@ const General = () => {
     };
 
     return (
-        <form className="-mt-5 max-md:mt-0" onSubmit={onSave}>
+        <form onSubmit={onSave}>
             <div className="flex items-center mb-3 pb-3 border-b border-stroke-soft-200 max-md:flex-col max-md:items-start max-md:gap-3">
                 <div className="mr-auto">
                     <div className="text-label-md">Avatar</div>
-                    <div className="text-sub-600">Shown in your account menu</div>
+                    <div className="text-label-xs text-sub-600">Shown in your account menu</div>
                 </div>
                 <UploadImage onChange={(dataUrl) => void onAvatarChange(dataUrl)} />
             </div>
             <div className="mb-3 pb-3 border-b border-stroke-soft-200">
                 <div className="mb-3">
                     <div className="text-label-md">Personal Information</div>
-                    <div className="text-sub-600">
+                    <div className="text-label-xs text-sub-600">
                         Edit your personal information
                     </div>
                 </div>
@@ -197,7 +197,7 @@ const General = () => {
             <div className="mb-3 pb-3 border-b border-stroke-soft-200">
                 <div className="mb-3">
                     <div className="text-label-md">Phone number</div>
-                    <div className="text-sub-600">Update your phone number</div>
+                    <div className="text-label-xs text-sub-600">Update your phone number</div>
                 </div>
                 <Field
                     className=""
@@ -213,7 +213,7 @@ const General = () => {
                 <div className="mb-3 pb-3 border-b border-stroke-soft-200">
                     <div className="mb-3">
                         <div className="text-label-md">Company profile</div>
-                        <div className="text-sub-600">
+                        <div className="text-label-xs text-sub-600">
                             Display name and industry for your organization
                         </div>
                     </div>
@@ -248,7 +248,7 @@ const General = () => {
                 ) : null}
                 <Button
                     type="button"
-                    className="!h-10 !px-4.5 !bg-weak-50"
+                    className="!h-10 !px-4.5"
                     isStroke
                     onClick={onDiscard}
                 >

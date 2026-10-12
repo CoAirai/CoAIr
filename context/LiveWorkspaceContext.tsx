@@ -128,13 +128,56 @@ function formatStay(ms: number) {
     return `${hours} hr`;
 }
 
-function indexingCard(done: number, total: number, failed: number): FileTransfer {
+function formatEta(seconds?: number | null) {
+    if (!seconds || seconds <= 0) return "";
+    if (seconds < 90) return " · about 1 min left";
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return ` · about ${minutes} min left`;
+    const hours = Math.max(1, Math.round(minutes / 60));
+    return ` · about ${hours} hr left`;
+}
+
+type UploadResume = { total: number; sent: string[] };
+
+function resumeKey(projectId: string) {
+    return `coair.upload.resume.${projectId}`;
+}
+
+function readUploadResume(projectId: string): UploadResume | null {
+    if (typeof window === "undefined") return null;
+    try {
+        const raw = sessionStorage.getItem(resumeKey(projectId));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as UploadResume;
+        if (!parsed || !Array.isArray(parsed.sent) || typeof parsed.total !== "number") {
+            return null;
+        }
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+function writeUploadResume(projectId: string, value: UploadResume) {
+    sessionStorage.setItem(resumeKey(projectId), JSON.stringify(value));
+}
+
+function clearUploadResume(projectId: string) {
+    sessionStorage.removeItem(resumeKey(projectId));
+}
+
+function indexingCard(
+    done: number,
+    total: number,
+    failed: number,
+    etaSeconds?: number | null
+): FileTransfer {
     return {
         id: "server-index",
         name: "Indexing",
         phase: "injecting",
         percent: Math.min(100, Math.round((done / Math.max(1, total)) * 100)),
-        stage: `${done.toLocaleString()} of ${total.toLocaleString()}`,
+        stage: `${done.toLocaleString()} of ${total.toLocaleString()}${formatEta(etaSeconds)}`,
         batchTotal: total,
         error: failed > 0 ? `${failed.toLocaleString()} failed` : undefined,
     };
@@ -182,6 +225,8 @@ type LiveWorkspaceValue = {
         fileName: string
     ) => Promise<{ ok: boolean; error?: string }>;
     refresh: () => Promise<void>;
+    interruptedUpload: { sent: number; total: number } | null;
+    dismissInterruptedUpload: () => void;
 };
 
 const EMPTY_GRANTS: ModuleGrants = { chronology: false, forensic: false };
@@ -243,6 +288,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         grantsFromSession(session)
     );
     const [fileTransfers, setFileTransfers] = useState<FileTransfer[]>([]);
+    const [interruptedUpload, setInterruptedUpload] = useState<{
+        sent: number;
+        total: number;
+    } | null>(null);
     const hydratedProject = useRef<string | null>(null);
     const lastProjectId = useRef<string | null | undefined>(undefined);
     const transferSeq = useRef(0);
@@ -652,7 +701,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 const total = Math.max(1, done + remaining);
                 sawIndexing.current = true;
                 setFileTransfers((prev) =>
-                    withIndexingCard(prev, indexingCard(done, total, failed))
+                    withIndexingCard(
+                        prev,
+                        indexingCard(done, total, failed, summary.eta_seconds)
+                    )
                 );
             } catch {
                 /* retry on the interval */
@@ -676,6 +728,19 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const uploadInFlight = fileTransfers.some(
         (transfer) => transfer.phase === "uploading"
     );
+
+    useEffect(() => {
+        if (!session?.projectId || uploadInFlight) {
+            setInterruptedUpload(null);
+            return;
+        }
+        const saved = readUploadResume(session.projectId);
+        if (!saved || saved.sent.length >= saved.total) {
+            setInterruptedUpload(null);
+            return;
+        }
+        setInterruptedUpload({ sent: saved.sent.length, total: saved.total });
+    }, [session?.projectId, uploadInFlight]);
 
     useEffect(() => {
         if (!uploadInFlight) return;
@@ -708,7 +773,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 if (remaining > 0) {
                     sawIndexing.current = true;
                     setFileTransfers((prev) =>
-                        withIndexingCard(prev, indexingCard(done, total, failed))
+                        withIndexingCard(
+                            prev,
+                            indexingCard(done, total, failed, summary.eta_seconds)
+                        )
                     );
                     if (Date.now() - lastLibrarySync.current > 20000) {
                         lastLibrarySync.current = Date.now();
@@ -976,6 +1044,14 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 };
             }
             await refreshUploadAccess();
+            const projectId = session?.projectId;
+            const prior = projectId ? readUploadResume(projectId) : null;
+            const picked = new Set(list.map((file) => file.name.toLowerCase()));
+            const sentNames = new Set(
+                (prior?.sent ?? [])
+                    .map((name) => name.toLowerCase())
+                    .filter((name) => picked.has(name))
+            );
             pushToast(
                 `Sending ${list.length.toLocaleString()} files to Amazon, 8 at a time. Keep this tab open only until that count finishes. The server then indexes them one by one.`,
                 "info"
@@ -1033,6 +1109,17 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                             : transfer
                     );
                 });
+                if (projectId) {
+                    if (sent) {
+                        clearUploadResume(projectId);
+                        setInterruptedUpload(null);
+                    } else {
+                        writeUploadResume(projectId, {
+                            total: list.length,
+                            sent: [...sentNames],
+                        });
+                    }
+                }
                 if (sent && !announced) {
                     announced = true;
                     pushToast(
@@ -1048,6 +1135,11 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     }
                     const file = list[cursor];
                     cursor += 1;
+                    if (sentNames.has(file.name.toLowerCase())) {
+                        skipped += 1;
+                        publish();
+                        continue;
+                    }
                     let result = await uploadFile(file, {
                         quiet: true,
                         skipRefresh: true,
@@ -1065,6 +1157,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                         });
                     }
                     if (result.ok) {
+                        sentNames.add(file.name.toLowerCase());
                         if (result.skipped) skipped += 1;
                         else uploaded += 1;
                     } else failed += 1;
@@ -1108,8 +1201,13 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 error: failed ? `${failed} upload(s) failed` : undefined,
             };
         },
-        [pushToast, refreshLibrary, refreshUploadAccess, uploadFile]
+        [pushToast, refreshLibrary, refreshUploadAccess, session?.projectId, uploadFile]
     );
+
+    const dismissInterruptedUpload = useCallback(() => {
+        if (session?.projectId) clearUploadResume(session.projectId);
+        setInterruptedUpload(null);
+    }, [session?.projectId]);
 
     const removeFile = useCallback(
         async (fileId: string) => {
@@ -1304,6 +1402,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             pinFile,
             downloadFile,
             refresh,
+            interruptedUpload,
+            dismissInterruptedUpload,
         }),
         [
             accountUsage,
@@ -1330,6 +1430,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             teammates,
             uploadFile,
             uploadFiles,
+            interruptedUpload,
+            dismissInterruptedUpload,
         ]
     );
 

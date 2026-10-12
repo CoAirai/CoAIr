@@ -194,7 +194,7 @@ const Sidebar = ({
                     {isForensic ? null : <RecentQueries />}
 
                     {!isModuleSidebar ? (
-                    <div className="mt-auto flex w-full min-w-0 flex-wrap items-center gap-2 pt-4">
+                    <div className="mt-auto flex w-full min-w-0 flex-col gap-2 pt-4">
                         <input
                             ref={documentInputRef}
                             type="file"
@@ -220,7 +220,7 @@ const Sidebar = ({
                             onChange={(event) => onPickFile(event, "communication")}
                         />
                         <Button
-                            className="grow shrink-0"
+                            className="w-full"
                             icon="plus"
                             isBlack
                             onClick={() => documentInputRef.current?.click()}
@@ -228,14 +228,14 @@ const Sidebar = ({
                             Add documents
                         </Button>
                         <Button
-                            className="shrink-0"
+                            className="w-full"
                             isStroke
                             onClick={() => csvInputRef.current?.click()}
                         >
                             Sheets
                         </Button>
                         <Button
-                            className="shrink-0"
+                            className="w-full"
                             isStroke
                             onClick={() => mailInputRef.current?.click()}
                         >

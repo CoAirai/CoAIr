@@ -97,26 +97,36 @@ const ChronologyHomePage = () => {
             return;
         }
         let cancelled = false;
-        void listReports(session.accessToken, session.projectId, "chronology")
-            .then((payload) => {
-                if (cancelled) return;
-                setLiveReports(
-                    (payload.reports ?? []).map((job) =>
+        let timer = 0;
+        const load = () => {
+            const token = session.accessToken;
+            const projectId = session.projectId;
+            if (!token || !projectId) return;
+            void listReports(token, projectId, "chronology")
+                .then((payload) => {
+                    if (cancelled) return;
+                    const mapped = (payload.reports ?? []).map((job) =>
                         mapChronologyJob(job, session.companyId ?? "live")
-                    )
-                );
-            })
-            .catch((err) => {
-                if (!cancelled) {
-                    setError(
-                        err instanceof Error
-                            ? err.message
-                            : "Unable to load chronology reports"
                     );
-                }
-            });
+                    setLiveReports(mapped);
+                    if (mapped.some((report) => report.status === "generating")) {
+                        timer = window.setTimeout(load, 8000);
+                    }
+                })
+                .catch((err) => {
+                    if (!cancelled) {
+                        setError(
+                            err instanceof Error
+                                ? err.message
+                                : "Unable to load chronology reports"
+                        );
+                    }
+                });
+        };
+        load();
         return () => {
             cancelled = true;
+            window.clearTimeout(timer);
         };
     }, [live.enabled, session?.accessToken, session?.companyId, session?.projectId]);
 
@@ -276,12 +286,6 @@ const ChronologyHomePage = () => {
                         </p>
                         <div className="flex gap-2">
                             <button
-                                type="button"
-                                className="h-11 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-sub-600 hover:bg-weak-50"
-                            >
-                                Find source documents
-                            </button>
-                            <button
                                 type="submit"
                                 disabled={submitting}
                                 className="h-11 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-60"
@@ -304,10 +308,15 @@ const ChronologyHomePage = () => {
                         </span>
                     </div>
                     <div className="mt-4 divide-y divide-stroke-soft-200 border-t border-stroke-soft-200">
+                        {reports.length === 0 ? (
+                            <p className="py-6 text-label-sm text-sub-600">
+                                No chronology reports yet.
+                            </p>
+                        ) : null}
                         {reports.map((report) => (
                             <div
                                 key={report.id}
-                                className="grid grid-cols-[5rem_minmax(0,1fr)_7rem_auto] items-center gap-4 py-3 text-label-sm"
+                                className="flex flex-col gap-1 py-3 text-label-sm md:grid md:grid-cols-[5rem_minmax(0,1fr)_7rem_auto] md:items-center md:gap-4"
                             >
                                 <span className="text-sub-600">
                                     {report.reference}.x

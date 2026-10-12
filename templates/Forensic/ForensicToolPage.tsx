@@ -493,6 +493,13 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                                 : `Run ${tool.label}`}
                                     </button>
                                 ) : null}
+                                {live.enabled && !canLiveRun ? (
+                                    <p className="mt-3 text-label-xs leading-5 text-sub-600">
+                                        This analysis needs dates or a baseline
+                                        that are not on the programme yet. Check
+                                        the XER set in Data Intake.
+                                    </p>
+                                ) : null}
                             </section>
                             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:col-span-3">
                                 <h2 className="text-label-md text-strong-950">
@@ -500,7 +507,9 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 </h2>
                                 <p className="mt-3 text-label-sm leading-7 text-sub-600">
                                     {live.enabled
-                                        ? "The checks above are the live engine result for this workspace. Run again after you change the XER set."
+                                        ? run
+                                            ? "The checks above are the live engine result for this workspace. Run again after you change the XER set."
+                                            : "No run yet. The result appears here after you run this analysis."
                                         : `The selected programmes support a readable ${tool.label.toLowerCase()} position. Open Intake to swap the XER set, or keep this workspace and move through the native COAir analyses in the left nav.`}
                                 </p>
                             </section>

@@ -242,6 +242,7 @@ const MessageBubble = ({ message }: Props) => {
                                     onClick={() => openDocumentPreview(citation)}
                                 >
                                     {citation.name}
+                                    {citation.page ? `, p.${citation.page}` : ""}
                                 </button>
                             );
                         })}

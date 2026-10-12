@@ -353,7 +353,7 @@ const HubPage = () => {
                                                 : "Upgrade to unlock this module"}
                                         </p>
                                     ) : (
-                                        <p className="mt-auto pt-6 text-label-xs font-medium text-blue-500 opacity-0 transition-opacity group-hover:opacity-100">
+                                        <p className="mt-auto pt-6 text-label-xs font-medium text-blue-500">
                                             Open module →
                                         </p>
                                     )}

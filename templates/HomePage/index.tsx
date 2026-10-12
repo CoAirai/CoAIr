@@ -80,9 +80,9 @@ const HomePage = () => {
                                             <motion.div
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
-                                                className="px-1 text-label-sm text-soft-400"
+                                                className="px-1 text-label-sm text-sub-600"
                                             >
-                                                COAir is thinking…
+                                                COAIr is thinking…
                                             </motion.div>
                                         )}
                                     </motion.div>

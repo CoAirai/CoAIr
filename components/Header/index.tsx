@@ -102,7 +102,7 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
                     {session?.role === "company_admin" && teammates.length > 0 && (
                         <select
                             id="workspace-user"
-                            className="h-10 max-w-44 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none transition-colors duration-200 hover:border-stroke-sub-300"
+                            className="h-10 max-w-44 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none transition-colors duration-200 hover:border-stroke-sub-300 max-lg:max-w-28"
                             value={activeWorkspaceUserId ?? session.userId ?? ""}
                             onChange={(event) =>
                                 setActiveWorkspaceUserId(event.target.value)
@@ -124,7 +124,7 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
                                 className="h-10 w-32 animate-pulse rounded-xl border border-stroke-soft-200 bg-weak-50"
                             />
                         )}
-                    <div className="min-w-0 max-w-40 text-right max-md:hidden">
+                    <div className="min-w-0 max-w-40 text-right max-lg:hidden">
                         {session?.companyName ? (
                             <div className="truncate text-label-sm text-strong-950">
                                 {session.companyName}
