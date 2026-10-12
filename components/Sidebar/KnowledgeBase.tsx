@@ -413,7 +413,7 @@ const KnowledgeBase = () => {
                                     {transfer.name}
                                 </div>
                                 <div
-                                    className={`shrink-0 text-label-xs ${
+                                    className={`max-w-[58%] shrink truncate text-right text-label-xs ${
                                         transfer.phase === "failed"
                                             ? "text-red-500"
                                             : transfer.phase === "ready"

@@ -97,29 +97,38 @@ type FileTransfer = {
 const transferStorageKey = (projectId: string) =>
     `coair.upload.preview.${projectId}`;
 
-function readSavedTransfers(projectId: string): FileTransfer[] {
-    if (typeof window === "undefined") return [];
-    try {
-        const raw = window.sessionStorage.getItem(transferStorageKey(projectId));
-        if (!raw) return [];
-        const parsed = JSON.parse(raw) as FileTransfer[];
-        if (!Array.isArray(parsed)) return [];
-        return parsed
-            .filter((transfer) => transfer && typeof transfer.id === "string")
-            .map((transfer) =>
-                transfer.phase === "uploading"
-                    ? {
-                          ...transfer,
-                          phase: "injecting" as const,
-                          stage: transfer.batchTotal
-                              ? `${transfer.stage || "Upload in progress"}. Refresh stopped files that had not finished; the rest keep indexing.`
-                              : "Refresh stopped this upload before it finished.",
-                      }
-                    : transfer
-            );
-    } catch {
-        return [];
-    }
+function withIndexingCard(
+    prev: FileTransfer[],
+    card: FileTransfer | null
+): FileTransfer[] {
+    const upload = prev.find((transfer) => transfer.phase === "uploading");
+    const next = upload && card ? [upload, card] : upload ? [upload] : card ? [card] : [];
+    if (next.length !== prev.length) return next;
+    const same = next.every((item, index) => {
+        const current = prev[index];
+        return (
+            current === item ||
+            (current.id === item.id &&
+                current.phase === item.phase &&
+                current.percent === item.percent &&
+                current.stage === item.stage &&
+                current.error === item.error &&
+                current.name === item.name)
+        );
+    });
+    return same ? prev : next;
+}
+
+function indexingCard(done: number, total: number, failed: number): FileTransfer {
+    return {
+        id: "server-index",
+        name: "Indexing",
+        phase: "injecting",
+        percent: Math.min(100, Math.round((done / Math.max(1, total)) * 100)),
+        stage: `${done.toLocaleString()} of ${total.toLocaleString()}`,
+        batchTotal: total,
+        error: failed > 0 ? `${failed.toLocaleString()} failed` : undefined,
+    };
 }
 
 type LiveWorkspaceValue = {
@@ -229,6 +238,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const transferSeq = useRef(0);
     const lastLibrarySync = useRef(0);
     const libraryRefreshInFlight = useRef(false);
+    const sawIndexing = useRef(false);
 
     useEffect(() => {
         accessTokenRef.current = session?.accessToken ?? "";
@@ -238,29 +248,13 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         const projectId = session?.projectId;
         if (!projectId || hydratedProject.current === projectId) return;
         hydratedProject.current = projectId;
-        setFileTransfers(readSavedTransfers(projectId));
-    }, [session?.projectId]);
-
-    useEffect(() => {
-        const projectId = session?.projectId;
-        if (!projectId || hydratedProject.current !== projectId) return;
-        const active = fileTransfers.filter(
-            (transfer) =>
-                transfer.phase === "uploading" || transfer.phase === "injecting"
-        );
+        setFileTransfers([]);
         try {
-            if (!active.length) {
-                window.sessionStorage.removeItem(transferStorageKey(projectId));
-                return;
-            }
-            window.sessionStorage.setItem(
-                transferStorageKey(projectId),
-                JSON.stringify(active)
-            );
+            window.sessionStorage.removeItem(transferStorageKey(projectId));
         } catch {
-            /* the preview still works in this tab */
+            /* old stacked cards are simply not shown */
         }
-    }, [fileTransfers, session?.projectId]);
+    }, [session?.projectId]);
 
     // After login, reuse the /projects payload already fetched for session seeding.
     useEffect(() => {
@@ -635,44 +629,16 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 const ready = summary.ready ?? 0;
                 const failed = summary.failed ?? 0;
                 const remaining = queued + processing;
-                if (remaining <= 0) return;
+                if (remaining <= 0) {
+                    setFileTransfers((prev) => withIndexingCard(prev, null));
+                    return;
+                }
                 const done = ready + failed;
                 const total = Math.max(1, done + remaining);
-                const percent = Math.min(100, Math.round((done / total) * 100));
-                const stage = `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`;
-                setFileTransfers((prev) => {
-                    const existing = prev.find(
-                        (transfer) =>
-                            transfer.batchTotal || transfer.id === "server-index"
-                    );
-                    if (!existing) {
-                        return [
-                            {
-                                id: "server-index",
-                                name: "Indexing documents",
-                                phase: "injecting",
-                                percent,
-                                stage,
-                                batchTotal: total,
-                            },
-                            ...prev,
-                        ];
-                    }
-                    if (existing.phase === "uploading") return prev;
-                    return prev.map((transfer) =>
-                        transfer.id === existing.id
-                            ? {
-                                  ...transfer,
-                                  phase: "injecting",
-                                  percent,
-                                  stage: transfer.stage?.includes("Refresh stopped")
-                                      ? `${stage}. Refresh stopped files that had not finished.`
-                                      : stage,
-                                  batchTotal: Math.max(transfer.batchTotal ?? 0, total),
-                              }
-                            : transfer
-                    );
-                });
+                sawIndexing.current = true;
+                setFileTransfers((prev) =>
+                    withIndexingCard(prev, indexingCard(done, total, failed))
+                );
             } catch {
                 /* retry on the interval */
             }
@@ -702,44 +668,34 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
 
         const tick = async () => {
             try {
-                const batch = fileTransfers.find((transfer) => transfer.batchTotal);
-                if (batch && (batch.phase === "injecting" || batch.phase === "uploading")) {
-                    if (batch.phase === "uploading") return;
-                    const summary = await readIndexingSummary(token, projectId);
-                    if (cancelled) return;
-                    const queued = summary.queued ?? 0;
-                    const processing = summary.processing ?? 0;
-                    const ready = summary.ready ?? 0;
-                    const failed = summary.failed ?? 0;
-                    const remaining = queued + processing;
-                    const done = ready + failed;
-                    const total = Math.max(batch.batchTotal ?? 0, done + remaining);
+                const summary = await readIndexingSummary(token, projectId);
+                if (cancelled) return;
+                const queued = summary.queued ?? 0;
+                const processing = summary.processing ?? 0;
+                const ready = summary.ready ?? 0;
+                const failed = summary.failed ?? 0;
+                const remaining = queued + processing;
+                const done = ready + failed;
+                const total = Math.max(1, done + remaining);
+                if (remaining > 0) {
+                    sawIndexing.current = true;
                     setFileTransfers((prev) =>
-                        prev.map((transfer) =>
-                            transfer.id === batch.id
-                                ? {
-                                      ...transfer,
-                                      phase: remaining === 0 && done > 0 ? "ready" : "injecting",
-                                      percent:
-                                          total > 0
-                                              ? Math.min(100, Math.round((done / total) * 100))
-                                              : transfer.percent,
-                                      stage:
-                                          remaining === 0
-                                              ? "Ready for the demo"
-                                              : transfer.stage?.includes("Refresh stopped")
-                                                ? `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}. Refresh stopped files that had not finished.`
-                                                : `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`,
-                                  }
-                                : transfer
-                        )
+                        withIndexingCard(prev, indexingCard(done, total, failed))
                     );
-                    if (remaining === 0 && done > 0) {
-                        await refreshLibrary();
-                    } else if (Date.now() - lastLibrarySync.current > 20000) {
+                    if (Date.now() - lastLibrarySync.current > 20000) {
                         lastLibrarySync.current = Date.now();
                         void refreshLibrary({ silent: true });
                     }
+                    return;
+                }
+                setFileTransfers((prev) => withIndexingCard(prev, null));
+                if (fileTransfers.some((transfer) => transfer.phase === "uploading")) {
+                    return;
+                }
+                if (sawIndexing.current && done > 0) {
+                    sawIndexing.current = false;
+                    pushToast("Indexing finished", "success");
+                    await refreshLibrary();
                     return;
                 }
                 const jobs = await listIndexingStatus(token, projectId);
@@ -796,6 +752,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         enabled,
         fileTransfers,
         hasActiveTransfers,
+        pushToast,
         refreshLibrary,
         session?.accessToken,
         session?.projectId,
@@ -996,17 +953,20 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 "info"
             );
             const batchId = `batch-${Date.now()}`;
-            setFileTransfers((prev) => [
-                {
-                    id: batchId,
-                    name: `${list.length.toLocaleString()} PDFs`,
-                    phase: "uploading",
-                    percent: 0,
-                    stage: `Uploaded 0 of ${list.length.toLocaleString()}`,
-                    batchTotal: list.length,
-                },
-                ...prev,
-            ]);
+            const batchChip: FileTransfer = {
+                id: batchId,
+                name: `${list.length.toLocaleString()} PDFs`,
+                phase: "uploading",
+                percent: 0,
+                stage: `Uploaded 0 of ${list.length.toLocaleString()}`,
+                batchTotal: list.length,
+            };
+            setFileTransfers((prev) =>
+                withIndexingCard(
+                    [batchChip, ...prev],
+                    prev.find((transfer) => transfer.id === "server-index") ?? null
+                )
+            );
             let cursor = 0;
             let uploaded = 0;
             let skipped = 0;
@@ -1019,24 +979,25 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     skipped > 0
                         ? ` · ${skipped.toLocaleString()} already saved`
                         : "";
-                setFileTransfers((prev) =>
-                    prev.map((transfer) =>
+                setFileTransfers((prev) => {
+                    if (sent) {
+                        return prev.filter((transfer) => transfer.id !== batchId);
+                    }
+                    return prev.map((transfer) =>
                         transfer.id === batchId
                             ? {
                                   ...transfer,
-                                  phase: sent ? "injecting" : "uploading",
+                                  phase: "uploading",
                                   percent: Math.round((finished / list.length) * 100),
-                                  stage: sent
-                                      ? `All ${list.length.toLocaleString()} files are on Amazon. The server indexes them one by one if you leave.`
-                                      : `Sent ${finished.toLocaleString()} of ${list.length.toLocaleString()} to Amazon${already}`,
+                                  stage: `Sent ${finished.toLocaleString()} of ${list.length.toLocaleString()} to Amazon${already}`,
                                   error:
                                       failed > 0
                                           ? `${failed.toLocaleString()} failed`
                                           : undefined,
                               }
                             : transfer
-                    )
-                );
+                    );
+                });
                 if (sent && !announced) {
                     announced = true;
                     pushToast(
