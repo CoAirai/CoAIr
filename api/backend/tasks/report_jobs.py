@@ -417,6 +417,12 @@ def _worker() -> None:
                        source_count=len(result.get("evidence", [])),
                        footnote_count=int(result.get("audit", {}).get("footnote_records", 0)),
                        verification="PASS" if not result.get("removed_claims") else "FILTERED")
+            if job["module"] == "chronology":
+                from src.auth_notify import send_analysis_finished_email
+                send_analysis_finished_email(
+                    job["username"],
+                    f"Chronology \"{job['title']}\" is ready.",
+                )
         except Exception as exc:
             from src.billing_store import CreditBalanceExceededError
             exhausted = isinstance(exc, CreditBalanceExceededError)
@@ -428,6 +434,12 @@ def _worker() -> None:
                 job["job_id"], status="failed", route=job["module"],
                 error="credit_balance_exhausted" if exhausted else str(exc),
             )
+            if job["module"] == "chronology":
+                from src.auth_notify import send_analysis_finished_email
+                send_analysis_finished_email(
+                    job["username"],
+                    f"Chronology \"{job['title']}\" failed.",
+                )
 
 
 def start_report_workers() -> None:

@@ -188,7 +188,7 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                                 <p className="mt-2 text-label-xs text-sub-600">
                                     Created {createdLabel} —{" "}
                                     {report.status === "generating"
-                                        ? "generating"
+                                        ? "generating. You can close this page. The report continues on the server."
                                         : report.status === "failed"
                                           ? "failed — retry to run it again"
                                           : "read-only record"}

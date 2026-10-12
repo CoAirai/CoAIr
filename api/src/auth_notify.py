@@ -12,6 +12,30 @@ from src.stripe_billing import owner_username
 from src.user_store import UserStore, get_user_store
 
 
+def send_analysis_finished_email(username: str, detail: str) -> None:
+    """One email when a chronology or FORENSIS run reaches a result."""
+    try:
+        username = (username or "").strip()
+        if "@" not in username:
+            return
+        user = get_user_store().get_user(username)
+        if not user_email_notifications_enabled(user):
+            return
+        result = send_coair_email(
+            "analysis_finished",
+            recipient_address(username),
+            name=str((user or {}).get("display_name") or username),
+            description=detail,
+        )
+        logger.info(
+            "analysis_finished_email user=%s ok=%s",
+            username,
+            result.get("ok"),
+        )
+    except Exception:
+        logger.exception("analysis_finished_email_failed")
+
+
 def user_email_notifications_enabled(user: Optional[Dict[str, Any]]) -> bool:
     if not user:
         return True

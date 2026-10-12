@@ -21,21 +21,12 @@ export const FORENSIC_MODULE_REQUIREMENTS: Record<string, ForensicModuleRequirem
     "report-assembler": { files: 1 },
     "as-planned-vs-as-built": { files: 2 },
     "windows-analysis": { files: 2 },
-    "impacted-as-planned": {
-        files: 1,
-        extra: "Needs a delay event before this model can run.",
-    },
-    "collapsed-as-built": {
-        files: 1,
-        extra: "Needs a delay event before this model can run.",
-    },
-    "time-impact-analysis": {
-        files: 1,
-        extra: "Needs a delay event before this model can run.",
-    },
+    "impacted-as-planned": { files: 1 },
+    "collapsed-as-built": { files: 1 },
+    "time-impact-analysis": { files: 1 },
     "evidence-led-draft": {
         files: 1,
-        extra: "Needs cited evidence inputs before this model can run.",
+        extra: "This draft is not available from the engine yet.",
     },
 };
 

@@ -139,11 +139,23 @@ def _worker() -> None:
                                  f"{run['upstream_sha'][:7]} · source {run['source_revision'][:12]}"),
                     findings=findings[:50], source_doc_ids=[], created_by=run["username"],
                 )
+            from src.auth_notify import send_analysis_finished_email
+            label = str(run.get("module_slug") or "check").replace("-", " ")
+            send_analysis_finished_email(
+                str(run.get("username") or ""),
+                f"FORENSIS {label} is ready.",
+            )
         except Exception as exc:
             logger.error("Forensic engine failure %s (%s)\n%s",
                          traceback_id, _error_code(exc), traceback.format_exc())
             store.fail_run(run["run_id"], error_code=_error_code(exc),
                            traceback_id=traceback_id)
+            from src.auth_notify import send_analysis_finished_email
+            label = str(run.get("module_slug") or "check").replace("-", " ")
+            send_analysis_finished_email(
+                str(run.get("username") or ""),
+                f"FORENSIS {label} failed.",
+            )
 
 
 def start_forensic_workers() -> None:

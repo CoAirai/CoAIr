@@ -24,6 +24,7 @@ EMAIL_KINDS = {
     "password_reset_alert",
     "login_alert",
     "indexing_finished",
+    "analysis_finished",
     "mfa_code",
     "email_verify",
     "invoice_issued",
@@ -483,6 +484,19 @@ def build_email(
             f"You receive this when Email notifications are enabled in Settings.</p>"
         )
         html = _wrap_html("Indexing finished", body, preheader=detail)
+        return {"subject": subject, "text": text, "html": html}
+
+    if kind == "analysis_finished":
+        subject = "COAIr analysis finished"
+        detail = description or "An analysis on this project has finished."
+        text = f"Hi {display},\n\n{detail}\n\nOpen the project to read the result.\n"
+        body = (
+            f"<p style=\"margin:0 0 16px;font-size:15px;line-height:24px;color:#525866\">Hi {escape(display)},</p>"
+            f"{_email_notice(detail)}"
+            f"<p style=\"margin:0;font-size:13px;line-height:20px;color:#868C98\">"
+            f"You receive this when Email notifications are enabled in Settings.</p>"
+        )
+        html = _wrap_html("Analysis finished", body, preheader=detail)
         return {"subject": subject, "text": text, "html": html}
 
     if kind in {"invoice_issued", "invoice_paid", "invoice_refunded", "purchase_receipt"}:

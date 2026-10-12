@@ -109,30 +109,93 @@ export async function createForensicWorkspace(
     });
 }
 
-export function defaultForensicRunParameters(moduleSlug: string) {
-    if (moduleSlug === "impacted-as-planned") {
-        return null;
+export type ForensicDelayInput = {
+    activity?: string;
+    start?: string;
+    finish?: string;
+    activityCodes?: string;
+    anchor?: string;
+};
+
+function delayDays(start: string, finish: string) {
+    const from = Date.parse(start);
+    const to = Date.parse(finish);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return null;
+    return Math.max(0, Math.round((to - from) / 86400000));
+}
+
+function delayEvent(input: ForensicDelayInput) {
+    const activity = (input.activity || "").trim();
+    const start = (input.start || "").trim();
+    const finish = (input.finish || "").trim();
+    const duration = delayDays(start, finish);
+    if (!activity || !start || !finish || duration === null) return null;
+    const code = activity.slice(0, 120);
+    return {
+        event: {
+            event_id: code,
+            title: activity.slice(0, 500),
+            description: `${start} to ${finish}`,
+            date_raised: start,
+        },
+        fragnet: [
+            {
+                id: code,
+                name: activity.slice(0, 500),
+                duration_days: duration,
+            },
+        ],
+    };
+}
+
+export function forensicRunParameters(
+    moduleSlug: string,
+    input: ForensicDelayInput = {}
+): Record<string, unknown> | null {
+    if (moduleSlug === "evidence-led-draft") return null;
+    if (
+        moduleSlug === "impacted-as-planned" ||
+        moduleSlug === "time-impact-analysis"
+    ) {
+        const event = delayEvent(input);
+        if (!event) return null;
+        if (moduleSlug === "time-impact-analysis") {
+            return { kind: moduleSlug, events: [event], target_milestone: "" };
+        }
+        return { kind: moduleSlug, events: [event] };
     }
     if (moduleSlug === "collapsed-as-built") {
-        return null;
-    }
-    if (moduleSlug === "time-impact-analysis") {
-        return null;
-    }
-    if (moduleSlug === "evidence-led-draft") {
-        return null;
+        const codes = (input.activityCodes || "")
+            .split(/[\n,]/)
+            .map((code) => code.trim())
+            .filter(Boolean)
+            .slice(0, 5000);
+        if (codes.length === 0) return null;
+        return {
+            kind: moduleSlug,
+            remove_activity_codes: codes,
+            anchor_code: (input.anchor || "").trim().slice(0, 120),
+        };
     }
     return { kind: moduleSlug };
+}
+
+export function defaultForensicRunParameters(moduleSlug: string) {
+    return forensicRunParameters(moduleSlug);
 }
 
 export async function createForensicRun(
     token: string,
     projectId: string,
     workspaceId: string,
-    moduleSlug: string
+    moduleSlug: string,
+    parameters?: Record<string, unknown> | null
 ) {
-    const parameters = defaultForensicRunParameters(moduleSlug);
-    if (!parameters) {
+    const bodyParameters =
+        parameters === undefined
+            ? defaultForensicRunParameters(moduleSlug)
+            : parameters;
+    if (!bodyParameters) {
         throw new Error("This analysis needs extra inputs that are not in the UI yet.");
     }
     return coairFetch<CoairForensicRun>(
@@ -142,7 +205,7 @@ export async function createForensicRun(
             token,
             projectId,
             timeoutMs: 30000,
-            body: { parameters, ai_narrative: false },
+            body: { parameters: bodyParameters, ai_narrative: false },
         }
     );
 }

@@ -20,7 +20,7 @@ import {
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
 import {
     createForensicRun,
-    defaultForensicRunParameters,
+    forensicRunParameters,
     listForensicProgrammes,
     listForensicRuns,
     listForensicWorkspaces,
@@ -204,6 +204,11 @@ const ForensicToolPage = ({ toolId }: Props) => {
     const [programmeNames, setProgrammeNames] = useState<Record<string, string>>(
         {}
     );
+    const [delayActivity, setDelayActivity] = useState("");
+    const [delayStart, setDelayStart] = useState("");
+    const [delayFinish, setDelayFinish] = useState("");
+    const [cabCodes, setCabCodes] = useState("");
+    const [cabAnchor, setCabAnchor] = useState("");
 
     const programmeWorkspaces = live.enabled ? liveWorkspaces : mockWorkspaces;
     const activeWorkspace =
@@ -217,7 +222,16 @@ const ForensicToolPage = ({ toolId }: Props) => {
               activeWorkspace.programmeIds.includes(file.id)
           )
         : [];
-    const canLiveRun = Boolean(defaultForensicRunParameters(toolId));
+    const runParameters = tool
+        ? forensicRunParameters(tool.id, {
+              activity: delayActivity,
+              start: delayStart,
+              finish: delayFinish,
+              activityCodes: cabCodes,
+              anchor: cabAnchor,
+          })
+        : null;
+    const canLiveRun = Boolean(runParameters);
     const programmeCount = live.enabled
         ? (activeWorkspace?.programmeIds.length ?? 0)
         : activeProgrammes.length;
@@ -370,7 +384,14 @@ const ForensicToolPage = ({ toolId }: Props) => {
                 session.accessToken,
                 session.projectId,
                 liveActiveId,
-                tool.id
+                tool.id,
+                forensicRunParameters(tool.id, {
+                    activity: delayActivity,
+                    start: delayStart,
+                    finish: delayFinish,
+                    activityCodes: cabCodes,
+                    anchor: cabAnchor,
+                })
             );
             setRun(created);
         } catch (err) {
@@ -502,6 +523,84 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                         {runError}
                                     </p>
                                 ) : null}
+                                {live.enabled &&
+                                (tool.id === "impacted-as-planned" ||
+                                    tool.id === "time-impact-analysis") ? (
+                                    <div className="mt-4 grid gap-3">
+                                        <label className="block">
+                                            <span className="mb-1 block text-label-xs text-sub-600">
+                                                Delayed activity
+                                            </span>
+                                            <input
+                                                value={delayActivity}
+                                                onChange={(event) =>
+                                                    setDelayActivity(event.target.value)
+                                                }
+                                                className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                            />
+                                        </label>
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            <label className="block">
+                                                <span className="mb-1 block text-label-xs text-sub-600">
+                                                    Start
+                                                </span>
+                                                <input
+                                                    type="date"
+                                                    value={delayStart}
+                                                    max={delayFinish || undefined}
+                                                    onChange={(event) =>
+                                                        setDelayStart(event.target.value)
+                                                    }
+                                                    className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-label-xs text-sub-600">
+                                                    Finish
+                                                </span>
+                                                <input
+                                                    type="date"
+                                                    value={delayFinish}
+                                                    min={delayStart || undefined}
+                                                    onChange={(event) =>
+                                                        setDelayFinish(event.target.value)
+                                                    }
+                                                    className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                                />
+                                            </label>
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {live.enabled && tool.id === "collapsed-as-built" ? (
+                                    <div className="mt-4 grid gap-3">
+                                        <label className="block">
+                                            <span className="mb-1 block text-label-xs text-sub-600">
+                                                Activity codes to remove
+                                            </span>
+                                            <textarea
+                                                value={cabCodes}
+                                                onChange={(event) =>
+                                                    setCabCodes(event.target.value)
+                                                }
+                                                rows={3}
+                                                placeholder="A1010, A1040"
+                                                className="w-full rounded-xl border border-stroke-soft-200 px-3 py-2 text-label-sm text-strong-950 outline-none placeholder:text-soft-400 focus:border-blue-500"
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="mb-1 block text-label-xs text-sub-600">
+                                                Anchor activity (optional)
+                                            </span>
+                                            <input
+                                                value={cabAnchor}
+                                                onChange={(event) =>
+                                                    setCabAnchor(event.target.value)
+                                                }
+                                                className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                            />
+                                        </label>
+                                    </div>
+                                ) : null}
                                 {live.enabled && tool.id !== "report-assembler" ? (
                                     <button
                                         type="button"
@@ -527,8 +626,15 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 ) : null}
                                 {live.enabled && !canLiveRun ? (
                                     <p className="mt-3 text-label-xs leading-5 text-sub-600">
-                                        {requirement?.extra ||
-                                            "This analysis needs dates or a baseline that are not on the programme yet. Check the XER set in Data Intake."}
+                                        {tool.id === "evidence-led-draft"
+                                            ? "This draft is not available from the engine yet."
+                                            : tool.id === "collapsed-as-built"
+                                              ? "Enter the activity codes to remove from the as-built programme."
+                                              : tool.id === "impacted-as-planned" ||
+                                                  tool.id === "time-impact-analysis"
+                                                ? "Enter the delayed activity and a finish on or after the start."
+                                                : requirement?.extra ||
+                                                  "This analysis needs dates or a baseline that are not on the programme yet. Check the XER set in Data Intake."}
                                     </p>
                                 ) : null}
                             </section>

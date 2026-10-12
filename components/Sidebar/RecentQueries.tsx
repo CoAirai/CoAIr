@@ -145,6 +145,7 @@ const RecentQueries = () => {
         activeWorkspaceUserId,
     } = useChat();
     const [viewingArchive, setViewingArchive] = useState(false);
+    const [querySearch, setQuerySearch] = useState("");
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameDraft, setRenameDraft] = useState("");
     const renameSaved = useRef(false);
@@ -201,7 +202,11 @@ const RecentQueries = () => {
         : null;
 
     if (isChronology) {
-        const reports = live ? liveReports : chronologyReports;
+        const reports = (live ? liveReports : chronologyReports).filter((report) => {
+            const needle = querySearch.trim().toLowerCase();
+            if (!needle) return true;
+            return `${report.reference} ${report.title}`.toLowerCase().includes(needle);
+        });
         const activeId = activeChronologyId;
         const hrefBase = "/workspace/chronology";
 
@@ -215,10 +220,21 @@ const RecentQueries = () => {
                         {reports.length} total
                     </span>
                 </div>
+                <div className="px-3 pb-2">
+                    <input
+                        value={querySearch}
+                        onChange={(event) => setQuerySearch(event.target.value)}
+                        placeholder="Search reports"
+                        aria-label="Search chronology reports"
+                        className="h-9 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-xs text-strong-950 outline-none placeholder:text-soft-400 focus:border-blue-500"
+                    />
+                </div>
                 <div className="flex flex-col gap-0.5">
                     {reports.length === 0 && (
                         <div className="px-3 py-2 text-label-xs text-soft-400">
-                            No chronology reports yet
+                            {querySearch.trim()
+                                ? "No matching reports"
+                                : "No chronology reports yet"}
                         </div>
                     )}
                     {reports.map((report) => {
@@ -249,7 +265,13 @@ const RecentQueries = () => {
         );
     }
 
-    const queries = viewingArchive ? archivedQueries : recentQueries;
+    const queries = (viewingArchive ? archivedQueries : recentQueries).filter(
+        (entry) => {
+            const needle = querySearch.trim().toLowerCase();
+            if (!needle) return true;
+            return entry.title.toLowerCase().includes(needle);
+        }
+    );
     const saveRename = (id: string) => {
         if (renameSaved.current) return;
         renameSaved.current = true;
@@ -276,10 +298,23 @@ const RecentQueries = () => {
                     {viewingArchive ? "back" : "archive"}
                 </button>
             </div>
+            <div className="px-3 pb-2">
+                <input
+                    value={querySearch}
+                    onChange={(event) => setQuerySearch(event.target.value)}
+                    placeholder="Search chats"
+                    aria-label="Search past chats"
+                    className="h-9 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-xs text-strong-950 outline-none placeholder:text-soft-400 focus:border-blue-500"
+                />
+            </div>
             <div className="flex flex-col gap-0.5">
                 {queries.length === 0 && (
                     <div className="px-3 py-2 text-label-xs text-soft-400">
-                        {viewingArchive ? "No archived queries" : "No queries yet"}
+                        {querySearch.trim()
+                            ? "No matching chats"
+                            : viewingArchive
+                              ? "No archived queries"
+                              : "No queries yet"}
                     </div>
                 )}
                 {queries.map((q) => {

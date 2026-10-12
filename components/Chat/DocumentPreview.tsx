@@ -157,6 +157,31 @@ const DocumentPreview = () => {
         Boolean(live?.image_base64) &&
         /^[A-Za-z0-9+/=\s]+$/.test(live?.image_base64 || "");
 
+    useEffect(() => {
+        if (!open) return;
+        const onKey = (event: KeyboardEvent) => {
+            const target = event.target;
+            if (
+                target instanceof HTMLElement &&
+                (target.tagName === "INPUT" ||
+                    target.tagName === "TEXTAREA" ||
+                    target.isContentEditable)
+            ) {
+                return;
+            }
+            if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                setPage((value) => Math.max(1, value - 1));
+            }
+            if (event.key === "ArrowRight") {
+                event.preventDefault();
+                setPage((value) => Math.min(pageCount, value + 1));
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [open, pageCount]);
+
     const reader =
         expanded && open && typeof document !== "undefined"
             ? createPortal(
