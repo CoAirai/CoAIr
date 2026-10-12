@@ -5,25 +5,48 @@ import Image from "@/components/Image";
 import Button from "@/components/Button";
 import Icon from "@/components/Icon";
 import { compressAvatarFile } from "@/lib/settings/compressAvatar";
-import { readAvatarPreview } from "@/lib/settings/localPrefs";
+import {
+    AVATAR_CHANGED_EVENT,
+    readAvatarPreview,
+} from "@/lib/settings/localPrefs";
 
 type Props = {
     onChange?: (dataUrl: string | null) => void;
 };
 
+const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+
 const UploadImage = ({ onChange }: Props) => {
     const [preview, setPreview] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        setPreview(readAvatarPreview() ?? "/images/avatar-1.png");
+        const sync = () => setPreview(readAvatarPreview() ?? "/images/avatar-1.png");
+        sync();
+        window.addEventListener(AVATAR_CHANGED_EVENT, sync);
+        return () => window.removeEventListener(AVATAR_CHANGED_EVENT, sync);
     }, []);
 
     const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 1024 * 1024) {
+        setError(null);
+        const type = file.type.toLowerCase();
+        if (
+            type &&
+            type !== "image/jpeg" &&
+            type !== "image/jpg" &&
+            type !== "image/png"
+        ) {
+            setError("Use a JPG or PNG photo.");
+            if (inputRef.current) inputRef.current.value = "";
+            return;
+        }
+        if (file.size > MAX_PHOTO_BYTES) {
+            setError("That photo is too large. Use one under 15MB.");
+            if (inputRef.current) inputRef.current.value = "";
             return;
         }
         setBusy(true);
@@ -32,9 +55,10 @@ const UploadImage = ({ onChange }: Props) => {
             setPreview(dataUrl);
             onChange?.(dataUrl);
         } catch {
-            /* keep previous preview */
+            setError("Could not use that photo. Try a different JPG or PNG.");
         } finally {
             setBusy(false);
+            if (inputRef.current) inputRef.current.value = "";
         }
     };
 
@@ -105,8 +129,11 @@ const UploadImage = ({ onChange }: Props) => {
                 </Button>
             </div>
             <div className="mt-1.5 text-soft-400 max-md:text-p-xs">
-                We only support JPG, JPEG, or PNG. 1MB max.
+                JPG or PNG. Large photos are resized automatically.
             </div>
+            {error ? (
+                <p className="mt-1 text-label-xs text-red-500">{error}</p>
+            ) : null}
         </div>
     );
 };

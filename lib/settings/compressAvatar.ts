@@ -21,6 +21,9 @@ export async function compressAvatarFile(file: File): Promise<string> {
             quality -= 0.1;
             dataUrl = canvas.toDataURL("image/jpeg", quality);
         }
+        if (dataUrl.length > 340_000) {
+            throw new Error("avatar_too_large");
+        }
         return dataUrl;
     } finally {
         URL.revokeObjectURL(objectUrl);

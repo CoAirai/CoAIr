@@ -8,7 +8,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useCompanyDataOptional } from "@/context/CompanyDataContext";
 import { patchOrg, readOrg, updateMyProfile } from "@/lib/coair/org";
 import {
-    readAvatarPreview,
     readPhoneLocal,
     writeAvatarPreview,
     writePhoneLocal,
@@ -133,7 +132,6 @@ const General = () => {
                 await updateMyProfile(token, {
                     display_name: name,
                     phone: phoneNumber.trim(),
-                    avatar: readAvatarPreview() ?? "",
                 });
             }
 

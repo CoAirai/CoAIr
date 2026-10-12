@@ -1,6 +1,18 @@
 import type { AuthSession, SessionRole } from "@/lib/auth/resolveLogin";
 import type { CoairOrgResponse, CoairUserPayload } from "./types";
 
+/** Boolean flags only. Avatar and phone are stored beside the session, not inside it. */
+export function booleanSessionFeatures(
+    raw?: Record<string, unknown> | null
+): Record<string, boolean> {
+    const features: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(raw ?? {})) {
+        if (key === "avatar" || key === "phone") continue;
+        if (typeof value === "boolean") features[key] = value;
+    }
+    return features;
+}
+
 export function mapApiRole(
     userRole: string,
     orgRole?: string | null
@@ -27,12 +39,7 @@ export function mapLiveSession(input: {
         input.org?.org?.org_id ??
         (role === "super_admin" ? null : `live:${input.user.username}`);
 
-    // Keep bulky avatar / phone prefs out of the persisted session blob.
-    const features: Record<string, boolean> = {};
-    for (const [key, value] of Object.entries(input.user.features ?? {})) {
-        if (key === "avatar" || key === "phone") continue;
-        if (typeof value === "boolean") features[key] = value;
-    }
+    const features = booleanSessionFeatures(input.user.features);
 
     return {
         email: input.user.username,

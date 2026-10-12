@@ -27,7 +27,9 @@ import {
     readOrg,
     type CoairOrgUser,
 } from "@/lib/coair/org";
+import { booleanSessionFeatures } from "@/lib/coair/mapSession";
 import type { CoairProject } from "@/lib/coair/types";
+import { writeAvatarPreview } from "@/lib/settings/localPrefs";
 import {
     deleteProjectFile,
     downloadProjectFile,
@@ -309,7 +311,12 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             setAccountUsage(listed.account_usage ?? null);
 
             if (meResult?.user?.features) {
-                updateSession({ features: meResult.user.features });
+                const raw = meResult.user.features as Record<string, unknown>;
+                const avatar = raw.avatar;
+                if (typeof avatar === "string" && avatar.startsWith("data:image/")) {
+                    writeAvatarPreview(avatar);
+                }
+                updateSession({ features: booleanSessionFeatures(raw) });
             }
 
             if (orgResult) {
