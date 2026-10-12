@@ -14,6 +14,11 @@ import { getTokenMeter } from "@/lib/chat/tokenMeter";
 
 const PAGE_SIZE = 10;
 
+function isIndexed(status?: string) {
+    const value = (status || "completed").toLowerCase();
+    return value === "completed" || value === "ready";
+}
+
 function DocumentActions({
     onRemove,
     onReinject,
@@ -230,20 +235,30 @@ const DocumentGroup = ({
                                             pinned
                                         </span>
                                     )}
-                                    {doc.status &&
-                                        doc.status !== "completed" && (
-                                            <span
-                                                className={`shrink-0 text-label-xs ${
-                                                    doc.status === "error"
-                                                        ? "text-red-500"
-                                                        : "text-soft-400"
-                                                }`}
-                                            >
-                                                {doc.status === "error"
-                                                    ? "failed"
-                                                    : doc.status}
-                                            </span>
-                                        )}
+                                    {isIndexed(doc.status) ? (
+                                        <span
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center"
+                                            title="Indexed"
+                                            aria-label="Indexed"
+                                        >
+                                            <Icon
+                                                className="fill-green-600"
+                                                name="check"
+                                            />
+                                        </span>
+                                    ) : (
+                                        <span
+                                            className={`shrink-0 text-label-xs ${
+                                                doc.status === "error"
+                                                    ? "text-red-500"
+                                                    : "text-soft-400"
+                                            }`}
+                                        >
+                                            {doc.status === "error"
+                                                ? "failed"
+                                                : "indexing"}
+                                        </span>
+                                    )}
                                 </button>
                                 {canManage && (
                                     <DocumentActions

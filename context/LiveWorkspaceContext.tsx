@@ -227,6 +227,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const hydratedProject = useRef<string | null>(null);
     const lastProjectId = useRef<string | null | undefined>(undefined);
     const transferSeq = useRef(0);
+    const lastLibrarySync = useRef(0);
+    const libraryRefreshInFlight = useRef(false);
 
     useEffect(() => {
         accessTokenRef.current = session?.accessToken ?? "";
@@ -338,13 +340,15 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         updateSession,
     ]);
 
-    const refreshLibrary = useCallback(async () => {
+    const refreshLibrary = useCallback(async (options?: { silent?: boolean }) => {
         if (!enabled || !session?.accessToken || !session.projectId) {
             setDocuments([]);
             setLibraryLoading(false);
             return;
         }
-        setLibraryLoading(true);
+        if (options?.silent && libraryRefreshInFlight.current) return;
+        libraryRefreshInFlight.current = true;
+        if (!options?.silent) setLibraryLoading(true);
         try {
             const library = await listLibrary(
                 session.accessToken,
@@ -354,9 +358,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 mapLibraryDocuments(library, session.companyId ?? "live")
             );
         } catch {
-            setDocuments([]);
+            if (!options?.silent) setDocuments([]);
         } finally {
-            setLibraryLoading(false);
+            libraryRefreshInFlight.current = false;
+            if (!options?.silent) setLibraryLoading(false);
         }
     }, [
         enabled,
@@ -731,6 +736,9 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     );
                     if (remaining === 0 && done > 0) {
                         await refreshLibrary();
+                    } else if (Date.now() - lastLibrarySync.current > 20000) {
+                        lastLibrarySync.current = Date.now();
+                        void refreshLibrary({ silent: true });
                     }
                     return;
                 }
@@ -766,6 +774,9 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                           );
                 if (!stillBusy) {
                     await refreshLibrary();
+                } else if (Date.now() - lastLibrarySync.current > 20000) {
+                    lastLibrarySync.current = Date.now();
+                    void refreshLibrary({ silent: true });
                 }
             } catch {
                 /* keep polling */
@@ -1062,6 +1073,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                         else uploaded += 1;
                     } else failed += 1;
                     publish();
+                    if (Date.now() - lastLibrarySync.current > 20000) {
+                        lastLibrarySync.current = Date.now();
+                        void refreshLibrary({ silent: true });
+                    }
                 }
             };
             const workers = Math.min(3, list.length);
@@ -1077,7 +1092,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 pushToast(
                     skippedNote
                         ? `Uploaded ${uploaded} documents. ${skippedNote}.`
-                        : `Uploaded ${uploaded} documents — injecting into AI…`,
+                        : `Uploaded ${uploaded} documents. Indexing continues if you leave.`,
                     "success"
                 );
             } else if (uploaded === 0 && skipped === 0) {
