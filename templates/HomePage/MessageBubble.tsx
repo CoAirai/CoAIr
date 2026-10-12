@@ -218,6 +218,11 @@ const MessageBubble = ({ message }: Props) => {
                         )}
                     </div>
                 )}
+                {!isUser && message.libraryNote ? (
+                    <p className="mt-2 text-label-xs leading-5 text-sub-600">
+                        {message.libraryNote}
+                    </p>
+                ) : null}
                 {!isUser && message.citations && message.citations.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
                         {message.citations.map((citation) => {

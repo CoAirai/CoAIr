@@ -197,6 +197,7 @@ class LibraryDocument(BaseModel):
     file_type: str = ""
     extension: str = ""
     status: str = "processing"
+    error: Optional[str] = None
     file_size_kb: int = 0
     table_names: List[str] = Field(default_factory=list)
     notice_extracted: bool = False

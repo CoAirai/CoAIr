@@ -107,9 +107,10 @@ const LiveModelsPage = () => {
                                 Models in use
                             </h2>
                             <p className="mt-1 text-label-sm text-sub-600">
-                                Chronology runs on the first model. Each row
-                                shows that model&apos;s recorded CA against the
-                                granted usage limit.
+                                QUERIS, CHRONOS, and FORENSIS use gemini-3.6-flash.
+                                Indexing and OCR use gemini-3.5-flash-lite. Each
+                                row shows that model&apos;s recorded CA against
+                                the granted usage limit.
                             </p>
                         </div>
                         {models.length === 0 ? (

@@ -711,6 +711,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 }
 
                 const queryId = conversationIdForRecent || makeId("q");
+                const libraryDocs = live.enabled ? live.documents : [];
+                const indexed = libraryDocs.filter((doc) => {
+                    const value = (doc.status || "completed").toLowerCase();
+                    return value === "completed" || value === "ready";
+                }).length;
+                const stillIndexing = libraryDocs.length - indexed;
                 const assistantMessage: Message = {
                     id: assistantMessageId,
                     role: "assistant",
@@ -718,6 +724,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     createdAt: new Date().toISOString(),
                     threadUserId: activeWorkspaceUserId,
                     citations,
+                    libraryNote:
+                        stillIndexing > 0
+                            ? `Answered from ${indexed.toLocaleString()} indexed files. ${stillIndexing.toLocaleString()} were still indexing.`
+                            : undefined,
                 };
                 const userMessage: Message = {
                     id: userMessageId,
@@ -779,6 +789,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             companyDocs,
             companyWorkspaces,
             consumeUserTokens,
+            live.documents,
+            live.enabled,
             rememberConversation,
             session,
         ]

@@ -121,6 +121,13 @@ function withIndexingCard(
     return same ? prev : next;
 }
 
+function formatStay(ms: number) {
+    const minutes = Math.max(1, Math.round(ms / 60000));
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.max(1, Math.round(minutes / 60));
+    return `${hours} hr`;
+}
+
 function indexingCard(done: number, total: number, failed: number): FileTransfer {
     return {
         id: "server-index",
@@ -165,6 +172,7 @@ type LiveWorkspaceValue = {
     ) => Promise<{ ok: boolean; uploaded: number; failed: number; error?: string }>;
     removeFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
     reinjectFile: (fileId: string) => Promise<{ ok: boolean; error?: string }>;
+    reinjectFiles: (fileIds: string[]) => Promise<{ ok: boolean; error?: string }>;
     pinFile: (
         fileId: string,
         pinned: boolean
@@ -665,6 +673,19 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         (transfer) =>
             transfer.phase === "injecting" || transfer.phase === "uploading"
     );
+    const uploadInFlight = fileTransfers.some(
+        (transfer) => transfer.phase === "uploading"
+    );
+
+    useEffect(() => {
+        if (!uploadInFlight) return;
+        const warn = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+        window.addEventListener("beforeunload", warn);
+        return () => window.removeEventListener("beforeunload", warn);
+    }, [uploadInFlight]);
 
     useEffect(() => {
         if (!enabled || !session?.accessToken || !session.projectId) return;
@@ -979,12 +1000,19 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             let skipped = 0;
             let failed = 0;
             let announced = false;
+            const startedAt = Date.now();
             const publish = () => {
                 const finished = uploaded + skipped + failed;
                 const sent = finished >= list.length;
                 const already =
                     skipped > 0
                         ? ` · ${skipped.toLocaleString()} already saved`
+                        : "";
+                const elapsed = Date.now() - startedAt;
+                const remaining = list.length - finished;
+                const stay =
+                    finished > 2 && remaining > 0
+                        ? ` · about ${formatStay((elapsed / finished) * remaining)} left`
                         : "";
                 setFileTransfers((prev) => {
                     if (sent) {
@@ -996,7 +1024,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                                   ...transfer,
                                   phase: "uploading",
                                   percent: Math.round((finished / list.length) * 100),
-                                  stage: `Sent ${finished.toLocaleString()} of ${list.length.toLocaleString()} to Amazon${already}`,
+                                  stage: `Sent ${finished.toLocaleString()} of ${list.length.toLocaleString()} to Amazon${already}${stay}`,
                                   error:
                                       failed > 0
                                           ? `${failed.toLocaleString()} failed`
@@ -1134,6 +1162,37 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
     );
 
+    const reinjectFiles = useCallback(
+        async (fileIds: string[]) => {
+            if (!session?.accessToken || !session.projectId) {
+                return { ok: false, error: "No project selected" };
+            }
+            const ids = fileIds.filter(Boolean);
+            if (ids.length === 0) return { ok: true };
+            try {
+                for (const fileId of ids) {
+                    await reindexProjectFile(
+                        session.accessToken,
+                        session.projectId,
+                        fileId
+                    );
+                }
+                await refreshLibrary();
+                pushToast(
+                    `Retrying ${ids.length.toLocaleString()} failed files`,
+                    "info"
+                );
+                return { ok: true };
+            } catch (err) {
+                const message =
+                    err instanceof Error ? err.message : "Reinject failed";
+                pushToast(message, "error");
+                return { ok: false, error: message };
+            }
+        },
+        [pushToast, refreshLibrary, session?.accessToken, session?.projectId]
+    );
+
     const pinFile = useCallback(
         async (fileId: string, pinned: boolean) => {
             if (!session?.accessToken || !session.projectId) {
@@ -1241,6 +1300,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             uploadFiles,
             removeFile,
             reinjectFile,
+            reinjectFiles,
             pinFile,
             downloadFile,
             refresh,
@@ -1261,6 +1321,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             pinFile,
             refresh,
             reinjectFile,
+            reinjectFiles,
             removeFile,
             selectProject,
             createProject,

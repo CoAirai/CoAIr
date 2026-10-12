@@ -16,6 +16,8 @@ export type Message = {
     authorName?: string;
     threadUserId?: string;
     citations?: Citation[];
+    /** How much of the library was indexed when this answer was written. */
+    libraryNote?: string;
 };
 
 export type KnowledgeBaseItem = {

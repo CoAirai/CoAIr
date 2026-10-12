@@ -9,6 +9,8 @@ export type CompanyDocument = {
     addedAt: string;
     /** live registry status: completed | processing | error */
     status?: string;
+    /** Why a failed file did not index. */
+    error?: string;
     pinned?: boolean;
 };
 

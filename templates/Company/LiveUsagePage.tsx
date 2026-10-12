@@ -17,6 +17,20 @@ import { useAuth } from "@/context/AuthContext";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
+function usageArea(task?: string) {
+    const value = (task || "").toLowerCase();
+    if (value.includes("forensic")) return "FORENSIS";
+    if (value.includes("chronology")) return "CHRONOS";
+    if (
+        value.startsWith("ingestion") ||
+        value === "ocr" ||
+        value === "metadata"
+    ) {
+        return "Indexing";
+    }
+    return "QUERIS";
+}
+
 const LiveUsagePage = () => {
     const { session } = useAuth();
     const token = session?.accessToken ?? "";
@@ -29,6 +43,22 @@ const LiveUsagePage = () => {
     const storageUsed = bytesToGb(usage?.storage_used_bytes);
     const storageLimit = bytesToGb(usage?.storage_limit_bytes);
     const totals = orgUsage?.totals;
+    const areaTotals = (orgUsage?.groups ?? []).reduce(
+        (areas, group) => {
+            const area = usageArea(group.task_type);
+            const current = areas[area];
+            current.calls += group.calls ?? 0;
+            current.tokens +=
+                (group.prompt_tokens ?? 0) + (group.completion_tokens ?? 0);
+            return areas;
+        },
+        {
+            Indexing: { calls: 0, tokens: 0 },
+            QUERIS: { calls: 0, tokens: 0 },
+            CHRONOS: { calls: 0, tokens: 0 },
+            FORENSIS: { calls: 0, tokens: 0 },
+        } as Record<string, { calls: number; tokens: number }>
+    );
     const groups = [...(orgUsage?.groups ?? [])].sort(
         (a, b) => (b.calls ?? 0) - (a.calls ?? 0)
     );
@@ -224,6 +254,30 @@ const LiveUsagePage = () => {
                                 </>
                             ) : null}
                         </p>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            {(
+                                ["Indexing", "QUERIS", "CHRONOS", "FORENSIS"] as const
+                            ).map((area) => (
+                                <div
+                                    key={area}
+                                    className="rounded-xl border border-stroke-soft-200 px-3 py-2"
+                                >
+                                    <p className="text-label-xs text-sub-600">
+                                        {area}
+                                    </p>
+                                    <p className="mt-1 text-label-sm text-strong-950 tabular-nums">
+                                        {numberFormatter.format(
+                                            areaTotals[area].tokens
+                                        )}{" "}
+                                        Gemini ·{" "}
+                                        {numberFormatter.format(
+                                            areaTotals[area].calls
+                                        )}{" "}
+                                        calls
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
                         {groups.length > 0 ? (
                             <ul className="mt-4 divide-y divide-stroke-soft-200">
                                 {groups.map((group, index) => (

@@ -82,6 +82,14 @@ const ChronologyHomePage = () => {
                 : (companyWorkspaces[company?.id ?? ""]?.documents ?? []),
         [company?.id, companyWorkspaces, live.documents, live.enabled]
     );
+    const indexingLeft = useMemo(
+        () =>
+            documents.filter((doc) => {
+                const value = (doc.status || "completed").toLowerCase();
+                return value !== "completed" && value !== "ready" && value !== "error";
+            }).length,
+        [documents]
+    );
 
     useEffect(() => {
         if (!live.enabled || !session?.accessToken || !session.projectId) {
@@ -258,8 +266,10 @@ const ChronologyHomePage = () => {
                     ) : null}
                     <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
                         <p className="text-label-xs text-sub-600">
-                            Reviewing sources improves coverage. You may also
-                            generate automatically.
+                            You can generate once the first documents are indexed.
+                            {indexingLeft > 0
+                                ? ` ${indexingLeft.toLocaleString()} files are still indexing, so this report is a first pass.`
+                                : " Reviewing sources improves coverage."}
                             {gate.kind === "trial"
                                 ? ` Trial remaining: ${gate.trialRemaining}.`
                                 : ""}
@@ -326,6 +336,11 @@ const ChronologyHomePage = () => {
                                             : report.status === "generating"
                                               ? "RUNNING"
                                               : "FAILED"}
+                                        {report.status === "failed" && report.error ? (
+                                            <span className="mt-0.5 block max-w-40 truncate text-label-xs">
+                                                {report.error.replaceAll("_", " ")}
+                                            </span>
+                                        ) : null}
                                     </span>
                                     {live.enabled && report.status === "failed" ? (
                                         <button

@@ -130,6 +130,7 @@ def _build_library_doc(r, include_notice: bool = True) -> LibraryDocument:
         file_type=r.file_type,
         extension=r.extension,
         status=r.status,
+        error=getattr(r, "error", None) or None,
         file_size_kb=r.file_size_kb,
         table_names=r.table_names,
         notice_extracted=r.notice_extracted,

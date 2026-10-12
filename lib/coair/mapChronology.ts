@@ -110,6 +110,7 @@ export function mapChronologyJob(
         topic: job.title || "",
         createdAt: job.created_at || new Date().toISOString(),
         status: mapReportStatus(job.status),
+        error: job.error || undefined,
         sections,
         sources,
     };

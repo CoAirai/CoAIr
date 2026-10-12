@@ -7,6 +7,7 @@ export type CoairLibraryDoc = {
     extension?: string;
     created_at?: string;
     status?: string;
+    error?: string | null;
     pinned?: boolean;
 };
 
@@ -38,6 +39,7 @@ export function mapLibraryDocuments(
         addedByUserId: "live",
         addedAt: doc.created_at || new Date().toISOString(),
         status: doc.status || "completed",
+        error: typeof doc.error === "string" && doc.error.trim() ? doc.error.trim() : undefined,
         pinned: Boolean(doc.pinned),
     }));
 }

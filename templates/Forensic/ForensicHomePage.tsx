@@ -329,9 +329,11 @@ const ForensicHomePage = () => {
                                 Persistent programme sources
                             </h2>
                             <p className="mt-2 max-w-3xl text-label-sm leading-6 text-sub-600">
-                                Primavera XER files remain inside this COAir
-                                project, count toward source storage, and never
-                                enter OCR, embeddings or document retrieval.
+                                Upload the programme here. Add documents in the
+                                library takes PDF and Word files, and will not
+                                take a programme. Primavera XER files stay in
+                                this project and do not go through document
+                                indexing.
                             </p>
                             <input
                                 ref={xerInputRef}

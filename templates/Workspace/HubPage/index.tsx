@@ -13,6 +13,8 @@ import UpgradePackageModal from "@/components/Workspace/UpgradePackageModal";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
+import { listForensicProgrammes } from "@/lib/coair/forensic";
+import { listReports } from "@/lib/coair/reports";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { companyForSession, resolveLiveAddOns } from "@/lib/workspace/companyForSession";
 import { planForCompany } from "@/lib/admin/plans";
@@ -37,7 +39,11 @@ const HubPage = () => {
     const searchParams = useSearchParams();
     const { session, signOut } = useAuth();
     const { companies, plans } = useAdminData();
-    const { moduleAddOns, enabled: liveEnabled } = useLiveWorkspace();
+    const {
+        moduleAddOns,
+        enabled: liveEnabled,
+        documents: liveDocuments,
+    } = useLiveWorkspace();
     const requested = searchParams.get("upgrade") as ModuleId | null;
     const [lockedModule, setLockedModule] = useState<ModuleId | null>(
         requested && MODULES.some((module) => module.id === requested)
@@ -47,6 +53,14 @@ const HubPage = () => {
     const [pendingModules, setPendingModules] = useState<Set<string>>(
         new Set()
     );
+    const [moduleLines, setModuleLines] = useState<{
+        chronology?: string;
+        forensic?: string;
+    }>({});
+    const indexingLeft = liveDocuments.filter((doc) => {
+        const value = (doc.status || "completed").toLowerCase();
+        return value !== "completed" && value !== "ready" && value !== "error";
+    }).length;
     const isCompanyAdmin = session?.role === "company_admin";
 
     const company = useMemo(
@@ -68,6 +82,44 @@ const HubPage = () => {
         .map((part) => part[0]?.toUpperCase() ?? "")
         .join("");
     const reduceMotion = useReducedMotion();
+
+    useEffect(() => {
+        if (!session?.accessToken || !session.projectId || session.source !== "live") {
+            setModuleLines({});
+            return;
+        }
+        let cancelled = false;
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        void Promise.all([
+            listReports(token, projectId, "chronology").catch(() => null),
+            listForensicProgrammes(token, projectId).catch(() => null),
+        ]).then(([reports, programmes]) => {
+            if (cancelled) return;
+            const running = (reports?.reports ?? []).filter((report) => {
+                const status = (report.status || "").toLowerCase();
+                return (
+                    status !== "ready" &&
+                    status !== "failed" &&
+                    status !== "credit_balance_exhausted"
+                );
+            }).length;
+            const programmeCount = programmes?.programmes?.length ?? 0;
+            setModuleLines({
+                chronology:
+                    running > 0
+                        ? `${running.toLocaleString()} ${running === 1 ? "report is" : "reports are"} running`
+                        : undefined,
+                forensic:
+                    programmeCount === 0
+                        ? "No programme loaded yet"
+                        : `${programmeCount.toLocaleString()} ${programmeCount === 1 ? "programme" : "programmes"} loaded`,
+            });
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [session?.accessToken, session?.projectId, session?.source]);
 
     useEffect(() => {
         if (!session?.accessToken || session.source !== "live") {
@@ -213,6 +265,19 @@ const HubPage = () => {
                                 role: session?.role,
                             });
                             const locked = gate.state === "locked";
+                            const liveLine =
+                                module.id === "chatbot"
+                                    ? indexingLeft > 0
+                                        ? `${indexingLeft.toLocaleString()} files still indexing`
+                                        : null
+                                    : module.id === "chronology"
+                                      ? moduleLines.chronology ||
+                                        (indexingLeft > 0
+                                            ? "You can start once the first documents are ready"
+                                            : null)
+                                      : module.id === "forensic"
+                                        ? moduleLines.forensic || null
+                                        : null;
                             return (
                                 <motion.button
                                     key={module.id}
@@ -273,6 +338,11 @@ const HubPage = () => {
                                     <p className="mt-4 text-label-sm leading-relaxed text-sub-600">
                                         {module.description}
                                     </p>
+                                    {liveLine ? (
+                                        <p className="mt-2 text-label-xs text-strong-950">
+                                            {liveLine}
+                                        </p>
+                                    ) : null}
                                     {locked ? (
                                         <p className="mt-auto pt-6 text-label-xs text-sub-600">
                                             {module.id === "chronology" ||

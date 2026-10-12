@@ -82,7 +82,8 @@ function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
     if (isOpenRun(run.status)) {
         return (
             <p className="mt-2 text-label-sm leading-6 text-sub-600">
-                Status: {run.status}. The engine is working through the XER.
+                Status: {run.status}. You can close this page. The run
+                continues, and coming back shows running, ready, or failed.
             </p>
         );
     }

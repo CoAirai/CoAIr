@@ -29,6 +29,23 @@ function fileState(status?: string): FileState {
     return "indexing";
 }
 
+function shortError(raw?: string) {
+    const lines = (raw || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const text = (lines[lines.length - 1] || "").replaceAll("_", " ");
+    if (!text) return "";
+    return text.length > 90 ? `${text.slice(0, 87)}…` : text;
+}
+
+function attentionRank(status?: string) {
+    const state = fileState(status);
+    if (state === "failed") return 0;
+    if (state === "indexing") return 1;
+    return 2;
+}
+
 function DocumentActions({
     onRemove,
     onReinject,
@@ -153,8 +170,9 @@ type GroupProps = {
     canManage: boolean;
     defaultOpen?: boolean;
     loading?: boolean;
-    onOpen: (name: string) => void;
+    onAsk: (name: string) => void;
     onRemove: (id: string) => void;
+    onRetryFailed?: (ids: string[]) => void;
     onReinject?: (id: string) => void;
     onPin?: (id: string, pinned: boolean) => void;
     onDownload?: (id: string, name: string) => void;
@@ -167,8 +185,9 @@ const DocumentGroup = ({
     canManage,
     defaultOpen = false,
     loading = false,
-    onOpen,
+    onAsk,
     onRemove,
+    onRetryFailed,
     onReinject,
     onPin,
     onDownload,
@@ -195,7 +214,11 @@ const DocumentGroup = ({
                 if (needle && !doc.name.toLowerCase().includes(needle)) return false;
                 return true;
             })
-            .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
+            .sort((a, b) => {
+                const rank = attentionRank(a.status) - attentionRank(b.status);
+                if (rank !== 0) return rank;
+                return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+            });
     }, [items, needle, statusFilter]);
     const visible = ordered.slice(0, visibleCount);
     const hiddenCount = Math.max(0, ordered.length - visible.length);
@@ -300,6 +323,19 @@ const DocumentGroup = ({
                                     );
                                 })}
                             </div>
+                            {statusFilter === "failed" &&
+                            counts.failed > 0 &&
+                            onRetryFailed ? (
+                                <button
+                                    type="button"
+                                    className="mt-1.5 h-7 rounded-lg px-2 text-label-xs text-blue-500 hover:bg-weak-50"
+                                    onClick={() =>
+                                        onRetryFailed(ordered.map((doc) => doc.id))
+                                    }
+                                >
+                                    Retry failed
+                                </button>
+                            ) : null}
                         </div>
                     )}
                     {items.length === 0 && (
@@ -322,17 +358,21 @@ const DocumentGroup = ({
                                 transition={chatTransition}
                                 className="flex items-center gap-1 rounded-xl px-1"
                             >
-                                <button
-                                    type="button"
-                                    className="flex h-10 min-w-0 grow items-center gap-2 rounded-xl px-2 text-left text-label-sm transition-colors hover:bg-weak-50"
-                                    onClick={() => onOpen(doc.name)}
-                                >
+                                <div className="flex min-h-10 min-w-0 grow items-center gap-2 rounded-xl px-2 py-1 text-left text-label-sm">
                                     <Icon
                                         className="shrink-0 fill-strong-950"
                                         name={icon}
                                     />
-                                    <span className="min-w-0 grow truncate">
-                                        {doc.name}
+                                    <span className="min-w-0 grow">
+                                        <span className="block truncate">
+                                            {doc.name}
+                                        </span>
+                                        {fileState(doc.status) === "failed" &&
+                                        shortError(doc.error) ? (
+                                            <span className="block truncate text-label-xs text-red-500">
+                                                {shortError(doc.error)}
+                                            </span>
+                                        ) : null}
                                     </span>
                                     {doc.pinned && (
                                         <span className="shrink-0 text-label-xs text-blue-500">
@@ -363,7 +403,14 @@ const DocumentGroup = ({
                                                 : "indexing"}
                                         </span>
                                     )}
-                                </button>
+                                    <button
+                                        type="button"
+                                        className="shrink-0 rounded-lg px-1.5 py-1 text-label-xs text-blue-500 hover:bg-weak-50"
+                                        onClick={() => onAsk(doc.name)}
+                                    >
+                                        Ask
+                                    </button>
+                                </div>
                                 {canManage && (
                                     <DocumentActions
                                         onRemove={() => onRemove(doc.id)}
@@ -437,6 +484,13 @@ const KnowledgeBase = () => {
         (doc) => doc.kind === "communication"
     );
     const sheets = documents.filter((doc) => doc.kind === "spreadsheet");
+    const libraryCounts = documents.reduce(
+        (counts, doc) => {
+            counts[fileState(doc.status)] += 1;
+            return counts;
+        },
+        { indexed: 0, indexing: 0, failed: 0 }
+    );
     const canRemove = session?.role === "company_admin";
     const canManage = live.enabled || canRemove;
     const docsLoading = live.enabled && live.libraryLoading;
@@ -548,6 +602,11 @@ const KnowledgeBase = () => {
                                     }}
                                 />
                             </div>
+                            {transfer.id === "server-index" ? (
+                                <div className="mt-1 text-label-xs text-sub-600">
+                                    You can close this page. Indexing continues on the server.
+                                </div>
+                            ) : null}
                             {transfer.error && (
                                 <div className="mt-1 text-label-xs text-red-500">
                                     {transfer.error}
@@ -581,6 +640,13 @@ const KnowledgeBase = () => {
                         />
                     )}
                 </button>
+                {documents.length > 0 ? (
+                    <p className="px-3 py-1 text-label-xs text-soft-400 tabular-nums">
+                        {libraryCounts.failed.toLocaleString()} failed ·{" "}
+                        {libraryCounts.indexing.toLocaleString()} indexing ·{" "}
+                        {libraryCounts.indexed.toLocaleString()} indexed
+                    </p>
+                ) : null}
 
                 <DocumentGroup
                     title="Documents"
@@ -589,8 +655,13 @@ const KnowledgeBase = () => {
                     canManage={canManage}
                     defaultOpen
                     loading={docsLoading}
-                    onOpen={(name) => void askAboutDocument(name)}
+                    onAsk={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
+                    onRetryFailed={
+                        live.enabled
+                            ? (ids) => void live.reinjectFiles(ids)
+                            : undefined
+                    }
                     onReinject={
                         live.enabled
                             ? (id) => void live.reinjectFile(id)
@@ -613,8 +684,13 @@ const KnowledgeBase = () => {
                     items={communications}
                     canManage={canManage}
                     loading={docsLoading}
-                    onOpen={(name) => void askAboutDocument(name)}
+                    onAsk={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
+                    onRetryFailed={
+                        live.enabled
+                            ? (ids) => void live.reinjectFiles(ids)
+                            : undefined
+                    }
                     onReinject={
                         live.enabled
                             ? (id) => void live.reinjectFile(id)
@@ -637,8 +713,13 @@ const KnowledgeBase = () => {
                     items={sheets}
                     canManage={canManage}
                     loading={docsLoading}
-                    onOpen={(name) => void askAboutDocument(name)}
+                    onAsk={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
+                    onRetryFailed={
+                        live.enabled
+                            ? (ids) => void live.reinjectFiles(ids)
+                            : undefined
+                    }
                     onReinject={
                         live.enabled
                             ? (id) => void live.reinjectFile(id)
