@@ -19,6 +19,16 @@ function isIndexed(status?: string) {
     return value === "completed" || value === "ready";
 }
 
+type FileState = "indexed" | "indexing" | "failed";
+type StatusFilter = "all" | FileState;
+
+function fileState(status?: string): FileState {
+    const value = (status || "").toLowerCase();
+    if (value === "error" || value === "failed") return "failed";
+    if (isIndexed(status)) return "indexed";
+    return "indexing";
+}
+
 function DocumentActions({
     onRemove,
     onReinject,
@@ -164,35 +174,79 @@ const DocumentGroup = ({
     onDownload,
 }: GroupProps) => {
     const [open, setOpen] = useState(defaultOpen);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [query, setQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-    const ordered = [...items].sort(
-        (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
-    );
+    const searchRef = useRef<HTMLInputElement>(null);
+    const counts = useMemo(() => {
+        const next = { indexed: 0, indexing: 0, failed: 0 };
+        for (const doc of items) next[fileState(doc.status)] += 1;
+        return next;
+    }, [items]);
+    const needle = query.trim().toLowerCase();
+    const filtering = needle.length > 0 || statusFilter !== "all";
+    const ordered = useMemo(() => {
+        return items
+            .filter((doc) => {
+                if (statusFilter !== "all" && fileState(doc.status) !== statusFilter) {
+                    return false;
+                }
+                if (needle && !doc.name.toLowerCase().includes(needle)) return false;
+                return true;
+            })
+            .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
+    }, [items, needle, statusFilter]);
     const visible = ordered.slice(0, visibleCount);
-    const hiddenCount = Math.max(0, items.length - visible.length);
+    const hiddenCount = Math.max(0, ordered.length - visible.length);
+
+    useEffect(() => {
+        setVisibleCount(PAGE_SIZE);
+    }, [needle, statusFilter]);
+
+    useEffect(() => {
+        if (searchOpen) searchRef.current?.focus();
+    }, [searchOpen]);
 
     return (
         <div className="mt-2">
-            <button
-                type="button"
-                className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-label-sm text-strong-950 hover:bg-weak-50"
-                onClick={() => setOpen((value) => !value)}
-                aria-expanded={open}
-            >
-                <Icon className="shrink-0 fill-strong-950" name={icon} />
-                <span className="grow truncate">
-                    {title}
-                    <span className="ml-1 text-label-xs text-soft-400 tabular-nums">
-                        ({items.length})
+            <div className="flex items-center">
+                <button
+                    type="button"
+                    className="flex h-10 min-w-0 grow items-center gap-2 rounded-xl px-3 text-left text-label-sm text-strong-950 hover:bg-weak-50"
+                    onClick={() => setOpen((value) => !value)}
+                    aria-expanded={open}
+                >
+                    <Icon className="shrink-0 fill-strong-950" name={icon} />
+                    <span className="grow truncate">
+                        {title}
+                        <span className="ml-1 text-label-xs text-soft-400 tabular-nums">
+                            ({filtering ? ordered.length : items.length})
+                        </span>
                     </span>
-                </span>
-                <Icon
-                    className={`shrink-0 fill-soft-400 transition-transform duration-300 ${
-                        open ? "rotate-180" : ""
-                    }`}
-                    name="chevron"
-                />
-            </button>
+                    <Icon
+                        className={`shrink-0 fill-soft-400 transition-transform duration-300 ${
+                            open ? "rotate-180" : ""
+                        }`}
+                        name="chevron"
+                    />
+                </button>
+                <button
+                    type="button"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-weak-50"
+                    aria-label={`Search ${title}`}
+                    aria-expanded={searchOpen}
+                    onClick={() => {
+                        setOpen(true);
+                        setSearchOpen((value) => !value);
+                    }}
+                >
+                    <Icon
+                        className={filtering ? "fill-blue-500" : "fill-strong-950"}
+                        name="search"
+                    />
+                </button>
+            </div>
             <motion.div
                 initial={false}
                 animate={{
@@ -203,9 +257,59 @@ const DocumentGroup = ({
                 className="overflow-hidden"
             >
                 <div className="mt-1 flex flex-col gap-0.5">
+                    {searchOpen && (
+                        <div className="px-2 pb-1">
+                            <input
+                                ref={searchRef}
+                                value={query}
+                                onChange={(event) => setQuery(event.target.value)}
+                                placeholder="Find a file"
+                                aria-label={`Find a file in ${title}`}
+                                className="h-8 w-full rounded-lg border border-stroke-soft-200 bg-white-0 px-2.5 text-label-xs text-strong-950 outline-none placeholder:text-soft-400"
+                            />
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                                {(
+                                    [
+                                        ["indexed", "Indexed"],
+                                        ["indexing", "Indexing"],
+                                        ["failed", "Failed"],
+                                    ] as const
+                                ).map(([key, label]) => {
+                                    const active = statusFilter === key;
+                                    return (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            className={`h-6 rounded-full border px-2 text-label-xs tabular-nums ${
+                                                active
+                                                    ? key === "failed"
+                                                        ? "border-red-500 text-red-500"
+                                                        : key === "indexed"
+                                                          ? "border-green-600 text-green-600"
+                                                          : "border-strong-950 text-strong-950"
+                                                    : "border-stroke-soft-200 text-soft-400 hover:text-strong-950"
+                                            }`}
+                                            onClick={() =>
+                                                setStatusFilter((current) =>
+                                                    current === key ? "all" : key
+                                                )
+                                            }
+                                        >
+                                            {label} {counts[key]}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                     {items.length === 0 && (
                         <div className="px-3 py-2 text-label-xs text-soft-400">
                             {loading ? "Loading…" : "No files yet"}
+                        </div>
+                    )}
+                    {items.length > 0 && ordered.length === 0 && (
+                        <div className="px-3 py-2 text-label-xs text-soft-400">
+                            No matching files
                         </div>
                     )}
                     <AnimatePresence initial={false}>
