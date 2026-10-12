@@ -499,9 +499,12 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
 
     const selectProject = useCallback(
         (projectId: string) => {
+            if (fileTransfers.some((transfer) => transfer.phase === "uploading")) {
+                return;
+            }
             updateSession({ projectId });
         },
-        [updateSession]
+        [fileTransfers, updateSession]
     );
 
     const createProject = useCallback(

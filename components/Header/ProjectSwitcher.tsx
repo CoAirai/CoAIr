@@ -16,6 +16,7 @@ const ProjectSwitcher = () => {
         createProject,
         renameProject,
         deleteProject,
+        fileTransfers,
     } = useLiveWorkspace();
     const [draft, setDraft] = useState("");
     const [creating, setCreating] = useState(false);
@@ -28,6 +29,9 @@ const ProjectSwitcher = () => {
     );
     const canManage =
         session?.role === "company_admin" || session?.role === "super_admin";
+    const sending = fileTransfers.some(
+        (transfer) => transfer.phase === "uploading"
+    );
 
     if (!enabled) return null;
 
@@ -65,7 +69,15 @@ const ProjectSwitcher = () => {
 
     return (
         <Menu as="div" className="relative min-w-0">
-            <MenuButton className="flex h-10 w-full min-w-0 max-w-72 items-center justify-between gap-2 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-left text-label-sm text-strong-950 outline-none transition-colors hover:border-stroke-sub-300 max-lg:max-w-36">
+            <MenuButton
+                disabled={sending}
+                title={
+                    sending
+                        ? "This send is still going to the current project"
+                        : undefined
+                }
+                className="flex h-10 w-full min-w-0 max-w-72 items-center justify-between gap-2 rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-left text-label-sm text-strong-950 outline-none transition-colors hover:border-stroke-sub-300 disabled:cursor-not-allowed disabled:opacity-60 max-lg:max-w-36"
+            >
                 <span className="truncate">
                     {loading && projects.length === 0
                         ? "Loading projects"

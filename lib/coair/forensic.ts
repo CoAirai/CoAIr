@@ -1,4 +1,4 @@
-import { coairFetch } from "./client";
+import { COAIR_API_BASE, CoairApiError, coairFetch } from "./client";
 
 export type CoairProgramme = {
     file_id: string;
@@ -32,6 +32,13 @@ export type CoairForensicTableRow = {
     na_reason?: string | null;
 };
 
+export type CoairForensicArtifact = {
+    artifact_id: string;
+    name: string;
+    kind?: string;
+    mime_type?: string;
+};
+
 export type CoairForensicRun = {
     run_id?: string;
     status?: string;
@@ -39,6 +46,7 @@ export type CoairForensicRun = {
     module_slug?: string;
     error?: string;
     error_code?: string;
+    artifacts?: CoairForensicArtifact[];
     result?: {
         title?: string;
         summary?: string;
@@ -208,6 +216,35 @@ export async function createForensicRun(
             body: { parameters: bodyParameters, ai_narrative: false },
         }
     );
+}
+
+export async function downloadForensicArtifact(
+    token: string,
+    projectId: string,
+    artifactId: string,
+    fileName: string
+) {
+    const response = await fetch(
+        `${COAIR_API_BASE}/forensic/artifacts/${encodeURIComponent(artifactId)}/download`,
+        {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "X-Project-ID": projectId,
+            },
+        }
+    );
+    if (!response.ok) {
+        throw new CoairApiError("The result file is not ready", response.status);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName || "forensic-result";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
 }
 
 export async function listForensicRuns(

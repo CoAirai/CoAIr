@@ -47,13 +47,15 @@ function attentionRank(status?: string) {
 }
 
 function DocumentActions({
+    onAsk,
     onRemove,
     onReinject,
     onPin,
     pinLabel,
     onDownload,
 }: {
-    onRemove: () => void;
+    onAsk?: () => void;
+    onRemove?: () => void;
     onReinject?: () => void;
     onPin?: () => void;
     pinLabel?: string;
@@ -111,6 +113,18 @@ function DocumentActions({
                     className="fixed z-50 w-40 rounded-xl border border-stroke-soft-200 bg-white-0 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]"
                     style={{ top: position.top, left: position.left }}
                 >
+                    {onAsk && (
+                        <button
+                            type="button"
+                            className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-xs text-strong-950 hover:bg-weak-50"
+                            onClick={() => {
+                                setOpen(false);
+                                onAsk();
+                            }}
+                        >
+                            Ask
+                        </button>
+                    )}
                     {onPin && (
                         <button
                             type="button"
@@ -147,16 +161,18 @@ function DocumentActions({
                             Index again
                         </button>
                     )}
-                    <button
-                        type="button"
-                        className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-xs text-red-500 hover:bg-weak-50"
-                        onClick={() => {
-                            setOpen(false);
-                            onRemove();
-                        }}
-                    >
-                        Remove
-                    </button>
+                    {onRemove && (
+                        <button
+                            type="button"
+                            className="flex h-9 w-full items-center rounded-lg px-3 text-left text-label-xs text-red-500 hover:bg-weak-50"
+                            onClick={() => {
+                                setOpen(false);
+                                onRemove();
+                            }}
+                        >
+                            Remove
+                        </button>
+                    )}
                 </div>
             )}
         </div>
@@ -356,92 +372,70 @@ const DocumentGroup = ({
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -4 }}
                                 transition={chatTransition}
-                                className="flex items-start gap-1 rounded-xl px-1"
+                                className="flex items-center gap-1 rounded-xl px-1"
                             >
-                                <div className="min-w-0 grow rounded-xl px-2 py-1.5 text-left text-label-sm">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                        <Icon
-                                            className="shrink-0 fill-strong-950"
-                                            name={icon}
-                                        />
-                                        <span className="min-w-0 grow truncate">
+                                <div className="flex min-h-10 min-w-0 grow items-center gap-2 rounded-xl px-2 py-1 text-left text-label-sm">
+                                    <Icon
+                                        className="shrink-0 fill-strong-950"
+                                        name={icon}
+                                    />
+                                    <span className="min-w-0 grow">
+                                        <span className="block truncate">
                                             {doc.name}
                                         </span>
-                                    </div>
-                                    {fileState(doc.status) === "failed" &&
-                                    shortError(doc.error) ? (
-                                        <span className="mt-0.5 block truncate pl-6 text-label-xs text-red-500">
-                                            {shortError(doc.error)}
+                                        {fileState(doc.status) === "failed" &&
+                                        shortError(doc.error) ? (
+                                            <span className="block truncate text-label-xs text-red-500">
+                                                {shortError(doc.error)}
+                                            </span>
+                                        ) : null}
+                                    </span>
+                                    {doc.pinned ? (
+                                        <span className="shrink-0 text-label-xs text-blue-500">
+                                            pinned
                                         </span>
                                     ) : null}
-                                    <div className="mt-1 flex items-center gap-2 pl-6">
-                                        {doc.pinned && (
-                                            <span className="shrink-0 text-label-xs text-blue-500">
-                                                pinned
-                                            </span>
-                                        )}
-                                        {isIndexed(doc.status) ? (
-                                            <span
-                                                className="flex h-5 w-5 shrink-0 items-center justify-center"
-                                                title="Indexed"
-                                                aria-label="Indexed"
-                                            >
-                                                <Icon
-                                                    className="fill-green-600"
-                                                    name="check"
-                                                />
-                                            </span>
-                                        ) : (
-                                            <span
-                                                className={`shrink-0 text-label-xs ${
-                                                    doc.status === "error"
-                                                        ? "text-red-500"
-                                                        : "text-soft-400"
-                                                }`}
-                                            >
-                                                {doc.status === "error"
-                                                    ? "failed"
-                                                    : "indexing"}
-                                            </span>
-                                        )}
-                                        <button
-                                            type="button"
-                                            className="shrink-0 rounded-lg px-1.5 py-1 text-label-xs text-blue-500 hover:bg-weak-50"
-                                            onClick={() => onAsk(doc.name)}
+                                    {isIndexed(doc.status) ? (
+                                        <span
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center"
+                                            title="Indexed"
+                                            aria-label="Indexed"
                                         >
-                                            Ask
-                                        </button>
-                                    </div>
+                                            <Icon
+                                                className="fill-green-600"
+                                                name="check"
+                                            />
+                                        </span>
+                                    ) : fileState(doc.status) === "failed" ? (
+                                        <span className="shrink-0 text-label-xs text-red-500">
+                                            failed
+                                        </span>
+                                    ) : null}
                                 </div>
-                                {canManage && (
-                                    <DocumentActions
-                                        onRemove={() => onRemove(doc.id)}
-                                        onReinject={
-                                            onReinject
-                                                ? () => onReinject(doc.id)
-                                                : undefined
-                                        }
-                                        onPin={
-                                            onPin
-                                                ? () =>
-                                                      onPin(
-                                                          doc.id,
-                                                          !doc.pinned
-                                                      )
-                                                : undefined
-                                        }
-                                        pinLabel={doc.pinned ? "Unpin" : "Pin"}
-                                        onDownload={
-                                            onDownload
-                                                ? () =>
-                                                      onDownload(
-                                                          doc.id,
-                                                          doc.name
-                                                      )
-                                                : undefined
-                                        }
-                                    />
-                                )}
+                                <DocumentActions
+                                    onAsk={() => onAsk(doc.name)}
+                                    onRemove={
+                                        canManage
+                                            ? () => onRemove(doc.id)
+                                            : undefined
+                                    }
+                                    onReinject={
+                                        onReinject
+                                            ? () => onReinject(doc.id)
+                                            : undefined
+                                    }
+                                    onPin={
+                                        onPin
+                                            ? () => onPin(doc.id, !doc.pinned)
+                                            : undefined
+                                    }
+                                    pinLabel={doc.pinned ? "Unpin" : "Pin"}
+                                    onDownload={
+                                        onDownload
+                                            ? () => onDownload(doc.id, doc.name)
+                                            : undefined
+                                    }
+                                />
                             </motion.div>
                         ))}
                     </AnimatePresence>

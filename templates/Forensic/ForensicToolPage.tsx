@@ -20,6 +20,7 @@ import {
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
 import {
     createForensicRun,
+    downloadForensicArtifact,
     forensicRunParameters,
     listForensicProgrammes,
     listForensicRuns,
@@ -209,6 +210,7 @@ const ForensicToolPage = ({ toolId }: Props) => {
     const [delayFinish, setDelayFinish] = useState("");
     const [cabCodes, setCabCodes] = useState("");
     const [cabAnchor, setCabAnchor] = useState("");
+    const [downloadingArtifact, setDownloadingArtifact] = useState("");
 
     const programmeWorkspaces = live.enabled ? liveWorkspaces : mockWorkspaces;
     const activeWorkspace =
@@ -518,6 +520,54 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                         }. This is a deterministic mock result for product review — live engine output comes later.`}
                                     </p>
                                 )}
+                                {live.enabled && (run?.artifacts ?? []).length > 0 ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {(run?.artifacts ?? []).map((artifact) => (
+                                            <button
+                                                key={artifact.artifact_id}
+                                                type="button"
+                                                disabled={
+                                                    downloadingArtifact ===
+                                                    artifact.artifact_id
+                                                }
+                                                className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-60"
+                                                onClick={() => {
+                                                    if (
+                                                        !session?.accessToken ||
+                                                        !session.projectId
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    setDownloadingArtifact(
+                                                        artifact.artifact_id
+                                                    );
+                                                    setRunError("");
+                                                    void downloadForensicArtifact(
+                                                        session.accessToken,
+                                                        session.projectId,
+                                                        artifact.artifact_id,
+                                                        artifact.name
+                                                    )
+                                                        .catch((err) => {
+                                                            setRunError(
+                                                                err instanceof Error
+                                                                    ? err.message
+                                                                    : "Could not download the result."
+                                                            );
+                                                        })
+                                                        .finally(() =>
+                                                            setDownloadingArtifact("")
+                                                        );
+                                                }}
+                                            >
+                                                {downloadingArtifact ===
+                                                artifact.artifact_id
+                                                    ? "Preparing…"
+                                                    : `Download ${artifact.name}`}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
                                 {runError ? (
                                     <p className="mt-3 text-label-sm text-red-500">
                                         {runError}
