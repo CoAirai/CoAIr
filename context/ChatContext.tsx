@@ -15,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { mapLiveCitations } from "@/lib/coair/mapCitations";
+import { reportFinishedResponse } from "@/lib/coair/notices";
 import {
     archiveConversation,
     createConversation,
@@ -786,6 +787,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     };
                 });
                 setSelectedQueryId(queryId);
+                if (
+                    isLiveChat &&
+                    typeof document !== "undefined" &&
+                    document.hidden &&
+                    session.accessToken
+                ) {
+                    void reportFinishedResponse(
+                        session.accessToken,
+                        "QUERIS answered",
+                        trimmed.slice(0, 180),
+                        "/workspace/chat"
+                    ).catch(() => undefined);
+                }
                 return true;
             } catch (error) {
                 const stopped =

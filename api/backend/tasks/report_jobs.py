@@ -418,11 +418,13 @@ def _worker() -> None:
                        footnote_count=int(result.get("audit", {}).get("footnote_records", 0)),
                        verification="PASS" if not result.get("removed_claims") else "FILTERED")
             if job["module"] == "chronology":
+                from src.activity_notify import deliver_activity
                 from src.auth_notify import send_analysis_finished_email
-                send_analysis_finished_email(
-                    job["username"],
-                    f"Chronology \"{job['title']}\" is ready.",
+                detail = f"Chronology \"{job['title']}\" is ready."
+                deliver_activity(
+                    job["username"], "Chronology ready", detail, "/workspace/chronology"
                 )
+                send_analysis_finished_email(job["username"], detail)
         except Exception as exc:
             from src.billing_store import CreditBalanceExceededError
             exhausted = isinstance(exc, CreditBalanceExceededError)
@@ -435,11 +437,13 @@ def _worker() -> None:
                 error="credit_balance_exhausted" if exhausted else str(exc),
             )
             if job["module"] == "chronology":
+                from src.activity_notify import deliver_activity
                 from src.auth_notify import send_analysis_finished_email
-                send_analysis_finished_email(
-                    job["username"],
-                    f"Chronology \"{job['title']}\" failed.",
+                detail = f"Chronology \"{job['title']}\" failed."
+                deliver_activity(
+                    job["username"], "Chronology failed", detail, "/workspace/chronology"
                 )
+                send_analysis_finished_email(job["username"], detail)
 
 
 def start_report_workers() -> None:

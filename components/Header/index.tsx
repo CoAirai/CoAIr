@@ -7,6 +7,7 @@ import ModalSettings from "@/components/ModalSettings";
 import Image from "@/components/Image";
 import AvatarMenu from "@/components/AvatarMenu";
 import ProjectSwitcher from "@/components/Header/ProjectSwitcher";
+import ResponseBell from "@/components/Header/ResponseBell";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
@@ -134,6 +135,7 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
                             COAIr
                         </div>
                     </div>
+                    <ResponseBell />
                     <AvatarMenu
                         initials={initials(session?.name ?? "U") || "U"}
                         name={session?.name}

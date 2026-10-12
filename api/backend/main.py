@@ -66,6 +66,7 @@ from backend.api import (
     documents,
     indexing,
     library,
+    notices,
     knowledge,
     org_admin,
     org_ops,
@@ -149,6 +150,7 @@ def create_app() -> FastAPI:
 
     # Public — login lives here, no auth required.
     app.include_router(auth.router, prefix="/api", tags=["auth"])
+    app.include_router(notices.router, prefix="/api", tags=["notices"], dependencies=auth_dep)
     app.include_router(
         access_requests.router, prefix="/api", tags=["access-requests"],
     )

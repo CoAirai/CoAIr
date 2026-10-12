@@ -41,6 +41,7 @@ export function writeNotificationPrefs(prefs: NotificationPrefs): void {
     if (typeof window === "undefined") return;
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+        window.dispatchEvent(new Event("coair:notification-prefs"));
     } catch {
         /* ignore */
     }

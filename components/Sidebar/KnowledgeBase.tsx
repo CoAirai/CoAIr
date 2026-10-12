@@ -397,20 +397,38 @@ const DocumentGroup = ({
                                     ) : null}
                                     {isIndexed(doc.status) ? (
                                         <span
-                                            className="flex h-5 w-5 shrink-0 items-center justify-center"
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-600"
                                             title="Indexed"
                                             aria-label="Indexed"
                                         >
                                             <Icon
-                                                className="fill-green-600"
+                                                className="!size-3 fill-white"
                                                 name="check"
                                             />
                                         </span>
                                     ) : fileState(doc.status) === "failed" ? (
-                                        <span className="shrink-0 text-label-xs text-red-500">
-                                            failed
+                                        <span
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500"
+                                            title="Failed"
+                                            aria-label="Failed"
+                                        >
+                                            <Icon
+                                                className="!size-3 fill-white"
+                                                name="close"
+                                            />
                                         </span>
-                                    ) : null}
+                                    ) : (
+                                        <span
+                                            className="flex h-5 w-5 shrink-0 items-center justify-center"
+                                            title="Indexing"
+                                            aria-label="Indexing"
+                                        >
+                                            <Icon
+                                                className="!size-5 fill-amber-500"
+                                                name="alert-circle"
+                                            />
+                                        </span>
+                                    )}
                                 </div>
                                 <DocumentActions
                                     onAsk={() => onAsk(doc.name)}

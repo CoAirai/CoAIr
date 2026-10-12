@@ -353,13 +353,16 @@ def _maybe_email_indexing_done(job: Dict) -> None:
         from src.user_store import get_user_store
 
         user = get_user_store().get_user(username)
-        if not user_email_notifications_enabled(user):
-            return
         detail = (
             f"{ready:,} files are indexed."
             if failed == 0
             else f"{ready:,} files are indexed and {failed:,} failed."
         )
+        from src.activity_notify import deliver_activity
+
+        deliver_activity(username, "Indexing finished", detail, "/workspace")
+        if not user_email_notifications_enabled(user):
+            return
         result = send_coair_email(
             "indexing_finished",
             recipient_address(username),
