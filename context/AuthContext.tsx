@@ -5,6 +5,7 @@ import {
     useCallback,
     useContext,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useState,
     type ReactNode,
@@ -138,6 +139,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [session, setSession] = useState<AuthSession | null>(null);
     const [ready, setReady] = useState(false);
 
+    useLayoutEffect(() => {
+        if (isSignedOutFlag() || shouldDeferAppSession()) return;
+        const stored = readStoredSession();
+        if (!stored || shouldIgnoreSessionOnThisPortal(stored)) return;
+        setSession(stored);
+        setReady(true);
+    }, []);
+
     useEffect(() => {
         let cancelled = false;
 
@@ -244,19 +253,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
+                const stored = readStoredSession();
+                if (stored && !cancelled && !shouldIgnoreSessionOnThisPortal(stored)) {
+                    setSession(stored);
+                    setReady(true);
+                }
+
                 // Cross-subdomain: hydrate Supabase from shared refresh cookie
                 // before reading local sb-* (which is origin-scoped).
                 const hydrated = await hydrateSharedSupabaseSession();
-
-                const stored = readStoredSession();
-                if (stored && !cancelled) {
-                    if (shouldIgnoreSessionOnThisPortal(stored)) {
-                        setSession(null);
-                    } else {
-                        setSession(stored);
-                        setReady(true);
-                    }
-                }
 
                 const supabase = getSupabaseBrowser();
                 const token =
