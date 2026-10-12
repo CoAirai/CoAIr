@@ -144,7 +144,7 @@ function DocumentActions({
                                 onReinject();
                             }}
                         >
-                            Reinject
+                            Index again
                         </button>
                     )}
                     <button
@@ -544,6 +544,9 @@ const KnowledgeBase = () => {
     ]);
 
     const removeDoc = (documentId: string) => {
+        const name =
+            documents.find((doc) => doc.id === documentId)?.name || "this file";
+        if (!window.confirm(`Remove ${name} from this project?`)) return;
         if (live.enabled) {
             void live.removeFile(documentId);
             return;

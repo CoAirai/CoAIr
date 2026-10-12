@@ -70,13 +70,18 @@ const DocumentPreview = () => {
     }, [open]);
 
     useEffect(() => {
-        if (!expanded) return;
+        if (!open) return;
         const onKey = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setExpanded(false);
+            if (event.key !== "Escape") return;
+            if (expanded) {
+                setExpanded(false);
+                return;
+            }
+            closeDocumentPreview();
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [expanded]);
+    }, [closeDocumentPreview, expanded, open]);
 
     useEffect(() => {
         if (!open || !citation || !isLive || !session?.accessToken || !session.projectId) {
@@ -269,8 +274,9 @@ const DocumentPreview = () => {
                     <div className="flex shrink-0 items-center gap-1 text-label-xs text-sub-600">
                         <button
                             type="button"
-                            className="rounded-lg px-1.5 py-1 hover:bg-weak-50 disabled:opacity-40"
+                            className="flex h-11 min-w-11 items-center justify-center rounded-lg hover:bg-weak-50 disabled:opacity-40"
                             disabled={page <= 1 || loading}
+                            aria-label="Previous page"
                             onClick={() =>
                                 setPage((value) => Math.max(1, value - 1))
                             }
@@ -282,8 +288,9 @@ const DocumentPreview = () => {
                         </span>
                         <button
                             type="button"
-                            className="rounded-lg px-1.5 py-1 hover:bg-weak-50 disabled:opacity-40"
+                            className="flex h-11 min-w-11 items-center justify-center rounded-lg hover:bg-weak-50 disabled:opacity-40"
                             disabled={page >= pageCount || loading}
+                            aria-label="Next page"
                             onClick={() =>
                                 setPage((value) =>
                                     Math.min(pageCount, value + 1)
@@ -403,6 +410,13 @@ const DocumentPreview = () => {
                                                         ))}
                                                 </tbody>
                                             </table>
+                                            {(live.rows || []).length > 40 ? (
+                                                <p className="mt-2 text-label-xs text-sub-600">
+                                                    Showing 40 of{" "}
+                                                    {(live.rows || []).length.toLocaleString()}{" "}
+                                                    rows.
+                                                </p>
+                                            ) : null}
                                         </div>
                                     )}
                                 {!loading &&
@@ -442,29 +456,6 @@ const DocumentPreview = () => {
                         </div>
                     </div>
 
-                    <div className="mt-3 shrink-0 border-t border-stroke-soft-200 pt-3">
-                        <div className="mb-2 text-label-xs uppercase tracking-[0.16em] text-soft-400">
-                            Extracted text
-                        </div>
-                        <motion.div
-                            key={`extract-${citation?.documentId ?? "doc"}-${page}`}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={chatTransition}
-                            className="max-h-40 overflow-auto pr-1 text-label-sm leading-6 text-strong-950"
-                        >
-                            <div className="text-label-xs text-soft-400">
-                                Page {page}
-                            </div>
-                            <p className="mt-1 whitespace-pre-wrap text-sub-600">
-                                {loading
-                                    ? "Loading…"
-                                    : extracted ||
-                                      citation?.excerpt ||
-                                      "No extracted text."}
-                            </p>
-                        </motion.div>
-                    </div>
                 </div>
             </div>
         </motion.aside>

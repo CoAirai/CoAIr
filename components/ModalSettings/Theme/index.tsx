@@ -28,13 +28,14 @@ const Theme = ({}) => {
     return (
         <div className="">
             <div className="text-label-md">Themes</div>
-            <div className="mb-3 text-sub-600">
-                Choose your style or customize your theme
+            <div className="mb-3 text-label-xs text-sub-600">
+                Light, dark, or match this device
             </div>
             <div className="flex gap-3 max-md:flex-col">
                 {themes.map((button) => (
-                    <div
-                        className={`flex flex-col flex-1 border rounded-lg bg-white-0 overflow-hidden cursor-pointer transition-colors hover:border-blue-500 ${
+                    <button
+                        type="button"
+                        className={`flex flex-col flex-1 border rounded-lg bg-white-0 overflow-hidden cursor-pointer text-left transition-colors hover:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                             theme === button.value
                                 ? "border-blue-500 dark:text-static-black"
                                 : "border-stroke-soft-200"
@@ -87,7 +88,7 @@ const Theme = ({}) => {
                             </div>
                             <div className="text-label-sm">{button.name}</div>
                         </div>
-                    </div>
+                    </button>
                 ))}
             </div>
         </div>

@@ -33,12 +33,12 @@ const LiveCompanyDashboardPage = () => {
                         value={numberFormatter.format(projectCount)}
                     />
                     <StatCard
-                        label="Tokens used"
+                        label="CA used"
                         value={numberFormatter.format(usage?.used_tokens ?? 0)}
-                        hint={`of ${numberFormatter.format(usage?.token_limit ?? 0)}`}
+                        hint={`of ${numberFormatter.format(usage?.token_limit ?? 0)} CA · open Usage for the breakdown`}
                     />
                     <StatCard
-                        label="Tokens remaining"
+                        label="CA remaining"
                         value={numberFormatter.format(
                             Math.max(
                                 0,
@@ -46,7 +46,7 @@ const LiveCompanyDashboardPage = () => {
                                     (usage?.used_tokens ?? 0)
                             )
                         )}
-                        hint="Same pool as token limit"
+                        hint="Same company CA pool"
                     />
                 </div>
             </CompanyDashboardSkeleton>

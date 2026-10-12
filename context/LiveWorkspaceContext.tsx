@@ -1248,7 +1248,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     fileId
                 );
                 await refreshLibrary();
-                pushToast("Reinjecting document", "info");
+                pushToast("Indexing again", "info");
                 return { ok: true };
             } catch (err) {
                 const message =

@@ -6,13 +6,13 @@ import Image from "@/components/Image";
 import { useChat } from "@/context/ChatContext";
 
 const PanelMessage = () => {
-    const { sendMessage, isReplying, sendError } = useChat();
+    const { sendMessage, stopReply, isReplying, sendError } = useChat();
     const [message, setMessage] = useState("");
 
     const submit = async () => {
         const text = message;
-        setMessage("");
-        await sendMessage(text);
+        const sent = await sendMessage(text);
+        if (sent) setMessage("");
     };
 
     const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -39,25 +39,43 @@ const PanelMessage = () => {
                         aria-label="Message"
                     />
                     {sendError ? (
-                        <div className="mt-2 text-label-sm text-red-500">
-                            {sendError}
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-label-sm text-red-500">
+                            <span>{sendError}</span>
+                            <button
+                                type="button"
+                                className="text-blue-500 hover:underline disabled:opacity-60"
+                                disabled={isReplying}
+                                onClick={() => void submit()}
+                            >
+                                Retry
+                            </button>
                         </div>
                     ) : null}
                 </div>
                 <button
                     type="button"
-                    className="mb-1 flex size-10 shrink-0 items-center justify-center rounded-xl bg-strong-950 text-0 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
-                    disabled={!canSend}
-                    onClick={() => void submit()}
-                    aria-label="Send message"
+                    className="mb-1 flex h-10 min-w-10 shrink-0 items-center justify-center rounded-xl bg-strong-950 px-2 text-label-xs text-white-0 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+                    disabled={isReplying ? false : !canSend}
+                    onClick={() => {
+                        if (isReplying) {
+                            stopReply();
+                            return;
+                        }
+                        void submit();
+                    }}
+                    aria-label={isReplying ? "Stop reply" : "Send message"}
                 >
-                    <Image
-                        className="w-4 opacity-100 invert"
-                        src="/images/sent.svg"
-                        width={16}
-                        height={16}
-                        alt=""
-                    />
+                    {isReplying ? (
+                        "Stop"
+                    ) : (
+                        <Image
+                            className="w-4 opacity-100 invert"
+                            src="/images/sent.svg"
+                            width={16}
+                            height={16}
+                            alt=""
+                        />
+                    )}
                 </button>
             </div>
         </div>

@@ -120,7 +120,7 @@ export const FORENSIC_NAV_GROUPS: ForensicNavGroup[] = [
                 id: "report-assembler",
                 label: "Report Assembler",
                 href: "/workspace/forensic/report-assembler",
-                summary: "Assemble selected analyses into a downloadable report.",
+                summary: "A downloadable claim report is not available from this page yet.",
             },
         ],
     },

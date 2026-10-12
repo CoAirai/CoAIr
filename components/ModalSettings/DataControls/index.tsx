@@ -62,12 +62,12 @@ const DataControls = () => {
         anchor.download = "coair-account-export.json";
         anchor.click();
         URL.revokeObjectURL(url);
-        setMessage("Account export downloaded.");
+        setMessage("Profile copy downloaded. This file is your name, email, and role.");
     };
 
     const onManageSharedLinks = () => {
         markSharedLinksManaged();
-        setMessage("Shared links cleared for this device.");
+        setMessage("Shared-link preference cleared on this device. Files on the server are unchanged.");
     };
 
     const onArchiveChats = () => {
@@ -83,8 +83,8 @@ const DataControls = () => {
             }
             setMessage(
                 keys.length
-                    ? `Archived ${keys.length} local chat item(s).`
-                    : "No local chats to archive."
+                    ? `Cleared ${keys.length} chat item(s) stored in this browser. Server conversations stay.`
+                    : "No chats stored in this browser."
             );
         } catch {
             setMessage("Could not archive local chats.");
@@ -93,7 +93,7 @@ const DataControls = () => {
 
     const onDeleteAccount = async () => {
         const ok = window.confirm(
-            "This will sign you out and clear local account data on this device. Continue?"
+            "This signs you out and clears the avatar and phone saved in this browser. The account on the server stays. Continue?"
         );
         if (!ok) return;
         setBusy(true);
@@ -127,40 +127,60 @@ const DataControls = () => {
                 />
             </div>
             <div className="flex justify-between items-center gap-6 mb-3 pb-3 border-b border-stroke-soft-200">
-                <div className="text-label-md">Export Data</div>
+                <div>
+                    <div className="text-label-md">Download a copy of your profile</div>
+                    <div className="text-label-xs text-sub-600">
+                        Name, email, and role. This is not your documents.
+                    </div>
+                </div>
                 <Button
                     type="button"
                     className="!h-10 !rounded-[0.625rem] !bg-weak-50"
                     isStroke
                     onClick={onExport}
                 >
-                    Export
+                    Download
                 </Button>
             </div>
             <div className="flex justify-between items-center gap-6 mb-3 pb-3 border-b border-stroke-soft-200">
-                <div className="text-label-md">Shared Links</div>
+                <div>
+                    <div className="text-label-md">Shared links on this device</div>
+                    <div className="text-label-xs text-sub-600">
+                        Clears the preference saved in this browser.
+                    </div>
+                </div>
                 <Button
                     type="button"
                     className="!h-10 !rounded-[0.625rem] !bg-weak-50"
                     isStroke
                     onClick={onManageSharedLinks}
                 >
-                    Manage
+                    Clear
                 </Button>
             </div>
             <div className="flex justify-between items-center gap-6 mb-3 pb-3 border-b border-stroke-soft-200">
-                <div className="text-label-md">Archive all chats</div>
+                <div>
+                    <div className="text-label-md">Chats stored in this browser</div>
+                    <div className="text-label-xs text-sub-600">
+                        Server conversations stay in the project.
+                    </div>
+                </div>
                 <Button
                     type="button"
                     className="!h-10 !rounded-[0.625rem] !bg-weak-50"
                     isStroke
                     onClick={onArchiveChats}
                 >
-                    Archive all
+                    Clear
                 </Button>
             </div>
             <div className="flex justify-between items-center gap-6">
-                <div className="text-label-md">Delete Account</div>
+                <div>
+                    <div className="text-label-md">Sign out on this browser</div>
+                    <div className="text-label-xs text-sub-600">
+                        Clears the avatar and phone saved here. The account stays.
+                    </div>
+                </div>
                 <Button
                     type="button"
                     className="!h-10 !rounded-[0.625rem]"
@@ -168,7 +188,7 @@ const DataControls = () => {
                     disabled={busy}
                     onClick={() => void onDeleteAccount()}
                 >
-                    Delete Account
+                    Sign out
                 </Button>
             </div>
             {message ? (

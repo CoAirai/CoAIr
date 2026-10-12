@@ -19,6 +19,7 @@ import ForensicShell from "./ForensicShell";
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
 import {
     createForensicWorkspace,
+    deleteForensicProgramme,
     listForensicProgrammes,
     listForensicWorkspaces,
     uploadForensicProgramme,
@@ -114,6 +115,7 @@ const ForensicHomePage = () => {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [workspaceName, setWorkspaceName] = useState("Programme Analysis");
     const [error, setError] = useState("");
+    const [uploadingName, setUploadingName] = useState("");
 
     useEffect(() => {
         if (gate?.state === "locked") {
@@ -178,43 +180,83 @@ const ForensicHomePage = () => {
         return <ModulePortalSkeleton />;
     }
 
+    const refreshProgrammes = async () => {
+        if (!session?.accessToken || !session.projectId) return;
+        const listed = await listForensicProgrammes(
+            session.accessToken,
+            session.projectId
+        );
+        setLiveFiles(
+            (listed.programmes ?? []).map((row) =>
+                mapProgramme(row, session.companyId ?? "live")
+            )
+        );
+    };
+
     const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
+        const picked = Array.from(event.target.files ?? []);
         event.target.value = "";
-        if (!file) return;
+        const files = picked.filter((file) =>
+            file.name.toLowerCase().endsWith(".xer")
+        );
+        if (picked.length !== files.length) {
+            setError("Only .xer programme files can be added here.");
+        }
+        if (files.length === 0) return;
         if (live.enabled) {
             if (!session?.accessToken || !session.projectId) return;
             try {
-                await uploadForensicProgramme(
-                    session.accessToken,
-                    session.projectId,
-                    file
-                );
-                const listed = await listForensicProgrammes(
-                    session.accessToken,
-                    session.projectId
-                );
-                setLiveFiles(
-                    (listed.programmes ?? []).map((row) =>
-                        mapProgramme(row, session.companyId ?? "live")
-                    )
-                );
-                setError("");
+                for (const file of files) {
+                    setUploadingName(file.name);
+                    await uploadForensicProgramme(
+                        session.accessToken,
+                        session.projectId,
+                        file
+                    );
+                }
+                await refreshProgrammes();
+                if (picked.length === files.length) setError("");
             } catch (err) {
                 setError(
                     err instanceof Error ? err.message : "Upload failed"
                 );
+            } finally {
+                setUploadingName("");
             }
             return;
         }
-        const sizeMb = Math.max(0.1, file.size / (1024 * 1024));
-        addForensicXerFile({
-            companyId: company.id,
-            name: file.name.toLowerCase().endsWith(".xer")
-                ? file.name
-                : `${file.name.replace(/\.[^.]+$/, "")}.xer`,
-            sizeMb,
-        });
+        for (const file of files) {
+            const sizeMb = Math.max(0.1, file.size / (1024 * 1024));
+            addForensicXerFile({
+                companyId: company.id,
+                name: file.name,
+                sizeMb,
+            });
+        }
+    };
+
+    const onRemoveProgramme = async (file: ForensicXerFile) => {
+        if (!live.enabled || !session?.accessToken || !session.projectId) return;
+        const confirmed = window.confirm(
+            `Remove ${file.name} from this project?`
+        );
+        if (!confirmed) return;
+        try {
+            await deleteForensicProgramme(
+                session.accessToken,
+                session.projectId,
+                file.id
+            );
+            setSelectedIds((current) =>
+                current.filter((entry) => entry !== file.id)
+            );
+            await refreshProgrammes();
+            setError("");
+        } catch (err) {
+            setError(
+                err instanceof Error ? err.message : "Could not remove that programme."
+            );
+        }
     };
 
     const toggleFile = (id: string) => {
@@ -284,7 +326,7 @@ const ForensicHomePage = () => {
                     <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                             <p className="text-[11px] uppercase tracking-[0.22em] text-soft-400">
-                                Programme / deterministic engine
+                                Programme analysis
                             </p>
                             <h1 className="mt-3 text-4xl font-medium tracking-tight text-strong-950 max-md:text-3xl">
                                 Data Intake
@@ -338,16 +380,20 @@ const ForensicHomePage = () => {
                             <input
                                 ref={xerInputRef}
                                 type="file"
-                                accept=".xer,.txt,.xml,application/octet-stream"
+                                accept=".xer"
+                                multiple
                                 className="hidden"
                                 onChange={onUpload}
                             />
                             <button
                                 type="button"
-                                className="mt-5 h-11 rounded-xl border border-stroke-soft-200 bg-white-0 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                disabled={Boolean(uploadingName)}
+                                className="mt-5 h-11 rounded-xl border border-stroke-soft-200 bg-white-0 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-60"
                                 onClick={() => xerInputRef.current?.click()}
                             >
-                                Upload XER files
+                                {uploadingName
+                                    ? `Uploading ${uploadingName}…`
+                                    : "Upload XER files"}
                             </button>
                         </section>
 
@@ -383,6 +429,18 @@ const ForensicHomePage = () => {
                                             <span className="shrink-0 text-sub-600">
                                                 {file.sizeMb.toFixed(1)} MB
                                             </span>
+                                            {live.enabled ? (
+                                                <button
+                                                    type="button"
+                                                    className="shrink-0 text-label-xs text-red-500"
+                                                    onClick={(event) => {
+                                                        event.preventDefault();
+                                                        void onRemoveProgramme(file);
+                                                    }}
+                                                >
+                                                    Remove
+                                                </button>
+                                            ) : null}
                                         </label>
                                     ))}
                                 </div>

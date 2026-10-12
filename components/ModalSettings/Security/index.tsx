@@ -165,7 +165,7 @@ const Security = ({ changePassword }: Props) => {
             </div>
             <div className="flex justify-between gap-6 max-md:flex-col max-md:gap-3">
                 <div className="max-w-101">
-                    <div className="text-label-md">Log out of all devices</div>
+                    <div className="text-label-md">Sign out on this browser</div>
                     <div className="text-sub-600">
                         Ends your current session on this browser and clears
                         shared portal sign-in. Sign in again on other devices if
@@ -179,7 +179,7 @@ const Security = ({ changePassword }: Props) => {
                     disabled={loggingOut}
                     onClick={() => void onLogoutAll()}
                 >
-                    {loggingOut ? "Signing out…" : "Log out all"}
+                    {loggingOut ? "Signing out…" : "Sign out"}
                 </Button>
             </div>
         </div>

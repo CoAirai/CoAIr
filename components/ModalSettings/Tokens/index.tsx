@@ -135,7 +135,7 @@ const Tokens = () => {
                 <button
                     type="submit"
                     disabled={busy}
-                    className="h-10 rounded-full bg-blue-500 px-4 text-label-sm text-white-0 disabled:opacity-60"
+                    className="h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 disabled:opacity-60"
                 >
                     {busy ? "Sending…" : "Send request"}
                 </button>

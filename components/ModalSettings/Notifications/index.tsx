@@ -60,7 +60,9 @@ const Notifications = () => {
             <div className="flex items-center mb-3 pb-3 border-b border-stroke-soft-200">
                 <div className="mr-auto">
                     <div className="text-label-md">Responses</div>
-                    <div className="text-sub-600">AI response alerts</div>
+                    <div className="text-label-xs text-sub-600">
+                        Saved for later. COAir does not send these yet.
+                    </div>
                 </div>
                 <Switch
                     checked={prefs.responses}
@@ -73,7 +75,9 @@ const Notifications = () => {
             <div className="flex items-center mb-3 pb-3 border-b border-stroke-soft-200">
                 <div className="mr-auto">
                     <div className="text-label-md">Push</div>
-                    <div className="text-sub-600">Browser / app push alerts</div>
+                    <div className="text-label-xs text-sub-600">
+                        Saved for later. COAir does not send these yet.
+                    </div>
                 </div>
                 <Switch
                     checked={prefs.push}

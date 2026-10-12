@@ -45,7 +45,8 @@ type ChatContextValue = {
     activeWorkspaceUserId: string | null;
     setActiveKbId: (id: string) => void;
     setActiveWorkspaceUserId: (id: string) => void;
-    sendMessage: (text: string) => Promise<void>;
+    sendMessage: (text: string) => Promise<boolean>;
+    stopReply: () => void;
     selectQuery: (queryId: string) => void;
     archivedQueries: RecentQuery[];
     pinQuery: (queryId: string, pinned: boolean) => Promise<void>;
@@ -151,6 +152,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     );
     const [isReplying, setIsReplying] = useState(false);
     const [sendError, setSendError] = useState<string | null>(null);
+    const chatAbortRef = useRef<AbortController | null>(null);
+    const chatStoppedRef = useRef(false);
     const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
     const [activeKbId, setActiveKbId] = useState("assistant");
     const [openCitation, setOpenCitation] = useState<Citation | null>(null);
@@ -624,24 +627,33 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         ]
     );
 
+    const stopReply = useCallback(() => {
+        chatStoppedRef.current = true;
+        chatAbortRef.current?.abort();
+        setIsReplying(false);
+    }, []);
+
     const sendMessage = useCallback(
         async (text: string) => {
             const trimmed = text.trim();
-            if (!trimmed || !session?.userId || !activeWorkspaceUserId) return;
+            if (!trimmed || !session?.userId || !activeWorkspaceUserId) return false;
 
-            const live = session.source === "live" && Boolean(session.accessToken);
+            const isLiveChat = session.source === "live" && Boolean(session.accessToken);
 
-            if (!live) {
+            if (!isLiveChat) {
                 const consumed = consumeUserTokens(activeWorkspaceUserId, 1);
                 if (!consumed.ok) {
                     setSendError(consumed.error ?? "No tokens remaining");
-                    return;
+                    return false;
                 }
             }
 
             setSendError(null);
             setSelectedQueryId(null);
             setIsReplying(true);
+            chatStoppedRef.current = false;
+            const abort = new AbortController();
+            chatAbortRef.current = abort;
 
             const userMessageId = makeId("u");
             const assistantMessageId = makeId("a");
@@ -670,7 +682,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 let assistantText: string;
                 let citations: Citation[] | undefined;
 
-                if (live) {
+                if (isLiveChat) {
                     if (!session.projectId) {
                         throw new Error(
                             "This account has no project yet. Seed the sandbox, then sign in again."
@@ -693,6 +705,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         conversationId,
                         message: trimmed,
                         requestId: makeId("req"),
+                        signal: abort.signal,
                     });
                     assistantText = response.assistant_text;
                     citations = mapLiveCitations(response.citations);
@@ -773,13 +786,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     };
                 });
                 setSelectedQueryId(queryId);
+                return true;
             } catch (error) {
-                setSendError(
-                    error instanceof Error
-                        ? error.message
-                        : "Chat request failed"
-                );
+                const stopped =
+                    chatStoppedRef.current ||
+                    (error instanceof Error && error.message === "stopped");
+                setThreadsByUserId((prev) => ({
+                    ...prev,
+                    [activeWorkspaceUserId]: (
+                        prev[activeWorkspaceUserId] ?? []
+                    ).filter((entry) => entry.id !== userMessageId),
+                }));
+                if (!stopped) {
+                    setSendError(
+                        error instanceof Error
+                            ? error.message
+                            : "Chat request failed"
+                    );
+                }
+                return false;
             } finally {
+                if (chatAbortRef.current === abort) chatAbortRef.current = null;
                 setIsReplying(false);
             }
         },
@@ -825,6 +852,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setActiveKbId,
             setActiveWorkspaceUserId,
             sendMessage,
+            stopReply,
             selectQuery,
             pinQuery,
             renameQuery,
@@ -856,6 +884,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             selectedQueryId,
             sendError,
             sendMessage,
+            stopReply,
             setActiveWorkspaceUserId,
         ]
     );

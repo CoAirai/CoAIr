@@ -35,13 +35,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         }, 4200);
     }, []);
 
+    const dismissToast = useCallback((id: string) => {
+        setItems((prev) => prev.filter((item) => item.id !== id));
+    }, []);
+
     const value = useMemo(() => ({ pushToast }), [pushToast]);
 
     return (
         <ToastContext.Provider value={value}>
             {children}
             <div
-                className="pointer-events-none fixed bottom-4 right-4 z-[80] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2"
+                className="pointer-events-none fixed bottom-4 right-4 z-[80] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2 max-md:bottom-24"
                 aria-live="polite"
             >
                 <AnimatePresence initial={false}>
@@ -52,7 +56,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: 8, scale: 0.98 }}
                             transition={{ duration: 0.2 }}
-                            className={`pointer-events-auto rounded-xl border px-4 py-3 text-label-sm shadow-lg ${
+                            role={item.tone === "error" ? "alert" : "status"}
+                            className={`pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 text-label-sm shadow-lg ${
                                 item.tone === "success"
                                     ? "border-green-500/20 bg-white-0 text-strong-950"
                                     : item.tone === "error"
@@ -60,7 +65,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                                       : "border-stroke-soft-200 bg-white-0 text-strong-950"
                             }`}
                         >
-                            {item.message}
+                            <span className="min-w-0 grow">{item.message}</span>
+                            <button
+                                type="button"
+                                className="shrink-0 text-label-xs text-sub-600"
+                                aria-label="Dismiss"
+                                onClick={() => dismissToast(item.id)}
+                            >
+                                Close
+                            </button>
                         </motion.div>
                     ))}
                 </AnimatePresence>

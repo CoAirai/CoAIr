@@ -21,6 +21,7 @@ import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
 import {
     createForensicRun,
     defaultForensicRunParameters,
+    listForensicProgrammes,
     listForensicRuns,
     listForensicWorkspaces,
     type CoairForensicRun,
@@ -200,6 +201,9 @@ const ForensicToolPage = ({ toolId }: Props) => {
     const [run, setRun] = useState<CoairForensicRun | null>(null);
     const [runError, setRunError] = useState("");
     const [running, setRunning] = useState(false);
+    const [programmeNames, setProgrammeNames] = useState<Record<string, string>>(
+        {}
+    );
 
     const programmeWorkspaces = live.enabled ? liveWorkspaces : mockWorkspaces;
     const activeWorkspace =
@@ -241,6 +245,16 @@ const ForensicToolPage = ({ toolId }: Props) => {
         const projectId = session.projectId;
         const companyId = session.companyId ?? "live";
         let cancelled = false;
+        void listForensicProgrammes(token, projectId)
+            .then((payload) => {
+                if (cancelled) return;
+                const names: Record<string, string> = {};
+                for (const row of payload.programmes ?? []) {
+                    names[row.file_id] = row.name;
+                }
+                setProgrammeNames(names);
+            })
+            .catch(() => undefined);
         void listForensicWorkspaces(token, projectId)
             .then((payload) => {
                 if (cancelled) return;
@@ -377,7 +391,7 @@ const ForensicToolPage = ({ toolId }: Props) => {
                     <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                             <p className="text-[11px] uppercase tracking-[0.22em] text-soft-400">
-                                Programme / deterministic engine
+                                Programme analysis
                             </p>
                             <h1 className="mt-3 text-4xl font-medium tracking-tight text-strong-950 max-md:text-3xl">
                                 {tool.label}
@@ -448,14 +462,25 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                     {activeWorkspace.name}
                                 </p>
                                 <p className="mt-2 text-label-xs text-sub-600">
-                                    {live.enabled
-                                        ? `${activeWorkspace.programmeIds.length} programme(s)`
-                                        : `${activeProgrammes.length} XER programme${
-                                              activeProgrammes.length === 1
-                                                  ? ""
-                                                  : "s"
-                                          }`}
+                                    {programmeCount === 1
+                                        ? "1 programme file"
+                                        : `${programmeCount} programme files`}
                                 </p>
+                                <ul className="mt-2 space-y-1">
+                                    {(live.enabled
+                                        ? activeWorkspace.programmeIds.map(
+                                              (id) => programmeNames[id] || id
+                                          )
+                                        : activeProgrammes.map((file) => file.name)
+                                    ).map((name, index) => (
+                                        <li
+                                            key={`${name}-${index}`}
+                                            className="truncate text-label-xs text-strong-950"
+                                        >
+                                            {name}
+                                        </li>
+                                    ))}
+                                </ul>
                             </section>
                             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:col-span-2">
                                 <h2 className="text-label-xs uppercase tracking-[0.16em] text-soft-400">
@@ -477,7 +502,7 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                         {runError}
                                     </p>
                                 ) : null}
-                                {live.enabled ? (
+                                {live.enabled && tool.id !== "report-assembler" ? (
                                     <button
                                         type="button"
                                         disabled={!canLiveRun || runBusy || shortOnFiles}
@@ -493,11 +518,17 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                                 : `Run ${tool.label}`}
                                     </button>
                                 ) : null}
+                                {live.enabled && tool.id === "report-assembler" ? (
+                                    <p className="mt-3 text-label-xs leading-5 text-sub-600">
+                                        A downloadable claim report is not
+                                        available from this page yet. Run the
+                                        other checks in this workspace first.
+                                    </p>
+                                ) : null}
                                 {live.enabled && !canLiveRun ? (
                                     <p className="mt-3 text-label-xs leading-5 text-sub-600">
-                                        This analysis needs dates or a baseline
-                                        that are not on the programme yet. Check
-                                        the XER set in Data Intake.
+                                        {requirement?.extra ||
+                                            "This analysis needs dates or a baseline that are not on the programme yet. Check the XER set in Data Intake."}
                                     </p>
                                 ) : null}
                             </section>

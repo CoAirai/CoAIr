@@ -245,6 +245,7 @@ const ChronologyHomePage = () => {
                                 onChange={(event) =>
                                     setStartDate(event.target.value)
                                 }
+                                max={endDate || undefined}
                                 className="h-11 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
                             />
                         </label>
@@ -255,6 +256,7 @@ const ChronologyHomePage = () => {
                             <input
                                 type="date"
                                 value={endDate}
+                                min={startDate || undefined}
                                 onChange={(event) => setEndDate(event.target.value)}
                                 className="h-11 w-full rounded-xl border border-stroke-soft-200 bg-white-0 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
                             />
@@ -287,7 +289,7 @@ const ChronologyHomePage = () => {
                         <div className="flex gap-2">
                             <button
                                 type="submit"
-                                disabled={submitting}
+                                disabled={submitting || !topic.trim()}
                                 className="h-11 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-60"
                             >
                                 {submitting

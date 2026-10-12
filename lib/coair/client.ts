@@ -19,6 +19,7 @@ type CoairFetchOptions = {
     projectId?: string | null;
     body?: unknown;
     timeoutMs?: number;
+    signal?: AbortSignal;
 };
 
 export function isApiUnreachable(error: unknown): boolean {
@@ -71,6 +72,11 @@ async function once<T>(
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    if (options.signal) {
+        if (options.signal.aborted) controller.abort();
+        else options.signal.addEventListener("abort", onExternalAbort, { once: true });
+    }
 
     try {
         const response = await fetch(`${COAIR_API_BASE}${path}`, {
@@ -155,6 +161,9 @@ async function once<T>(
             throw error;
         }
         if (error instanceof DOMException && error.name === "AbortError") {
+            if (options.signal?.aborted) {
+                throw new CoairApiError("stopped", 0);
+            }
             throw new CoairApiError("Request timed out", 0);
         }
         throw new CoairApiError(
@@ -163,6 +172,7 @@ async function once<T>(
         );
     } finally {
         clearTimeout(timer);
+        options.signal?.removeEventListener("abort", onExternalAbort);
     }
 }
 

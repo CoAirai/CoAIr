@@ -74,6 +74,17 @@ export async function uploadForensicProgramme(
     );
 }
 
+export async function deleteForensicProgramme(
+    token: string,
+    projectId: string,
+    fileId: string
+) {
+    return coairFetch<void>(
+        `/forensic/programmes/${encodeURIComponent(fileId)}`,
+        { method: "DELETE", token, projectId }
+    );
+}
+
 export async function listForensicWorkspaces(token: string, projectId: string) {
     return coairFetch<{ workspaces: CoairForensicWorkspace[] }>(
         "/forensic/workspaces",

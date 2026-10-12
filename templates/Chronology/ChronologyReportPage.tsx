@@ -38,6 +38,9 @@ const ChronologyReportPage = ({ reportId }: Props) => {
     );
     const [retrying, setRetrying] = useState(false);
     const [pollEpoch, setPollEpoch] = useState(0);
+    const [downloading, setDownloading] = useState(false);
+    const [downloadError, setDownloadError] = useState("");
+    const [sourcesOpen, setSourcesOpen] = useState(false);
 
     useEffect(() => {
         if (!live || !session?.accessToken || !session.projectId) return;
@@ -97,18 +100,28 @@ const ChronologyReportPage = ({ reportId }: Props) => {
     }, [report]);
 
     const downloadWord = async () => {
-        if (!live || !session?.accessToken || !session.projectId) return;
-        const blob = await downloadReportDocument(
-            session.accessToken,
-            session.projectId,
-            reportId
-        );
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${report?.title || "chronology"}.docx`;
-        link.click();
-        URL.revokeObjectURL(url);
+        if (!live || !session?.accessToken || !session.projectId || downloading) return;
+        setDownloading(true);
+        setDownloadError("");
+        try {
+            const blob = await downloadReportDocument(
+                session.accessToken,
+                session.projectId,
+                reportId
+            );
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${report?.title || "chronology"}.docx`;
+            link.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            setDownloadError(
+                err instanceof Error ? err.message : "Could not prepare the Word file."
+            );
+        } finally {
+            setDownloading(false);
+        }
     };
 
     if (live && !report && !liveError) {
@@ -146,7 +159,7 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                     className="text-blue-500 hover:underline"
                     onClick={() => setOpenSource(citation)}
                 >
-                    [{citation.srcId}]
+                    {citation.name}, p.{citation.page}
                 </button>
             );
         });
@@ -180,14 +193,32 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                                           ? "failed — retry to run it again"
                                           : "read-only record"}
                                 </p>
+                                {liveError ? (
+                                    <p className="mt-2 text-label-sm text-red-500">
+                                        {liveError}
+                                    </p>
+                                ) : null}
+                                {downloadError ? (
+                                    <p className="mt-2 text-label-sm text-red-500">
+                                        {downloadError}
+                                    </p>
+                                ) : null}
+                                <button
+                                    type="button"
+                                    className="mt-3 h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 md:hidden"
+                                    onClick={() => setSourcesOpen(true)}
+                                >
+                                    Sources · {report.sources.length}
+                                </button>
                             </div>
                             {live && report.status === "ready" ? (
                                 <button
                                     type="button"
+                                    disabled={downloading}
                                     onClick={() => void downloadWord()}
-                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50"
+                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-60"
                                 >
-                                    Download Word ↓
+                                    {downloading ? "Preparing Word…" : "Download Word ↓"}
                                 </button>
                             ) : null}
                             {live && report.status === "failed" ? (
@@ -252,8 +283,45 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                     </div>
                 </main>
 
+                {sourcesOpen ? (
+                    <div className="fixed inset-0 z-40 flex flex-col bg-white-0 p-4 md:hidden">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-label-sm text-strong-950">
+                                Sources · {report.sources.length}
+                            </h2>
+                            <button
+                                type="button"
+                                className="h-11 rounded-xl px-3 text-label-sm text-blue-500"
+                                onClick={() => setSourcesOpen(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-auto">
+                            {report.sources.map((source) => (
+                                <button
+                                    key={source.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setOpenSource(source);
+                                        setSourcesOpen(false);
+                                    }}
+                                    className="block w-full rounded-xl border border-stroke-soft-200 bg-white-0 p-3 text-left"
+                                >
+                                    <div className="truncate text-label-sm text-strong-950">
+                                        {source.name}
+                                    </div>
+                                    <div className="mt-1 text-label-xs text-sub-600">
+                                        p.{source.page}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
+
                 {!openSource ? (
-                    <aside className="w-80 shrink-0 border-l border-stroke-soft-200 bg-weak-50/60 p-5">
+                    <aside className="hidden w-80 shrink-0 border-l border-stroke-soft-200 bg-weak-50/60 p-5 md:block">
                         <h2 className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
                             Verified sources · {report.sources.length}
                         </h2>

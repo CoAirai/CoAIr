@@ -136,7 +136,7 @@ const LiveUsagePage = () => {
                                     {pool.members.map((member) => (
                                         <li
                                             key={member.username}
-                                            className="flex items-center justify-between py-2 text-label-sm"
+                                            className="flex flex-col gap-1 py-2 text-label-sm sm:flex-row sm:items-center sm:justify-between"
                                         >
                                             <span className="text-strong-950">
                                                 {member.display_name ||
@@ -218,7 +218,7 @@ const LiveUsagePage = () => {
                             </div>
                             <div>
                                 <p className="text-label-xs text-sub-600">
-                                    Gemini prompt
+                                    Prompt tokens
                                 </p>
                                 <p className="mt-1 text-label-lg text-strong-950">
                                     {numberFormatter.format(
@@ -228,7 +228,7 @@ const LiveUsagePage = () => {
                             </div>
                             <div>
                                 <p className="text-label-xs text-sub-600">
-                                    Gemini completion
+                                    Completion tokens
                                 </p>
                                 <p className="mt-1 text-label-lg text-strong-950">
                                     {numberFormatter.format(
@@ -283,7 +283,7 @@ const LiveUsagePage = () => {
                                 {groups.map((group, index) => (
                                     <li
                                         key={`${group.project_id}-${group.username}-${index}`}
-                                        className="flex items-center justify-between py-2 text-label-sm"
+                                        className="flex flex-col gap-1 py-2 text-label-sm sm:flex-row sm:items-center sm:justify-between"
                                     >
                                         <span className="text-strong-950">
                                             {group.model ||
@@ -307,8 +307,7 @@ const LiveUsagePage = () => {
                                             {numberFormatter.format(
                                                 group.calls ?? 0
                                             )}{" "}
-                                            calls · limit{" "}
-                                            {formatDisplayCa(limit, sellRate)} CA
+                                            calls
                                         </span>
                                     </li>
                                 ))}

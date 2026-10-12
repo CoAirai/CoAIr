@@ -10,7 +10,12 @@ import { chatTransition } from "@/lib/chat/motion";
 import MessageBubble from "./MessageBubble";
 
 const HomePage = () => {
-    const { messages, isReplying, activeWorkspaceUserId } = useChat();
+    const { messages, isReplying, activeWorkspaceUserId, sendMessage } = useChat();
+    const examples = [
+        "Which notices were issued this month?",
+        "What does the latest programme update change?",
+        "Summarise the delay events in the correspondence.",
+    ];
     const isEmpty = messages.length === 0;
 
     return (
@@ -42,6 +47,20 @@ const HomePage = () => {
                                         <div className="mx-auto max-w-120 text-p-xl leading-relaxed text-sub-600 max-md:text-p-sm">
                                             Chat, cite, and verify against your
                                             project documents.
+                                        </div>
+                                        <div className="mx-auto mt-6 flex max-w-xl flex-col gap-2">
+                                            {examples.map((example) => (
+                                                <button
+                                                    key={example}
+                                                    type="button"
+                                                    className="rounded-xl border border-stroke-soft-200 bg-white-0 px-4 py-3 text-left text-label-sm text-strong-950 hover:border-stroke-sub-300"
+                                                    onClick={() =>
+                                                        void sendMessage(example)
+                                                    }
+                                                >
+                                                    {example}
+                                                </button>
+                                            ))}
                                         </div>
                                     </motion.div>
                                 ) : (

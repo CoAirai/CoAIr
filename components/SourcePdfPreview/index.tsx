@@ -122,10 +122,12 @@ const SourcePdfPreview = ({
             animate={{ width: open ? 360 : 0, opacity: open ? 1 : 0 }}
             transition={chatSpring}
             className={`h-full shrink-0 overflow-hidden ${
-                open ? "" : "pointer-events-none"
+                open
+                    ? "max-md:absolute max-md:inset-0 max-md:z-30 max-md:!w-full"
+                    : "pointer-events-none"
             }`}
         >
-            <div className="flex h-full w-[22.5rem] flex-col border-l border-stroke-soft-200 bg-white-0">
+            <div className="flex h-full w-[22.5rem] flex-col border-l border-stroke-soft-200 bg-white-0 max-md:w-full">
                 <div className="flex items-center gap-2 border-b border-stroke-soft-200 px-4 py-3">
                     <span className="rounded-md bg-weak-50 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sub-600">
                         {kind}
@@ -151,7 +153,8 @@ const SourcePdfPreview = ({
                         <button
                             type="button"
                             disabled={page <= 1 || loading}
-                            className="px-1.5 disabled:opacity-40"
+                            className="flex h-11 min-w-11 items-center justify-center disabled:opacity-40"
+                            aria-label="Previous page"
                             onClick={() =>
                                 setPage((value) => Math.max(1, value - 1))
                             }
@@ -164,7 +167,8 @@ const SourcePdfPreview = ({
                         <button
                             type="button"
                             disabled={page >= pageCount || loading}
-                            className="px-1.5 disabled:opacity-40"
+                            className="flex h-11 min-w-11 items-center justify-center disabled:opacity-40"
+                            aria-label="Next page"
                             onClick={() =>
                                 setPage((value) =>
                                     Math.min(pageCount, value + 1)

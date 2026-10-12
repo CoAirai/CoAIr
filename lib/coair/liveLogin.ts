@@ -452,6 +452,7 @@ export async function sendLiveChat(input: {
     conversationId: string;
     message: string;
     requestId: string;
+    signal?: AbortSignal;
 }) {
     return coairFetch<{
         assistant_text: string;
@@ -466,6 +467,7 @@ export async function sendLiveChat(input: {
         token: input.token,
         projectId: input.projectId,
         timeoutMs: 120000,
+        signal: input.signal,
         body: {
             message: input.message,
             conversation_id: input.conversationId,
