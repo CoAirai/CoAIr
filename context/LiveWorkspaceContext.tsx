@@ -94,6 +94,34 @@ type FileTransfer = {
     batchTotal?: number;
 };
 
+const transferStorageKey = (projectId: string) =>
+    `coair.upload.preview.${projectId}`;
+
+function readSavedTransfers(projectId: string): FileTransfer[] {
+    if (typeof window === "undefined") return [];
+    try {
+        const raw = window.sessionStorage.getItem(transferStorageKey(projectId));
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as FileTransfer[];
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .filter((transfer) => transfer && typeof transfer.id === "string")
+            .map((transfer) =>
+                transfer.phase === "uploading"
+                    ? {
+                          ...transfer,
+                          phase: "injecting" as const,
+                          stage: transfer.batchTotal
+                              ? `${transfer.stage || "Upload in progress"}. Refresh stopped files that had not finished; the rest keep indexing.`
+                              : "Refresh stopped this upload before it finished.",
+                      }
+                    : transfer
+            );
+    } catch {
+        return [];
+    }
+}
+
 type LiveWorkspaceValue = {
     enabled: boolean;
     loading: boolean;
@@ -196,12 +224,41 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         grantsFromSession(session)
     );
     const [fileTransfers, setFileTransfers] = useState<FileTransfer[]>([]);
+    const hydratedProject = useRef<string | null>(null);
     const lastProjectId = useRef<string | null | undefined>(undefined);
     const transferSeq = useRef(0);
 
     useEffect(() => {
         accessTokenRef.current = session?.accessToken ?? "";
     }, [session?.accessToken]);
+
+    useEffect(() => {
+        const projectId = session?.projectId;
+        if (!projectId || hydratedProject.current === projectId) return;
+        hydratedProject.current = projectId;
+        setFileTransfers(readSavedTransfers(projectId));
+    }, [session?.projectId]);
+
+    useEffect(() => {
+        const projectId = session?.projectId;
+        if (!projectId || hydratedProject.current !== projectId) return;
+        const active = fileTransfers.filter(
+            (transfer) =>
+                transfer.phase === "uploading" || transfer.phase === "injecting"
+        );
+        try {
+            if (!active.length) {
+                window.sessionStorage.removeItem(transferStorageKey(projectId));
+                return;
+            }
+            window.sessionStorage.setItem(
+                transferStorageKey(projectId),
+                JSON.stringify(active)
+            );
+        } catch {
+            /* the preview still works in this tab */
+        }
+    }, [fileTransfers, session?.projectId]);
 
     // After login, reuse the /projects payload already fetched for session seeding.
     useEffect(() => {
@@ -568,7 +625,6 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             try {
                 const summary = await readIndexingSummary(token, projectId);
                 if (cancelled) return;
-                window.clearInterval(timer);
                 const queued = summary.queued ?? 0;
                 const processing = summary.processing ?? 0;
                 const ready = summary.ready ?? 0;
@@ -577,21 +633,40 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 if (remaining <= 0) return;
                 const done = ready + failed;
                 const total = Math.max(1, done + remaining);
+                const percent = Math.min(100, Math.round((done / total) * 100));
+                const stage = `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`;
                 setFileTransfers((prev) => {
-                    if (prev.some((transfer) => transfer.batchTotal || transfer.id === "server-index")) {
-                        return prev;
+                    const existing = prev.find(
+                        (transfer) =>
+                            transfer.batchTotal || transfer.id === "server-index"
+                    );
+                    if (!existing) {
+                        return [
+                            {
+                                id: "server-index",
+                                name: "Indexing documents",
+                                phase: "injecting",
+                                percent,
+                                stage,
+                                batchTotal: total,
+                            },
+                            ...prev,
+                        ];
                     }
-                    return [
-                        {
-                            id: "server-index",
-                            name: "Indexing PDFs",
-                            phase: "injecting",
-                            percent: Math.min(100, Math.round((done / total) * 100)),
-                            stage: `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`,
-                            batchTotal: total,
-                        },
-                        ...prev,
-                    ];
+                    if (existing.phase === "uploading") return prev;
+                    return prev.map((transfer) =>
+                        transfer.id === existing.id
+                            ? {
+                                  ...transfer,
+                                  phase: "injecting",
+                                  percent,
+                                  stage: transfer.stage?.includes("Refresh stopped")
+                                      ? `${stage}. Refresh stopped files that had not finished.`
+                                      : stage,
+                                  batchTotal: Math.max(transfer.batchTotal ?? 0, total),
+                              }
+                            : transfer
+                    );
                 });
             } catch {
                 /* retry on the interval */
@@ -647,7 +722,9 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                                       stage:
                                           remaining === 0
                                               ? "Ready for the demo"
-                                              : `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`,
+                                              : transfer.stage?.includes("Refresh stopped")
+                                                ? `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}. Refresh stopped files that had not finished.`
+                                                : `Indexing ${done.toLocaleString()} of ${total.toLocaleString()}`,
                                   }
                                 : transfer
                         )
