@@ -920,7 +920,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     pushToast(
                         alreadyDone
                             ? `Ready: ${file.name}`
-                            : `Uploaded ${file.name} — injecting into AI…`,
+                            : `Saved ${file.name}. Indexing continues if you leave.`,
                         "success"
                     );
                 }
@@ -981,7 +981,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             }
             await refreshUploadAccess();
             pushToast(
-                `Uploading ${list.length.toLocaleString()} documents, 3 at a time. Keep this tab open until the upload count finishes.`,
+                `Sending ${list.length.toLocaleString()} files to the server, 3 at a time. Keep this tab open only until that count finishes. Indexing continues after you leave.`,
                 "info"
             );
             const batchId = `batch-${Date.now()}`;
@@ -1000,8 +1000,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             let uploaded = 0;
             let skipped = 0;
             let failed = 0;
+            let announced = false;
             const publish = () => {
                 const finished = uploaded + skipped + failed;
+                const sent = finished >= list.length;
                 const already =
                     skipped > 0
                         ? ` · ${skipped.toLocaleString()} already saved`
@@ -1011,9 +1013,11 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                         transfer.id === batchId
                             ? {
                                   ...transfer,
-                                  phase: finished >= list.length ? "injecting" : "uploading",
+                                  phase: sent ? "injecting" : "uploading",
                                   percent: Math.round((finished / list.length) * 100),
-                                  stage: `Uploaded ${finished.toLocaleString()} of ${list.length.toLocaleString()}${already}`,
+                                  stage: sent
+                                      ? `All ${list.length.toLocaleString()} files are on the server. Indexing continues if you leave.`
+                                      : `Sent ${finished.toLocaleString()} of ${list.length.toLocaleString()}${already}`,
                                   error:
                                       failed > 0
                                           ? `${failed.toLocaleString()} failed`
@@ -1022,6 +1026,13 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                             : transfer
                     )
                 );
+                if (sent && !announced) {
+                    announced = true;
+                    pushToast(
+                        "Files are on the server. Indexing continues if you close this page.",
+                        "success"
+                    );
+                }
             };
             const worker = async () => {
                 while (cursor < list.length) {

@@ -138,10 +138,12 @@ class FileService:
             dest.unlink(missing_ok=True)
             raise
 
-        # Sync uploaded file to GCS for persistence across Cloud Run restarts
+        # The browser only needs the file on disk and in the index queue.
+        # Amazon receives a copy in the background, so indexing is not waiting
+        # on that upload and the page can move on.
         try:
-            from src.gcs_storage import sync_uploaded_file_to_gcs
-            sync_uploaded_file_to_gcs(str(dest))
+            from src.gcs_storage import enqueue_object_sync, sync_uploaded_file_to_gcs
+            enqueue_object_sync(sync_uploaded_file_to_gcs, str(dest))
         except Exception:
             pass
 
