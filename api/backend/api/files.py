@@ -21,6 +21,20 @@ _file_service = FileService()
 
 class PinFileBody(BaseModel):
     pinned: bool = True
+
+
+class DirectUploadBody(BaseModel):
+    filename: str
+    size_bytes: int = 0
+
+
+class DirectUploadPlan(BaseModel):
+    mode: str = "proxy"
+    status: str = ""
+    file_id: str = ""
+    filename: str = ""
+    upload_url: str = ""
+    content_type: str = ""
 # One uvicorn worker. A few hundred parallel uploads pin every connection and
 # the admin and company apps stop answering. Extra files get 429 and the
 # browser uploader retries them.
@@ -301,6 +315,87 @@ async def upload_file(
     finally:
         async with _upload_gate:
             _uploads_active -= 1
+
+
+def _queue_saved_file(project_id: str, file_id: str, saved_path: str,
+                      filename: str, username: str) -> dict:
+    from backend.tasks.ingestion_jobs import get_ingestion_job_store
+    from src.project_store import get_project_store
+    get_project_store().set_vector_state(project_id, "provisioning")
+    return get_ingestion_job_store().enqueue(
+        project_id, file_id, saved_path, filename, requested_by=username,
+    )
+
+
+@router.post("/upload/direct", response_model=DirectUploadPlan)
+async def prepare_direct_upload(
+    body: DirectUploadBody,
+    user: UserContext = Depends(get_current_user),
+    project: ProjectContext = Depends(require_project_editor),
+):
+    """Hand the browser a one-file Amazon URL. Indexing does not start here."""
+    from src.gcs_storage import is_enabled, presign_browser_put
+    from src.ingestion_billing import enforce_uploader_budget
+
+    enforce_uploader_budget(user.username)
+    if not is_enabled():
+        return DirectUploadPlan(mode="proxy", filename=body.filename)
+    try:
+        plan = _file_service.prepare_direct_upload(
+            body.filename, body.size_bytes, project.project_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if plan["status"] == "skipped":
+        return DirectUploadPlan(
+            mode="s3",
+            status="skipped",
+            file_id=plan["file_id"],
+            filename=plan["filename"],
+        )
+    try:
+        upload_url = presign_browser_put(plan["key"], plan["content_type"])
+    except Exception as exc:
+        raise HTTPException(503, "Amazon upload is not available right now.") from exc
+    return DirectUploadPlan(
+        mode="s3",
+        status="ready",
+        filename=plan["filename"],
+        upload_url=upload_url,
+        content_type=plan["content_type"],
+    )
+
+
+@router.post("/upload/direct/complete", response_model=UploadResult)
+async def complete_direct_upload(
+    body: DirectUploadBody,
+    user: UserContext = Depends(get_current_user),
+    project: ProjectContext = Depends(require_project_editor),
+):
+    """The file is on Amazon. Queue it so the server indexes files one at a time."""
+    from src.ingestion_billing import enforce_uploader_budget
+
+    enforce_uploader_budget(user.username)
+    try:
+        saved_path, file_id, is_duplicate = _file_service.accept_direct_upload(
+            body.filename, body.size_bytes, project.project_id, username=user.username,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if is_duplicate:
+        return UploadResult(
+            file_id=file_id,
+            filename=body.filename,
+            status="skipped",
+        )
+    job = _queue_saved_file(
+        project.project_id, file_id, saved_path, body.filename, user.username,
+    )
+    return UploadResult(
+        file_id=file_id,
+        filename=body.filename,
+        status=job["status"],
+    )
 
 
 @router.get("/files", response_model=List[FileInfo])

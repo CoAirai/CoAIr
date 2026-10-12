@@ -179,6 +179,44 @@ class DocumentRegistry:
             logger.info(f"[Registry] Registered: {file_name} ({doc_id})")
             return rec
 
+    def reserve(
+        self,
+        file_name: str,
+        file_path: str,
+        file_size_kb: int,
+        file_type: str,
+        extension: str,
+        project_id: str = "",
+    ) -> tuple[DocumentRecord, str]:
+        """Claim a path for indexing. One of created, requeued, or duplicate."""
+        doc_id = generate_doc_id(file_path)
+        with self._file_lock:
+            existing = self._records.get(doc_id)
+            if existing:
+                if (existing.status or "") == "error":
+                    existing.status = "processing"
+                    existing.error = None
+                    existing.completed_at = ""
+                    existing.file_size_kb = file_size_kb
+                    self._save()
+                    return existing, "requeued"
+                return existing, "duplicate"
+            rec = DocumentRecord(
+                doc_id=doc_id,
+                file_name=file_name,
+                file_path=file_path,
+                file_size_kb=file_size_kb,
+                file_type=file_type,
+                extension=extension,
+                status="processing",
+                created_at=datetime.now().isoformat(),
+                project_id=project_id,
+            )
+            self._records[doc_id] = rec
+            self._save()
+            logger.info(f"[Registry] Reserved: {file_name} ({doc_id})")
+            return rec, "created"
+
     def find_duplicate(self, file_name: str, file_size_kb: int,
                        file_path: str = "", project_id: str = "") -> Optional[DocumentRecord]:
         """Return a file already stored for this project under the same name.

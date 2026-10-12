@@ -11,6 +11,22 @@ from fastapi import UploadFile
 from src.config import DOCUMENTS_DIR, TABLES_DIR, EMAILS_DIR
 from src.tenant_paths import project_type_dir, project_type_dirs_for_read
 
+# What the browser must send as Content-Type on the Amazon PUT.
+CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+    ".txt": "text/plain",
+    ".eml": "message/rfc822",
+    ".msg": "application/vnd.ms-outlook",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
+    ".csv": "text/csv",
+}
+
+# Direct-to-Amazon uploads. The VPS never holds the bytes during the transfer.
+MAX_DIRECT_BYTES = 512 * 1024 * 1024
+
 EXTENSION_MAP = {
     ".pdf": ("document", DOCUMENTS_DIR),
     ".docx": ("document", DOCUMENTS_DIR),
@@ -148,6 +164,115 @@ class FileService:
             pass
 
         return str(dest), doc_id, False
+
+    def _classified(self, filename: str) -> tuple[str, str, str, str]:
+        safe_name = Path(filename or "upload.bin").name
+        _reject_mac_sidecar(safe_name)
+        ext = Path(safe_name).suffix.lower()
+        if ext not in EXTENSION_MAP:
+            raise ValueError(f"unsupported_file_type:{ext or 'none'}")
+        return safe_name, ext, EXTENSION_MAP[ext][0], CONTENT_TYPES[ext]
+
+    def direct_target(self, filename: str, project_id: str) -> tuple[Path, str, str, str, str]:
+        """Local path the indexer will use, and the Amazon key the browser writes."""
+        safe_name, ext, file_type, content_type = self._classified(filename)
+        dest = self._target_dir(project_id, file_type) / safe_name
+        from src.tenant_paths import s3_upload_key_for_local
+
+        key = s3_upload_key_for_local(str(dest))
+        if not key:
+            raise ValueError("storage_path_unavailable")
+        return dest, key, safe_name, file_type, content_type
+
+    def prepare_direct_upload(self, filename: str, size_bytes: int, project_id: str) -> dict:
+        """Decide whether this file should be sent to Amazon, or skipped as a duplicate."""
+        if size_bytes <= 0:
+            raise ValueError("empty_file: Choose a file that is not empty.")
+        if size_bytes > MAX_DIRECT_BYTES:
+            raise ValueError("file_too_large: Files must be 512 MB or smaller.")
+        dest, key, safe_name, _file_type, content_type = self.direct_target(filename, project_id)
+        from src.document_registry import get_document_registry
+
+        existing = get_document_registry().find_duplicate(
+            safe_name, size_bytes // 1024, project_id=project_id,
+        )
+        if existing and existing.status != "error":
+            return {
+                "status": "skipped",
+                "file_id": existing.doc_id,
+                "filename": safe_name,
+                "content_type": content_type,
+                "key": key,
+            }
+        return {
+            "status": "ready",
+            "file_id": "",
+            "filename": safe_name,
+            "content_type": content_type,
+            "key": key,
+            "dest": str(dest),
+        }
+
+    def accept_direct_upload(
+        self, filename: str, size_bytes: int, project_id: str, username: str = "",
+    ) -> tuple[str, str, bool]:
+        """Register a file that is already on Amazon. Indexing downloads it later."""
+        dest, key, safe_name, file_type, _content_type = self.direct_target(filename, project_id)
+        ext = Path(safe_name).suffix.lower()
+        from src.document_registry import get_document_registry
+        from src.gcs_storage import object_size
+
+        registry = get_document_registry()
+        existing = registry.find_duplicate(
+            safe_name, max(0, size_bytes // 1024), project_id=project_id,
+        )
+        if existing and existing.status != "error":
+            return existing.file_path, existing.doc_id, True
+
+        remote = object_size(key)
+        if remote is None or remote <= 0:
+            raise ValueError(
+                "amazon_missing: The file did not reach Amazon. Upload it again."
+            )
+        if size_bytes and remote != size_bytes:
+            raise ValueError(
+                "amazon_size_mismatch: Amazon received a different size. Upload it again."
+            )
+
+        file_size_kb = remote // 1024
+        rec, action = registry.reserve(
+            safe_name, str(dest), file_size_kb, file_type, ext, project_id=project_id,
+        )
+        if action == "duplicate":
+            return rec.file_path, rec.doc_id, True
+        if action == "created" and username and project_id:
+            try:
+                from src.billing_store import get_billing_store
+                get_billing_store().register_storage(
+                    username=username, project_id=project_id, file_id=rec.doc_id,
+                    file_path=str(dest), size_bytes=remote,
+                )
+            except Exception:
+                registry.delete(rec.doc_id)
+                raise
+        return str(dest), rec.doc_id, False
+
+    def ensure_local_copy(self, file_path: str) -> None:
+        """Pull one Amazon object onto the server before it is indexed."""
+        path = Path(file_path)
+        from src.gcs_storage import download_file, is_enabled
+        from src.tenant_paths import s3_upload_key_for_local
+
+        key = s3_upload_key_for_local(str(path)) if is_enabled() else None
+        if key:
+            downloaded = download_file(key, str(path))
+            if not downloaded and not path.is_file():
+                raise FileNotFoundError(
+                    f"Could not read {path.name} from Amazon storage"
+                )
+        elif not path.is_file():
+            raise FileNotFoundError(path.name)
+        _validate_uploaded_bytes(path.name, path)
 
     def list_files(self, corpus: str = "", project_id: str | None = None) -> List[dict]:
         """File listing from SINGLE source: document_registry (GCS-backed).

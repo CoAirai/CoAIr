@@ -150,6 +150,15 @@ export type UploadProjectResult = {
     status?: string;
 };
 
+type DirectUploadPlan = {
+    mode?: string;
+    status?: string;
+    file_id?: string;
+    filename?: string;
+    upload_url?: string;
+    content_type?: string;
+};
+
 export type IndexingStatus = {
     file_id: string;
     filename: string;
@@ -159,8 +168,42 @@ export type IndexingStatus = {
     details?: Record<string, unknown>;
 };
 
-/** Browser XHR upload so we can report byte progress for large PDFs. */
-export function uploadProjectFile(
+function putFileOnAmazon(
+    uploadUrl: string,
+    file: File,
+    contentType: string,
+    onProgress?: (percent: number) => void
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl);
+        xhr.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+        xhr.timeout = 30 * 60 * 1000;
+        xhr.upload.onprogress = (event) => {
+            if (!onProgress || !event.lengthComputable || !event.total) return;
+            onProgress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+        };
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve();
+                return;
+            }
+            reject(
+                new CoairApiError(
+                    friendlyUploadError(xhr.status, xhr.responseText || ""),
+                    xhr.status,
+                    xhr.responseText || ""
+                )
+            );
+        };
+        xhr.onerror = () => reject(new CoairApiError("Network error", 0));
+        xhr.ontimeout = () => reject(new CoairApiError("Upload timed out", 0));
+        xhr.send(file);
+    });
+}
+
+/** Fallback when Amazon is off: the API still receives the file itself. */
+function uploadProjectFileViaApi(
     token: string,
     projectId: string,
     file: File,
@@ -204,6 +247,63 @@ export function uploadProjectFile(
         xhr.onerror = () => reject(new CoairApiError("Network error", 0));
         xhr.ontimeout = () => reject(new CoairApiError("Upload timed out", 0));
         xhr.send(body);
+    });
+}
+
+/**
+ * Send the file straight to Amazon, then tell the API to index it.
+ * The server pulls files back one at a time. A same-name file is skipped.
+ */
+export async function uploadProjectFile(
+    token: string,
+    projectId: string,
+    file: File,
+    onProgress?: (percent: number) => void
+): Promise<UploadProjectResult> {
+    let plan: DirectUploadPlan;
+    try {
+        plan = await coairFetch<DirectUploadPlan>("/upload/direct", {
+            method: "POST",
+            token,
+            projectId,
+            body: { filename: file.name, size_bytes: file.size },
+            timeoutMs: 60000,
+        });
+    } catch (error) {
+        if (error instanceof CoairApiError && (error.status === 404 || error.status === 501)) {
+            return uploadProjectFileViaApi(token, projectId, file, onProgress);
+        }
+        throw error;
+    }
+    if (plan.status === "skipped") {
+        return {
+            file_id: plan.file_id,
+            filename: plan.filename || file.name,
+            status: "skipped",
+        };
+    }
+    if (plan.mode !== "s3" || !plan.upload_url) {
+        return uploadProjectFileViaApi(token, projectId, file, onProgress);
+    }
+    try {
+        await putFileOnAmazon(
+            plan.upload_url,
+            file,
+            plan.content_type || "application/octet-stream",
+            onProgress
+        );
+    } catch (error) {
+        if (error instanceof CoairApiError && error.status === 0) {
+            return uploadProjectFileViaApi(token, projectId, file, onProgress);
+        }
+        throw error;
+    }
+    return coairFetch<UploadProjectResult>("/upload/direct/complete", {
+        method: "POST",
+        token,
+        projectId,
+        body: { filename: file.name, size_bytes: file.size },
+        timeoutMs: 60000,
     });
 }
 

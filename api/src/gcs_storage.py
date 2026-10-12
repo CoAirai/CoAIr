@@ -73,7 +73,21 @@ def object_uri(blob_name: str) -> str:
 def _get_s3():
     import boto3
 
-    return boto3.client("s3", region_name=AWS_REGION)
+    try:
+        from botocore.config import Config
+
+        # Browser uploads cannot attach the checksum headers newer boto3 adds
+        # to a presigned PUT. Only send checksums when the API requires them.
+        return boto3.client(
+            "s3",
+            region_name=AWS_REGION,
+            config=Config(
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            ),
+        )
+    except Exception:
+        return boto3.client("s3", region_name=AWS_REGION)
 
 
 def _get_bucket():
@@ -456,6 +470,93 @@ def sync_document_registry_from_gcs():
 #   uploads/companies/{company-slug}/{project-slug}/documents/file.pdf
 
 _UPLOADS_PREFIX = "uploads/"
+
+
+_browser_cors_ready = False
+
+# Origins that upload straight to the bucket. S3 allows a single * per origin.
+_BROWSER_UPLOAD_ORIGINS = [
+    "https://user.coair.ai",
+    "https://admin.coair.ai",
+    "https://login.coair.ai",
+    "https://*.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+
+def ensure_browser_upload_cors() -> None:
+    """Allow the workspace to PUT a file straight to the bucket."""
+    global _browser_cors_ready
+    if _browser_cors_ready or not (S3_BUCKET_NAME and _s3_credentials_present()):
+        return
+    with _sync_guard:
+        if _browser_cors_ready:
+            return
+        client = _get_s3()
+        try:
+            existing = client.get_bucket_cors(Bucket=S3_BUCKET_NAME).get("CORSRules") or []
+        except Exception as exc:
+            text = str(exc)
+            if "NoSuchCORSConfiguration" not in text and "404" not in text:
+                logger.warning(f"[S3] Could not read bucket CORS: {exc}")
+            existing = []
+        covered = False
+        for rule in existing:
+            origins = rule.get("AllowedOrigins") or []
+            methods = [str(item).upper() for item in (rule.get("AllowedMethods") or [])]
+            if "PUT" not in methods:
+                continue
+            if "*" in origins or "https://user.coair.ai" in origins:
+                covered = True
+                break
+        if not covered:
+            existing.append({
+                "AllowedOrigins": _BROWSER_UPLOAD_ORIGINS,
+                "AllowedMethods": ["PUT", "GET", "HEAD"],
+                "AllowedHeaders": ["*"],
+                "ExposeHeaders": ["ETag"],
+                "MaxAgeSeconds": 3000,
+            })
+            try:
+                client.put_bucket_cors(
+                    Bucket=S3_BUCKET_NAME,
+                    CORSConfiguration={"CORSRules": existing},
+                )
+                logger.info("[S3] Browser upload CORS is set")
+            except Exception as exc:
+                logger.warning(f"[S3] Could not set browser upload CORS: {exc}")
+                if "AccessDenied" in str(exc):
+                    _browser_cors_ready = True
+                return
+        _browser_cors_ready = True
+
+
+def presign_browser_put(blob_name: str, content_type: str, expires: int = 3600) -> str:
+    """Short-lived URL the browser uses to PUT one object. The key is chosen by us."""
+    if not (S3_BUCKET_NAME and _s3_credentials_present()):
+        raise RuntimeError("s3_disabled")
+    ensure_browser_upload_cors()
+    return _get_s3().generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": S3_BUCKET_NAME,
+            "Key": blob_name,
+            "ContentType": content_type or "application/octet-stream",
+        },
+        ExpiresIn=expires,
+    )
+
+
+def object_size(blob_name: str) -> Optional[int]:
+    """Byte size of an object, or None when it is not in the bucket."""
+    if not (S3_BUCKET_NAME and blob_name):
+        return None
+    try:
+        head = _get_s3().head_object(Bucket=S3_BUCKET_NAME, Key=blob_name)
+        return int(head.get("ContentLength") or 0)
+    except Exception:
+        return None
 
 
 def sync_uploaded_file_to_gcs(file_path: str):

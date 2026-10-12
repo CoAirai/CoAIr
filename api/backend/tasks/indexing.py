@@ -64,6 +64,9 @@ def index_file_background(file_id: str, file_path: str, corpus: str = "",
             project_id, "indexing", point_count=existing_points,
         )
 
+        from backend.services.file_service import FileService
+        FileService().ensure_local_copy(file_path)
+
         result = route_file(
             file_path, project_id=project_id, file_id=file_id,
         )

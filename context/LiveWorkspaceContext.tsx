@@ -931,7 +931,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     pushToast(
                         alreadyDone
                             ? `Ready: ${file.name}`
-                            : `Saved ${file.name}. Indexing continues if you leave.`,
+                            : `Saved ${file.name} on Amazon. The server indexes it if you leave.`,
                         "success"
                     );
                 }
@@ -992,7 +992,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
             }
             await refreshUploadAccess();
             pushToast(
-                `Sending ${list.length.toLocaleString()} files to the server, 3 at a time. Keep this tab open only until that count finishes. Indexing continues after you leave.`,
+                `Sending ${list.length.toLocaleString()} files to Amazon, 3 at a time. Keep this tab open only until that count finishes. The server then indexes them one by one.`,
                 "info"
             );
             const batchId = `batch-${Date.now()}`;
@@ -1027,8 +1027,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                                   phase: sent ? "injecting" : "uploading",
                                   percent: Math.round((finished / list.length) * 100),
                                   stage: sent
-                                      ? `All ${list.length.toLocaleString()} files are on the server. Indexing continues if you leave.`
-                                      : `Sent ${finished.toLocaleString()} of ${list.length.toLocaleString()}${already}`,
+                                      ? `All ${list.length.toLocaleString()} files are on Amazon. The server indexes them one by one if you leave.`
+                                      : `Sent ${finished.toLocaleString()} of ${list.length.toLocaleString()} to Amazon${already}`,
                                   error:
                                       failed > 0
                                           ? `${failed.toLocaleString()} failed`
@@ -1040,7 +1040,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 if (sent && !announced) {
                     announced = true;
                     pushToast(
-                        "Files are on the server. Indexing continues if you close this page.",
+                        "Files are on Amazon. The server indexes them one by one if you close this page.",
                         "success"
                     );
                 }
@@ -1092,7 +1092,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 pushToast(
                     skippedNote
                         ? `Uploaded ${uploaded} documents. ${skippedNote}.`
-                        : `Uploaded ${uploaded} documents. Indexing continues if you leave.`,
+                        : `Uploaded ${uploaded} documents to Amazon. The server indexes them one by one.`,
                     "success"
                 );
             } else if (uploaded === 0 && skipped === 0) {
