@@ -288,6 +288,10 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         grantsFromSession(session)
     );
     const [fileTransfers, setFileTransfers] = useState<FileTransfer[]>([]);
+    // Latest transfers for polling callbacks, so the poll effects do not
+    // restart (and fire an extra request) every time a transfer changes.
+    const fileTransfersRef = useRef<FileTransfer[]>(fileTransfers);
+    fileTransfersRef.current = fileTransfers;
     const [interruptedUpload, setInterruptedUpload] = useState<{
         sent: number;
         total: number;
@@ -473,7 +477,9 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 .catch(() => undefined);
         };
         pullBalance();
-        const timer = window.setInterval(pullBalance, 30000);
+        const timer = window.setInterval(() => {
+            if (document.visibilityState === "visible") pullBalance();
+        }, 30000);
         const onFocus = () => {
             if (document.visibilityState === "visible") pullBalance();
         };
@@ -687,7 +693,19 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         let cancelled = false;
         const token = session.accessToken;
         const projectId = session.projectId;
+        let timer: number | undefined;
+        // Poll every 8 s while the server is indexing, every 60 s when idle,
+        // and not at all while the tab is hidden.
+        const schedule = (ms: number) => {
+            if (cancelled) return;
+            timer = window.setTimeout(() => void restore(), ms);
+        };
         const restore = async () => {
+            if (document.visibilityState !== "visible") {
+                schedule(8000);
+                return;
+            }
+            let next = 60000;
             try {
                 const summary = await readIndexingSummary(token, projectId);
                 if (cancelled) return;
@@ -700,6 +718,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     setFileTransfers((prev) => withIndexingCard(prev, null));
                     return;
                 }
+                next = 8000;
                 const done = ready + failed;
                 const total = Math.max(1, done + remaining);
                 sawIndexing.current = true;
@@ -710,16 +729,15 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     )
                 );
             } catch {
-                /* retry on the interval */
+                next = 8000; /* retry soon */
+            } finally {
+                schedule(next);
             }
         };
-        const timer = window.setInterval(() => {
-            void restore();
-        }, 8000);
         void restore();
         return () => {
             cancelled = true;
-            window.clearInterval(timer);
+            window.clearTimeout(timer);
         };
     }, [enabled, session?.accessToken, session?.projectId]);
 
@@ -728,6 +746,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         (transfer) =>
             transfer.phase === "injecting" || transfer.phase === "uploading"
     );
+    const hasBatchTransfers = fileTransfers.some((transfer) => Boolean(transfer.batchTotal));
     const uploadInFlight = fileTransfers.some(
         (transfer) => transfer.phase === "uploading"
     );
@@ -788,7 +807,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                     return;
                 }
                 setFileTransfers((prev) => withIndexingCard(prev, null));
-                if (fileTransfers.some((transfer) => transfer.phase === "uploading")) {
+                if (fileTransfersRef.current.some((transfer) => transfer.phase === "uploading")) {
                     return;
                 }
                 if (sawIndexing.current && done > 0) {
@@ -801,7 +820,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                 if (cancelled) return;
                 applyIndexingJobs(jobs);
                 const activeNames = new Set(
-                    fileTransfers
+                    fileTransfersRef.current
                         .filter(
                             (t) =>
                                 t.phase === "injecting" || t.phase === "uploading"
@@ -809,7 +828,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
                         .map((t) => t.name.toLowerCase())
                 );
                 const activeIds = new Set(
-                    fileTransfers
+                    fileTransfersRef.current
                         .map((t) => t.fileId)
                         .filter(Boolean) as string[]
                 );
@@ -841,7 +860,7 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
         void tick();
         const timer = window.setInterval(() => {
             void tick();
-        }, fileTransfers.some((transfer) => transfer.batchTotal) ? 8000 : 2500);
+        }, hasBatchTransfers ? 8000 : 2500);
         return () => {
             cancelled = true;
             window.clearInterval(timer);
@@ -849,8 +868,8 @@ export function LiveWorkspaceProvider({ children }: { children: ReactNode }) {
     }, [
         applyIndexingJobs,
         enabled,
-        fileTransfers,
         hasActiveTransfers,
+        hasBatchTransfers,
         pushToast,
         refreshLibrary,
         session?.accessToken,

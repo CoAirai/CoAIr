@@ -20,7 +20,6 @@ const HOP_BY_HOP = new Set([
     "cookie",
     "content-length",
     "content-encoding",
-    "accept-encoding",
     "cf-connecting-ip",
     "cf-ipcountry",
     "cf-ray",
@@ -39,7 +38,6 @@ function outgoingHeaders(request: NextRequest): Headers {
         if (HOP_BY_HOP.has(key.toLowerCase())) return;
         headers.set(key, value);
     });
-    headers.set("bypass-tunnel-reminder", "true");
     headers.set("User-Agent", "CoAir-Proxy/1.0");
     return headers;
 }
@@ -75,9 +73,11 @@ async function handler(
     const body = hasBody ? await request.arrayBuffer() : undefined;
 
     try {
+        // Retry only idempotent GETs, and only when the API says it is busy.
+        // The response body is streamed straight through (no buffering), and
+        // compressed responses from the API are kept compressed on this hop.
         let res: Response | null = null;
-        let payload: ArrayBuffer | null = null;
-        for (let attempt = 0; attempt < 4; attempt += 1) {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
             res = await fetch(url.toString(), {
                 method,
                 headers: outgoingHeaders(request),
@@ -85,19 +85,15 @@ async function handler(
                 redirect: "manual",
                 cache: "no-store",
             });
-            payload = await res.arrayBuffer();
-            const preview = new TextDecoder().decode(payload.slice(0, 200));
-            const busy =
-                /tunnel is busy/i.test(preview) ||
-                res.status === 429 ||
-                res.status === 503;
-            if (!busy || method !== "GET" || attempt === 3) {
+            const busy = res.status === 429 || res.status === 503;
+            if (!busy || method !== "GET" || attempt === 2) {
                 break;
             }
+            await res.body?.cancel();
             await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
         }
 
-        return new NextResponse(payload, {
+        return new NextResponse(res?.body ?? null, {
             status: res?.status ?? 502,
             statusText: res?.statusText ?? "Bad Gateway",
             headers: res ? incomingHeaders(res) : undefined,
