@@ -1,11 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "@/components/Image";
 import Button from "@/components/Button";
 import Icon from "@/components/Icon";
 import { authHref } from "@/lib/auth/hosts";
-import Slider from "./Slider";
+// The carousel (and the Swiper library) is decorative and hidden on small
+// screens, so it loads after the sign-in form instead of blocking it.
+const Slider = dynamic(() => import("./Slider"), { ssr: false });
 
 type Props = {
     children: React.ReactNode;
