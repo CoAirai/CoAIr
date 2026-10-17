@@ -90,9 +90,12 @@ def _load_local_tables():
     """
     try:
         from src.data_analyzer_sql import get_data_analyzer
-        loaded = get_data_analyzer().load_from_catalog()
+        analyzer = get_data_analyzer()
+        loaded = analyzer.load_from_catalog()
         if loaded:
             print(f"[Startup] Loaded {loaded} local tables into DuckDB before sync")
+        from src.sheet_reader import build_index_in_background
+        build_index_in_background(analyzer.tables)
     except Exception as e:
         print(f"[Startup] Local table load: {e}")
 

@@ -2059,6 +2059,10 @@ class QueryRouter:
                     "confidence": 0.5,
                 }
 
+        sheet_result = self._try_sheet_reader(query, allowed_tables)
+        if sheet_result is not None:
+            return sheet_result
+
         # Check if query needs multiple tables
         relevant = self.data_analyzer.select_tables(query, max_tables=3, allowed_tables=allowed_tables)
         if len(relevant) > 1:
@@ -2079,6 +2083,45 @@ class QueryRouter:
             "sql": result.get("sql"),
             "result_data": result.get("result_data"),
             "result_columns": result.get("result_columns"),
+        }
+
+    def _try_sheet_reader(self, query: str,
+                          allowed_tables: Optional[List[str]]) -> Optional[Dict[str, Any]]:
+        """Answer from the cells of the best-matching original spreadsheets.
+
+        Formatted report sheets lose their headings in the SQL import, so SQL
+        over them picks wrong columns and mislabels figures. Curated tables with
+        a matched schema keep the SQL path, which aggregates them correctly.
+        """
+        try:
+            from .sheet_reader import answer_from_sheets, rank_sheets
+            tables = self.data_analyzer.tables
+            question = self._current_question(query)
+            ranked = rank_sheets(question, tables, allowed=allowed_tables, k=3)
+            if not ranked or ranked[0][1] < 2:
+                return None
+            best = tables.get(ranked[0][0], {})
+            if best.get("header_metadata", {}).get("target_schema"):
+                return None
+            logger.info(f"   Sheet reader: {ranked}")
+            self._report("analysing", "reading spreadsheets",
+                         ", ".join(n for n, _ in ranked))
+            result = answer_from_sheets(
+                question, [name for name, _ in ranked], tables,
+                history=self._conversation_history(query),
+            )
+        except Exception as e:
+            logger.warning(f"   Sheet reader failed → SQL path: {e}")
+            return None
+        if not result:
+            return None
+        return {
+            "query": query,
+            "query_type": QueryType.DATA.value,
+            "answer": result["answer"],
+            "sources": result["sources"],
+            "sql": None,
+            "result_data": None,
         }
 
     def _fetch_related_doc_sources(
