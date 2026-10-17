@@ -9,10 +9,14 @@ const PanelMessage = () => {
     const { sendMessage, stopReply, isReplying, sendError } = useChat();
     const [message, setMessage] = useState("");
 
+    // Clear straight away: the reply can arrive after the user has moved to
+    // another chat and started typing there.
     const submit = async () => {
         const text = message;
+        if (!text.trim()) return;
+        setMessage("");
         const sent = await sendMessage(text);
-        if (sent) setMessage("");
+        if (!sent) setMessage((current) => current || text);
     };
 
     const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

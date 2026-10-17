@@ -151,22 +151,43 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             ])
         )
     );
-    const [isReplying, setIsReplying] = useState(false);
+    // Replies are tracked per conversation so a question keeps running while
+    // the user opens another chat. "__local__" covers a new chat before the
+    // server has created its conversation, and the offline demo.
+    const [pendingKeys, setPendingKeys] = useState<string[]>([]);
+    const pendingAbortsRef = useRef<Map<AbortController, string>>(new Map());
+    const stoppedRef = useRef<Set<AbortController>>(new Set());
     const [sendError, setSendError] = useState<string | null>(null);
-    const chatAbortRef = useRef<AbortController | null>(null);
-    const chatStoppedRef = useRef(false);
     const [selectedQueryId, setSelectedQueryId] = useState<string | null>(null);
     const [activeKbId, setActiveKbId] = useState("assistant");
     const [openCitation, setOpenCitation] = useState<Citation | null>(null);
     const liveConversationIdRef = useRef<string | null>(null);
+    const [openConversationId, setOpenConversationId] = useState<string | null>(null);
+    const viewTokenRef = useRef(0);
+    const threadCacheRef = useRef<Map<string, Message[]>>(new Map());
     const rememberConversation = useCallback((id: string | null) => {
         liveConversationIdRef.current = id;
+        setOpenConversationId(id);
     }, []);
+    const markPending = useCallback((key: string, abort: AbortController) => {
+        pendingAbortsRef.current.set(abort, key);
+        setPendingKeys((prev) => [...prev, key]);
+    }, []);
+    const clearPending = useCallback((key: string, abort: AbortController) => {
+        if (!pendingAbortsRef.current.has(abort)) return;
+        pendingAbortsRef.current.delete(abort);
+        setPendingKeys((prev) => {
+            const index = prev.indexOf(key);
+            return index < 0 ? prev : [...prev.slice(0, index), ...prev.slice(index + 1)];
+        });
+    }, []);
+    const isReplying = pendingKeys.includes(openConversationId ?? "__local__");
     const [archivedByUserId, setArchivedByUserId] = useState<
         Record<string, RecentQuery[]>
     >({});
 
     useEffect(() => {
+        viewTokenRef.current += 1;
         rememberConversation(null);
     }, [
         rememberConversation,
@@ -245,6 +266,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const setActiveWorkspaceUserId = useCallback(
         (id: string) => {
             if (session?.role !== "company_admin") return;
+            viewTokenRef.current += 1;
             setRequestedWorkspaceUserId(id);
             setSelectedQueryId(null);
             setSendError(null);
@@ -345,7 +367,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const forgetOpenQuery = useCallback(
         (queryId: string) => {
+            threadCacheRef.current.delete(queryId);
             if (selectedQueryId !== queryId) return;
+            viewTokenRef.current += 1;
             if (activeWorkspaceUserId) {
                 setThreadsByUserId((prev) => ({
                     ...prev,
@@ -482,6 +506,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const clearChat = useCallback(() => {
         if (!activeWorkspaceUserId) return;
+        viewTokenRef.current += 1;
         setThreadsByUserId((prev) => ({
             ...prev,
             [activeWorkspaceUserId]: [],
@@ -498,6 +523,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 recentsByUserId,
                 activeWorkspaceUserId
             ).find((entry) => entry.id === queryId);
+            viewTokenRef.current += 1;
             setSelectedQueryId(queryId);
             setActiveKbId("assistant");
             setSendError(null);
@@ -510,15 +536,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
             if (live) {
                 rememberConversation(queryId);
-                if (query?.messages?.length) {
-                    setThreadsByUserId((prev) => ({
-                        ...prev,
-                        [activeWorkspaceUserId]: query.messages!.map((m) => ({
-                            ...m,
-                        })),
-                    }));
-                    return;
-                }
+                // The recents entry only holds the last question and answer, so
+                // it is a placeholder; the full conversation always comes from
+                // the server.
+                const cached =
+                    threadCacheRef.current.get(queryId) ?? query?.messages ?? [];
+                setThreadsByUserId((prev) => ({
+                    ...prev,
+                    [activeWorkspaceUserId]: cached.map((m) => ({ ...m })),
+                }));
                 void getConversation(
                     session!.accessToken!,
                     session!.projectId!,
@@ -555,10 +581,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                                         : undefined,
                             })
                         );
-                        setThreadsByUserId((prev) => ({
-                            ...prev,
-                            [activeWorkspaceUserId]: mapped,
-                        }));
+                        threadCacheRef.current.set(queryId, mapped);
+                        if (liveConversationIdRef.current === queryId) {
+                            setThreadsByUserId((prev) => ({
+                                ...prev,
+                                [activeWorkspaceUserId]: mapped,
+                            }));
+                        }
                         setRecentsByUserId((prev) => ({
                             ...prev,
                             [activeWorkspaceUserId]: (
@@ -575,6 +604,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         }));
                     })
                     .catch((err) => {
+                        if (liveConversationIdRef.current !== queryId) return;
                         setSendError(
                             err instanceof Error
                                 ? err.message
@@ -629,10 +659,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     );
 
     const stopReply = useCallback(() => {
-        chatStoppedRef.current = true;
-        chatAbortRef.current?.abort();
-        setIsReplying(false);
-    }, []);
+        const key = liveConversationIdRef.current ?? "__local__";
+        pendingAbortsRef.current.forEach((pendingKey, abort) => {
+            if (pendingKey !== key) return;
+            stoppedRef.current.add(abort);
+            abort.abort();
+            clearPending(pendingKey, abort);
+        });
+    }, [clearPending]);
 
     const sendMessage = useCallback(
         async (text: string) => {
@@ -650,17 +684,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             }
 
             setSendError(null);
-            setSelectedQueryId(null);
-            setIsReplying(true);
-            chatStoppedRef.current = false;
             const abort = new AbortController();
-            chatAbortRef.current = abort;
+            const startToken = viewTokenRef.current;
+            let pendingKey = liveConversationIdRef.current ?? "__local__";
+            markPending(pendingKey, abort);
 
             const userMessageId = makeId("u");
             const assistantMessageId = makeId("a");
             const now = new Date().toISOString();
             let conversationIdForRecent: string | null =
                 liveConversationIdRef.current;
+            // The answer belongs on screen only while its conversation is the
+            // one open. A new chat counts as open until the user navigates.
+            const isVisible = () =>
+                conversationIdForRecent
+                    ? liveConversationIdRef.current === conversationIdForRecent
+                    : viewTokenRef.current === startToken;
 
             // Show the user message immediately; assistant fills in when the API returns.
             setThreadsByUserId((prev) => ({
@@ -689,7 +728,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                             "This account has no project yet. Seed the sandbox, then sign in again."
                         );
                     }
-                    let conversationId = liveConversationIdRef.current;
+                    let conversationId = conversationIdForRecent;
                     if (!conversationId) {
                         const created = await createConversation(
                             session.accessToken!,
@@ -697,9 +736,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                             trimmed.slice(0, 80)
                         );
                         conversationId = created.conversation_id;
-                        rememberConversation(conversationId);
+                        const stillHere = viewTokenRef.current === startToken;
+                        clearPending(pendingKey, abort);
+                        pendingKey = conversationId;
+                        markPending(pendingKey, abort);
+                        if (stillHere) {
+                            rememberConversation(conversationId);
+                            setSelectedQueryId(conversationId);
+                        }
+                        const newId = conversationId;
+                        setRecentsByUserId((prev) => {
+                            const existing = prev[activeWorkspaceUserId] ?? [];
+                            if (existing.some((entry) => entry.id === newId)) return prev;
+                            return {
+                                ...prev,
+                                [activeWorkspaceUserId]: orderQueries(
+                                    [{ id: newId, title: trimmed }, ...existing],
+                                    20
+                                ),
+                            };
+                        });
                     }
                     conversationIdForRecent = conversationId;
+                    if (abort.signal.aborted) throw new Error("stopped");
                     const response = await sendLiveChat({
                         token: session.accessToken!,
                         projectId: session.projectId,
@@ -753,19 +812,35 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     threadUserId: activeWorkspaceUserId,
                 };
 
-                setThreadsByUserId((prevThreads) => {
-                    const thread = prevThreads[activeWorkspaceUserId] ?? [];
-                    const withoutDup = thread.some((m) => m.id === userMessageId)
-                        ? thread
-                        : [...thread, userMessage];
-                    return {
+                const visible = isVisible();
+                const appendReply = (thread: Message[]) => {
+                    // A thread reloaded from the server already holds this
+                    // question under a different id.
+                    const last = thread[thread.length - 1];
+                    const hasQuestion =
+                        thread.some((m) => m.id === userMessageId) ||
+                        (last?.role === "user" && last.content.trim() === trimmed);
+                    return [...(hasQuestion ? thread : [...thread, userMessage]), assistantMessage];
+                };
+                if (conversationIdForRecent) {
+                    const cachedThread = threadCacheRef.current.get(conversationIdForRecent);
+                    if (cachedThread) {
+                        threadCacheRef.current.set(
+                            conversationIdForRecent,
+                            appendReply(cachedThread)
+                        );
+                    }
+                }
+                if (visible) {
+                    setThreadsByUserId((prevThreads) => ({
                         ...prevThreads,
-                        [activeWorkspaceUserId]: [
-                            ...withoutDup,
-                            assistantMessage,
-                        ],
-                    };
-                });
+                        [activeWorkspaceUserId]: appendReply(
+                            prevThreads[activeWorkspaceUserId] ?? []
+                        ),
+                    }));
+                } else {
+                    pushToast(`Answer ready: ${trimmed.slice(0, 60)}`, "info");
+                }
                 setRecentsByUserId((prevRecents) => {
                     const existing = prevRecents[activeWorkspaceUserId] ?? [];
                     const previous = existing.find((entry) => entry.id === queryId);
@@ -786,7 +861,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         ),
                     };
                 });
-                setSelectedQueryId(queryId);
+                if (visible) setSelectedQueryId(queryId);
                 if (
                     isLiveChat &&
                     typeof document !== "undefined" &&
@@ -803,35 +878,38 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 return true;
             } catch (error) {
                 const stopped =
-                    chatStoppedRef.current ||
+                    stoppedRef.current.has(abort) ||
                     (error instanceof Error && error.message === "stopped");
-                setThreadsByUserId((prev) => ({
-                    ...prev,
-                    [activeWorkspaceUserId]: (
-                        prev[activeWorkspaceUserId] ?? []
-                    ).filter((entry) => entry.id !== userMessageId),
-                }));
-                if (!stopped) {
-                    setSendError(
-                        error instanceof Error
-                            ? error.message
-                            : "Chat request failed"
-                    );
+                const message =
+                    error instanceof Error ? error.message : "Chat request failed";
+                if (isVisible()) {
+                    setThreadsByUserId((prev) => ({
+                        ...prev,
+                        [activeWorkspaceUserId]: (
+                            prev[activeWorkspaceUserId] ?? []
+                        ).filter((entry) => entry.id !== userMessageId),
+                    }));
+                    if (!stopped) setSendError(message);
+                } else if (!stopped) {
+                    pushToast(`Question failed: ${message}`, "error");
                 }
                 return false;
             } finally {
-                if (chatAbortRef.current === abort) chatAbortRef.current = null;
-                setIsReplying(false);
+                stoppedRef.current.delete(abort);
+                clearPending(pendingKey, abort);
             }
         },
         [
             activeWorkspaceUserId,
+            clearPending,
             companies,
             companyDocs,
             companyWorkspaces,
             consumeUserTokens,
             live.documents,
             live.enabled,
+            markPending,
+            pushToast,
             rememberConversation,
             session,
         ]
