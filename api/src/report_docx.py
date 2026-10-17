@@ -13,7 +13,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.shared import Cm, Pt
 
 from .evidence_model import ChronologyEntry, EvidenceItem, ReportAudit, VerifiedClaim, evidence_map
-from .word_footnotes import FootnoteRegistry, attach_footnote_part
+from .word_footnotes import FootnoteRegistry, attach_footnote_part, xml_text
 
 
 _WORD_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -91,7 +91,7 @@ def _heading(doc: Document, text: str, *, size: int = 12, bold: bool = True,
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER if centered else WD_ALIGN_PARAGRAPH.LEFT
     p.paragraph_format.space_after = Pt(6)
-    run = p.add_run(text)
+    run = p.add_run(xml_text(text))
     run.bold = bold
     run.font.name = "Arial"
     run.font.size = Pt(size)
@@ -112,13 +112,13 @@ def _claim_paragraph(
     p.paragraph_format.left_indent = Cm(1.905)
     p.paragraph_format.first_line_indent = Cm(-1.905)
     p.paragraph_format.tab_stops.add_tab_stop(Cm(1.905), WD_TAB_ALIGNMENT.LEFT)
-    p.add_run(prefix).bold = True
+    p.add_run(xml_text(prefix)).bold = True
     for index, claim in enumerate(claims):
         if not claim.supported or not claim.text.strip():
             continue
         if index or prefix:
             p.add_run(" ")
-        p.add_run(claim.text.strip())
+        p.add_run(xml_text(claim.text.strip()))
         valid = []
         for source_id in claim.source_ids:
             source = sources.get(source_id)
@@ -152,8 +152,8 @@ def _counter_evidence_paragraph(
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.left_indent = Cm(1.905)
-    p.add_run("Counter-evidence:").bold = True
-    p.add_run(" Countervailing records were identified")
+    p.add_run(xml_text("Counter-evidence:")).bold = True
+    p.add_run(xml_text(" Countervailing records were identified"))
     for source_id in counter_ids:
         source = sources.get(source_id)
         if source is None:
@@ -219,9 +219,9 @@ def build_ai_chronology_docx(
         doc.add_paragraph()
         p = doc.add_paragraph()
         p.paragraph_format.space_before = Pt(10)
-        run = p.add_run("AI draft audit · " + " · ".join(
+        run = p.add_run(xml_text("AI draft audit · " + " · ".join(
             f"{k}={v}" for k, v in audit_metadata.items() if v
-        ))
+        )))
         run.font.size = Pt(7)
         run.italic = True
 
@@ -273,7 +273,7 @@ def build_forensic_report_docx(
         _heading(doc, f"{section_number}. {name}", size=11)
         claims = sections.get(name) or []
         if not claims:
-            doc.add_paragraph("Record not established from the documents reviewed.")
+            doc.add_paragraph(xml_text("Record not established from the documents reviewed."))
             continue
         for claim_number, claim in enumerate(claims, 1):
             _claim_paragraph(
@@ -289,12 +289,12 @@ def build_forensic_report_docx(
                 _claim_paragraph(doc, "Counter-evidence:", [counter], sources,
                                  exhibits, footnotes, unresolved)
             if claim.missing_records:
-                doc.add_paragraph("Missing records: " + "; ".join(claim.missing_records))
+                doc.add_paragraph(xml_text("Missing records: " + "; ".join(claim.missing_records)))
 
     if audit_metadata:
-        doc.add_paragraph("AI draft audit · " + " · ".join(
+        doc.add_paragraph(xml_text("AI draft audit · " + " · ".join(
             f"{k}={v}" for k, v in audit_metadata.items() if v
-        ))
+        )))
     raw = io.BytesIO(); doc.save(raw)
     blob = attach_footnote_part(raw.getvalue(), footnotes.texts)
     audit = ReportAudit(

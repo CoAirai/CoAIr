@@ -72,6 +72,12 @@ def test_ai_chronology_uses_real_claim_level_footnotes_and_canonical_layout():
     assert "relationships/footnotes" in rels
     assert "/word/footnotes.xml" in content_types
     assert "FootnoteText" in styles and "FootnoteReference" in styles
+    assert "mc:Ignorable" in styles and "xmlns:ns1" not in styles
+    separator = next(
+        node for node in footnotes_xml.findall(f"{{{W}}}footnote")
+        if node.attrib.get(f"{{{W}}}id") == "-1"
+    )
+    assert separator.attrib.get(f"{{{W}}}type") == "separator"
     assert audit.footnote_references == audit.footnote_records == 2
     assert audit.unique_source_ids == 2
     assert audit.unresolved_source_ids == []
