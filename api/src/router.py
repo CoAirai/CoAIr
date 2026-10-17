@@ -1298,6 +1298,40 @@ class QueryRouter:
         q = re.sub(r"</?CONVERSATION_HISTORY>", " ", q, flags=re.IGNORECASE)
         return q.strip()
 
+    _HISTORY_RE = re.compile(
+        r"<CONVERSATION_HISTORY>(.*?)</CONVERSATION_HISTORY>", re.IGNORECASE | re.DOTALL,
+    )
+    _REFERENTIAL_RE = re.compile(
+        r"\b(?:this|that|these|those|it|its|they|them|their|above|previous|earlier|same|"
+        r"you\s+(?:said|answered|mentioned|stated|gave|shared|quoted))\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _conversation_history(cls, text: str) -> str:
+        """The earlier turns the orchestrator wrapped around the question."""
+        matches = list(cls._HISTORY_RE.finditer(text or ""))
+        return matches[-1].group(1).strip() if matches else ""
+
+    @classmethod
+    def _follow_up_topic(cls, topic: str, history: str) -> str:
+        """Search a referring follow-up together with the question before it.
+
+        "Where is this coming from?" or "and the second one?" retrieves nothing
+        useful on its own words. Self-contained questions are left alone.
+        """
+        if not history or not topic:
+            return topic
+        if len(topic.split()) > 6 and not cls._REFERENTIAL_RE.search(topic):
+            return topic
+        previous = re.findall(r"^User:\s*(.+)$", history, re.MULTILINE)
+        if not previous:
+            return topic
+        prior = previous[-1].strip()[:300]
+        if not prior or prior.casefold() in topic.casefold():
+            return topic
+        return f"{prior} {topic}"
+
     def _is_greeting(self, query: str) -> bool:
         """Detect simple greetings that don't need routing.
 
@@ -1888,13 +1922,21 @@ class QueryRouter:
             except Exception as e:
                 logger.debug(f"[DocQuery] scope skipped: {e}")
 
-        result = self.document_rag.query(
-            search_topic,
-            top_k=top_k,
-            doc_ids=doc_ids if doc_ids else None,
-            file_names=filename_hints if filename_hints else None,
-            payload_filters=payload_filters,
-        )
+        from .document_rag import answer_question_var, conversation_history_var
+        history = self._conversation_history(query)
+        history_token = conversation_history_var.set(history)
+        question_token = answer_question_var.set(self._current_question(query))
+        try:
+            result = self.document_rag.query(
+                self._follow_up_topic(search_topic, history),
+                top_k=top_k,
+                doc_ids=doc_ids if doc_ids else None,
+                file_names=filename_hints if filename_hints else None,
+                payload_filters=payload_filters,
+            )
+        finally:
+            conversation_history_var.reset(history_token)
+            answer_question_var.reset(question_token)
 
         # 3. Merge sources — metadata first, then RAG (deduplicated)
         rag_sources = result.get("sources", [])

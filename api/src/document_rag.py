@@ -62,6 +62,12 @@ from contextvars import ContextVar
 # so that value doesn't reach the query thread.
 corpus_var: ContextVar[str] = ContextVar("corpus", default="")
 
+# Set by the router around one document answer. Retrieval searches a topic or a
+# widened follow-up query; the answer is written for the question as asked, with
+# the earlier turns so "you said" and "that figure" can be resolved.
+conversation_history_var: ContextVar[str] = ContextVar("conversation_history", default="")
+answer_question_var: ContextVar[str] = ContextVar("answer_question", default="")
+
 
 def _current_user_corpus() -> str:
     """The active request user's document corpus ('edinburgh' | 'demo' | '').
@@ -1640,9 +1646,18 @@ class DocumentRAG:
                 f"{nd.get('text') or nd.get('text_snippet') or ''}"
             )
         context = "\n\n---\n\n".join(parts)
+        asked = answer_question_var.get() or question
+        history = conversation_history_var.get()
+        history_block = (
+            "CONVERSATION SO FAR (use it only to work out what the question refers "
+            "to, such as an earlier answer or figure. It is not evidence: every fact "
+            "in your answer must come from the excerpts, and if an earlier answer is "
+            "not supported by them, say so):\n"
+            f"{history}\n\n"
+        ) if history else ""
         prompt = (
-            f"DOCUMENT EXCERPTS:\n{context}\n\n"
-            f"QUESTION: {question}\n\nANSWER:"
+            f"{history_block}DOCUMENT EXCERPTS:\n{context}\n\n"
+            f"QUESTION: {asked}\n\nANSWER:"
         )
         resp = llm_client.generate_text(
             prompt, system=self.DOCUMENT_SYSTEM_PROMPT,

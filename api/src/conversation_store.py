@@ -637,8 +637,10 @@ def format_chat_context(
         return ""
 
     recent = messages[-max_messages:]
-    lines = ["<CONVERSATION_HISTORY>"]
-    total_chars = 0
+    # One long answer may not take the whole budget: the newest turns are what
+    # "you said", "that figure" and "the second one" refer to.
+    per_message = max(400, max_chars // 2)
+    rendered: List[str] = []
 
     for msg in recent:
         role_label = "User" if msg.role == "user" else "Assistant"
@@ -670,13 +672,21 @@ def format_chat_context(
             content = " ".join(parts)
 
         line = f"{role_label}: {content}"
+        if len(line) > per_message:
+            line = line[:per_message].rstrip() + " …"
+        rendered.append(line)
+
+    # Fill the budget from the newest turn backwards. Filling from the oldest
+    # used to drop the most recent question and answer once answers got long.
+    kept: List[str] = []
+    total_chars = 0
+    for line in reversed(rendered):
         total_chars += len(line)
         if total_chars > max_chars:
             break
-        lines.append(line)
+        kept.append(line)
 
-    lines.append("</CONVERSATION_HISTORY>")
-    return "\n".join(lines)
+    return "\n".join(["<CONVERSATION_HISTORY>", *reversed(kept), "</CONVERSATION_HISTORY>"])
 
 
 def _extract_table_from_sql(sql: str) -> str:

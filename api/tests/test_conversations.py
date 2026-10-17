@@ -528,6 +528,18 @@ class TestFormatChatContext:
         result = format_chat_context(msgs)
         assert long_content in result
 
+    def test_budget_keeps_the_newest_turns(self):
+        msgs = [
+            Message(role="user", content="first question", timestamp="t1"),
+            Message(role="assistant", content="A" * 5000, timestamp="t2"),
+            Message(role="user", content="second question", timestamp="t3"),
+            Message(role="assistant", content="The total budget is 411.5M.", timestamp="t4"),
+        ]
+        result = format_chat_context(msgs, max_chars=3000)
+        assert "second question" in result
+        assert "411.5M" in result
+        assert result.index("second question") < result.index("411.5M")
+
     def test_max_chars_limit(self):
         msgs = [
             Message(role="user", content="X" * 400, timestamp=f"t{i}")
