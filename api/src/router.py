@@ -1950,18 +1950,15 @@ class QueryRouter:
         except Exception as e:
             logger.warning(f"Excel enrichment for doc query failed: {e}")
 
-        # 4. If the RAG answer is empty or a bare denial but we have sources,
-        # generate a deterministic summary so the answer and citations cannot
-        # contradict each other.
+        # 4. If the RAG answer is empty but we have sources, say what was found.
         #
-        # Only BARE denials. A nuanced refusal that explains what it did find —
-        # "the excerpts do not mention Phase 1b; they refer to Phase 1 and
-        # Phase 2 in the context of the Servicing Access Strategy" — carries
-        # real information, and replacing it with "Found 10 related document(s)"
-        # would throw that away for a bare count. That distinction matters more
-        # now that the denial patterns are shared and broader than they were.
+        # Never replace a denial. A topic match ("programme impact report") is
+        # not evidence for the person or fact the question names, so "no
+        # mention of Dr X" is the correct answer to a false-premise question.
+        # Swapping it for "Found 35 related document(s)" made trick questions
+        # look answered. response_builder drops the citations of a bare denial.
         answer = result.get("answer", "")
-        if metadata_doc_ids and final_sources and self._is_bare_denial(answer):
+        if metadata_doc_ids and final_sources and not (answer or "").strip():
             answer = self._found_documents_answer(final_sources)
 
         return {
@@ -3504,7 +3501,7 @@ class QueryRouter:
             if merged and (filename_hints or metadata_doc_ids):
                 merged = self._rerank_sources(merged, filename_hints, metadata_doc_ids)
             res["sources"] = merged
-            if metadata_doc_ids and merged and self._looks_like_no_document_answer(res.get("answer", "")):
+            if metadata_doc_ids and merged and not (res.get("answer") or "").strip():
                 res["answer"] = self._found_documents_answer(merged)
 
         return provider_results
