@@ -75,8 +75,26 @@ def _startup_object_sync_and_hydrate():
     if skip_heavy:
         print("[Startup] SKIP_STARTUP_OBJECT_SYNC set — skipping object storage pull")
     else:
+        _load_local_tables()
         _startup_object_sync()
     _startup_hydrate_after_sync()
+
+
+def _load_local_tables():
+    """Make spreadsheets queryable from the parquet already on the VPS disk.
+
+    The object sync checks thousands of uploads and takes over an hour, and the
+    tables used to load only after it. Every restart left data questions
+    answering "No data tables are available" until then. Step 4 after the sync
+    adds only tables that are new.
+    """
+    try:
+        from src.data_analyzer_sql import get_data_analyzer
+        loaded = get_data_analyzer().load_from_catalog()
+        if loaded:
+            print(f"[Startup] Loaded {loaded} local tables into DuckDB before sync")
+    except Exception as e:
+        print(f"[Startup] Local table load: {e}")
 
 
 def _startup_object_sync():
