@@ -132,6 +132,7 @@ def _chronology_pipeline(username: str) -> str:
 
 _PUBLIC_ERRORS = {
     "model_output_incomplete": "The model response was incomplete. Retry will resume this report.",
+    "input_budget_exceeded": "A source was too long for one model read. Retry will resume this report.",
     "source_verification_failed": "The draft did not pass source verification.",
     "no_evidence": "No project evidence was found for this topic.",
     "insufficient_evidence": "The selected records do not establish a chronology.",

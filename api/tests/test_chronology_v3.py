@@ -410,6 +410,83 @@ def test_map_identifier_harvest_forces_a_second_document_search(monkeypatch):
     assert audit["research_leads"][0]["value"] == "NOTICE-417"
 
 
+def test_oversized_map_is_split_and_does_not_abort_research(monkeypatch):
+    from src.chronology_v3 import _read_map_documents
+    from src.llm_client import LLMInputBudgetExceededError
+
+    evidence = [
+        EvidenceItem(source_id="a", doc_id="map", file_name="contract.pdf", excerpt="alpha"),
+        EvidenceItem(source_id="b", doc_id="map", file_name="contract.pdf", excerpt="beta"),
+    ]
+
+    def fake_map(batch, **_kwargs):
+        if len(batch) > 1:
+            raise LLMInputBudgetExceededError("input_budget_exceeded:chronology_extract:400000>196608")
+        item = batch[0]
+        return {
+            "skeleton": [item.source_id],
+            "leads": [{
+                "kind": "document", "value": item.source_id,
+                "suggested_query": item.source_id, "source_id": item.source_id,
+            }],
+        }
+
+    monkeypatch.setattr("src.chronology_v3._map_extract", fake_map)
+    prepared = PreparedChronologyQuery(
+        original_query="utility diversion", english_query="utility diversion",
+        jargon_matches=(), parties=(), contracts=(), work_packages=(), exclusions=(),
+        research_queries=("utility diversion",),
+    )
+
+    result = _read_map_documents(evidence, prepared=prepared, cache_context="test")
+
+    assert result["skeleton"] == ["a", "b"]
+    assert "partial" not in result
+
+    map_doc = CandidateDocument(
+        doc_id="map", file_name="review.pdf", reference="MAP-1", title="Historical review",
+        description="", document_family="overview", metadata_date="",
+        metadata_date_source="unknown", ocr_quality="good", score=5, role="map", reasons=[],
+    )
+    notice = CandidateDocument(
+        doc_id="notice", file_name="N-417.pdf", reference="NOTICE-417", title="Notice 417",
+        description="", document_family="notice", metadata_date="",
+        metadata_date_source="unknown", ocr_quality="good", score=7, role="primary", reasons=[],
+    )
+
+    class Index:
+        calls = []
+
+        def search(self, **kwargs):
+            self.calls.append(list(kwargs["queries"]))
+            return [map_doc] if len(self.calls) == 1 else [notice, map_doc]
+
+        def list_project(self, _project_id):
+            return [
+                _record("p1", "map", "MAP-1", "Historical review", "overview"),
+                _record("p1", "notice", "NOTICE-417", "Notice 417", "notice"),
+            ]
+
+    monkeypatch.setattr("src.chronology_v3.get_document_index", lambda: Index())
+    monkeypatch.setattr("src.chronology_v3.evidence_from_documents", lambda _p, ids, scores=None: [
+        EvidenceItem(source_id=f"src-{doc_id}", doc_id=doc_id, file_name=f"{doc_id}.pdf",
+                     excerpt="14 March 2025 Notice 417",
+                     score=(scores or {}).get(doc_id, 0.0)) for doc_id in ids
+    ])
+    def always_over_budget(*_args, **_kwargs):
+        raise LLMInputBudgetExceededError(
+            "input_budget_exceeded:chronology_extract:400000>196608"
+        )
+
+    monkeypatch.setattr("src.chronology_v3._map_extract", always_over_budget)
+    monkeypatch.setattr("src.chronology_v3.coverage_matrix", lambda _e: {"framework": 1})
+
+    selected, _, audit = research_documents("p1", prepared)
+
+    assert {item.doc_id for item in selected} == {"map", "notice"}
+    assert "map_extraction_partial" in audit["warnings"]
+
+
 def test_unreadable_title_only_document_is_never_loaded_as_evidence(document_index):
     index, _ = document_index
     index.upsert(_record(

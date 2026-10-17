@@ -25,6 +25,7 @@ from .report_errors import classify_report_error
 PIPELINE_VERSION = "chronology-v3"
 PIPELINE_CONTRACT_REVISION = "full-events-v1"
 EVIDENCE_BATCH_CHARS = 80_000
+MAP_READ_BATCHES = 8
 SYNTHESIS_BATCH_EVENTS = 12
 VERIFICATION_BATCH_CLAIMS = 30
 REPAIR_BATCH_CLAIMS = 20
@@ -420,6 +421,83 @@ def _map_extract(
     return value
 
 
+def _merge_map_parts(parts: Sequence[Dict]) -> Dict:
+    skeleton: List[str] = []
+    seen_skeleton: set[str] = set()
+    leads: List[Dict] = []
+    seen_leads: set[Tuple[str, str]] = set()
+    for part in parts:
+        for item in part.get("skeleton") or []:
+            text = str(item).strip()
+            key = text.casefold()
+            if text and key not in seen_skeleton and len(skeleton) < 30:
+                seen_skeleton.add(key)
+                skeleton.append(text)
+        for lead in part.get("leads") or []:
+            if not isinstance(lead, dict):
+                continue
+            identity = (
+                str(lead.get("value") or "").casefold(),
+                str(lead.get("suggested_query") or "").casefold(),
+            )
+            if not identity[1] or identity in seen_leads or len(leads) >= 40:
+                continue
+            seen_leads.add(identity)
+            leads.append(lead)
+    return {"skeleton": skeleton, "leads": leads}
+
+
+def _read_map_documents(
+    evidence: Sequence[EvidenceItem], *, prepared: PreparedChronologyQuery,
+    cache_context: str,
+) -> Dict:
+    """Read overview documents in bounded slices.
+
+    A selected map can be an entire contract. Sending it in one call exceeds
+    the chronology input budget and used to abort the report before any events
+    were extracted. Only the first slices are read: a map is a guide to the
+    next search, and the evidence pack is read separately. A slice that is
+    still too large is skipped; the other sources continue.
+    """
+    if not evidence:
+        return {"skeleton": [], "leads": []}
+    parts: List[Dict] = []
+    partial = False
+    batches = _batches(list(evidence))
+    if len(batches) > MAP_READ_BATCHES:
+        partial = True
+        batches = batches[:MAP_READ_BATCHES]
+
+    def run(batch: List[EvidenceItem], key: str, depth: int = 0) -> None:
+        nonlocal partial
+        try:
+            parts.append(_map_extract(
+                batch, prepared=prepared,
+                cache_context=f"{cache_context}:{key}",
+            ))
+        except Exception as exc:
+            if _is_structured_output_error(exc) and len(batch) > 1 and depth < 8:
+                middle = len(batch) // 2
+                run(batch[:middle], key + "a", depth + 1)
+                run(batch[middle:], key + "b", depth + 1)
+                return
+            if not _is_structured_output_error(exc):
+                raise
+            partial = True
+            from .logger import logger
+            logger.warning(
+                "[Chronology] skipped map slice %s after %s",
+                key, classify_report_error(exc),
+            )
+
+    for index, batch in enumerate(batches, 1):
+        run(list(batch), f"map:{index}")
+    result = _merge_map_parts(parts)
+    if partial:
+        result["partial"] = True
+    return result
+
+
 def research_documents(
     project_id: str, prepared: PreparedChronologyQuery,
     *, load_step: Callable[[str, str], Dict | None] | None = None,
@@ -457,22 +535,12 @@ def research_documents(
     if previous and previous.get("status") == "ready":
         map_result = previous.get("output") or {"skeleton": [], "leads": []}
     else:
-        try:
-            map_result = _map_extract(
-                map_evidence, prepared=prepared,
-                cache_context=f"{chronology_v3_prompt_hash()}:{map_hash}",
-            )
-            if save_step:
-                save_step("map_extraction", map_hash, "ready", map_result, "")
-        except Exception as exc:
-            if save_step:
-                save_step(
-                    "map_extraction", map_hash, "failed", None,
-                    classify_report_error(exc),
-                )
-            if not _is_structured_output_error(exc):
-                raise
-            raise RuntimeError(classify_report_error(exc)) from exc
+        map_result = _read_map_documents(
+            map_evidence, prepared=prepared,
+            cache_context=f"{chronology_v3_prompt_hash()}:{map_hash}",
+        )
+        if save_step:
+            save_step("map_extraction", map_hash, "ready", map_result, "")
 
     lead_queries = [str(item.get("suggested_query") or "").strip()
                     for item in map_result.get("leads", []) if item.get("suggested_query")]
@@ -524,6 +592,8 @@ def research_documents(
     warnings: List[str] = []
     if not map_docs:
         warnings.append("map_document_missing")
+    if map_result.get("partial"):
+        warnings.append("map_extraction_partial")
     unreadable = [item.doc_id for item in initial if item.ocr_quality == "unreadable"]
     if unreadable:
         warnings.append("unreadable_leads_excluded")
