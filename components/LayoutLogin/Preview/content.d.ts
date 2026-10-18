@@ -1,1 +1,1 @@
-export const COAIR_PREVIEW_CONTENT: any;
+export const COAIR_PREVIEW_CONTENT: unknown;
