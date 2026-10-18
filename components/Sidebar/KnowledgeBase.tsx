@@ -665,7 +665,7 @@ const KnowledgeBase = () => {
                     }}
                 >
                     <Icon className="shrink-0 fill-strong-950" name="chat" />
-                    <span className="truncate">AI Assistant</span>
+                    <span className="truncate">Ask Queries / New Chat</span>
                     {tokenMeter && (
                         <TokenUsage
                             used={tokenMeter.used}

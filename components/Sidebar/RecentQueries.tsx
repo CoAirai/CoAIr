@@ -259,6 +259,7 @@ const RecentQueries = () => {
                                         ? "text-sub-600"
                                         : ""
                                 }`}
+                                title={`${report.reference}.x · ${report.title}`}
                                 onClick={() => {
                                     router.push(`${hrefBase}/${report.id}`);
                                 }}
@@ -360,6 +361,7 @@ const RecentQueries = () => {
                                 <button
                                     type="button"
                                     className="flex h-10 min-w-0 grow items-center gap-2 rounded-xl px-2 text-left text-label-sm transition-colors hover:bg-weak-50/70"
+                                    title={q.title}
                                     onClick={() => selectQuery(q.id)}
                                 >
                                     <span className="min-w-0 grow truncate">

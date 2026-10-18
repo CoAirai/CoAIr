@@ -17,6 +17,7 @@ import { useChat } from "@/context/ChatContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { useToast } from "@/context/ToastContext";
 import type { CompanyDocumentKind } from "@/lib/admin/companyDocuments";
+import { workspaceLogo } from "@/lib/workspace/moduleAccess";
 
 const FILE_KINDS: Record<CompanyDocumentKind, { exts: string[]; hint: string }> = {
     document: {
@@ -68,6 +69,7 @@ const Sidebar = ({
     const isChronology = pathname.startsWith("/workspace/chronology");
     const isForensic = pathname.startsWith("/workspace/forensic");
     const isModuleSidebar = isChronology || isForensic;
+    const logo = workspaceLogo(pathname);
     const { clearChat } = useChat();
     const { session } = useAuth();
     const { addCompanyDocument } = useAdminData();
@@ -145,10 +147,10 @@ const Sidebar = ({
                         >
                             <Image
                                 className="h-8 w-auto shrink-0 rounded-xl object-contain opacity-100"
-                                src="/images/coair-logo.png"
+                                src={logo.src}
                                 width={120}
                                 height={32}
-                                alt="COAIr"
+                                alt={logo.alt}
                             />
                             {isForensic ? (
                                 <span className="min-w-0">

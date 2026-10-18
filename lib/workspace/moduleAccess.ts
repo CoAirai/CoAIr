@@ -46,6 +46,18 @@ export const MODULES: {
     },
 ];
 
+const MODULE_LOGOS: { href: string; src: string; alt: string }[] = [
+    { href: "/workspace/chat", src: "/images/modules/queris.png", alt: "QUERIS" },
+    { href: "/workspace/chronology", src: "/images/modules/chronos.png", alt: "CHRONOS" },
+    { href: "/workspace/forensic", src: "/images/modules/forensis.png", alt: "FORENSIS" },
+];
+
+/** The module's mark inside a module, the COAIr logo everywhere else. */
+export function workspaceLogo(pathname: string): { src: string; alt: string } {
+    const found = MODULE_LOGOS.find((entry) => pathname.startsWith(entry.href));
+    return found ?? { src: "/images/coair-logo.png", alt: "COAIr" };
+}
+
 function sessionRoleToOrgRole(role?: SessionRole | string | null): string {
     if (
         role === "company_admin" ||

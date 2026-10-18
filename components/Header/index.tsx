@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Icon from "@/components/Icon";
 import ModalSettings from "@/components/ModalSettings";
 import Image from "@/components/Image";
@@ -14,6 +14,7 @@ import { redirectToSignInAfterLogout } from "@/lib/auth/portalNav";
 import { useChat } from "@/context/ChatContext";
 import { useLiveWorkspace } from "@/context/LiveWorkspaceContext";
 import { activeWorkspaceUsers } from "@/lib/chat/threads";
+import { workspaceLogo } from "@/lib/workspace/moduleAccess";
 type Props = {
     sidebarOpen: boolean;
     onOpenSidebar: () => void;
@@ -30,6 +31,7 @@ function initials(name: string) {
 
 const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
     const router = useRouter();
+    const logo = workspaceLogo(usePathname());
     const [openSettings, setOpenSettings] = useState(false);
     const { session, signOut } = useAuth();
     const { users } = useAdminData();
@@ -87,10 +89,10 @@ const Header = ({ sidebarOpen, onOpenSidebar }: Props) => {
                 <div className="flex min-w-0 grow items-center gap-3">
                     <Image
                         className="h-8 w-auto shrink-0 rounded-xl object-contain opacity-100 max-md:h-7"
-                        src="/images/coair-logo.png"
+                        src={logo.src}
                         width={120}
                         height={32}
-                        alt="COAIr"
+                        alt={logo.alt}
                     />
                     <ProjectSwitcher />
                 </div>
