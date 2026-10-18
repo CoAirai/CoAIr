@@ -11,6 +11,8 @@ import { mapChronologyJob } from "@/lib/coair/mapChronology";
 import { listReports } from "@/lib/coair/reports";
 import { ownedByUser } from "@/lib/workspace/ownedByUser";
 
+const PAGE_SIZE = 5;
+
 function QueryActions({
     pinned,
     archived,
@@ -146,6 +148,7 @@ const RecentQueries = () => {
     } = useChat();
     const [viewingArchive, setViewingArchive] = useState(false);
     const [querySearch, setQuerySearch] = useState("");
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameDraft, setRenameDraft] = useState("");
     const renameSaved = useRef(false);
@@ -197,6 +200,10 @@ const RecentQueries = () => {
         session?.companyId,
         session?.projectId,
     ]);
+    useEffect(() => {
+        setVisibleCount(PAGE_SIZE);
+    }, [querySearch, viewingArchive]);
+
     const activeChronologyId = pathname.startsWith("/workspace/chronology/")
         ? pathname.split("/workspace/chronology/")[1]
         : null;
@@ -272,6 +279,8 @@ const RecentQueries = () => {
             return entry.title.toLowerCase().includes(needle);
         }
     );
+    const visibleQueries = queries.slice(0, visibleCount);
+    const hiddenCount = queries.length - visibleQueries.length;
     const saveRename = (id: string) => {
         if (renameSaved.current) return;
         renameSaved.current = true;
@@ -317,7 +326,7 @@ const RecentQueries = () => {
                               : "No queries yet"}
                     </div>
                 )}
-                {queries.map((q) => {
+                {visibleQueries.map((q) => {
                     const active = selectedQueryId === q.id;
                     return (
                         <div
@@ -380,6 +389,17 @@ const RecentQueries = () => {
                         </div>
                     );
                 })}
+                {hiddenCount > 0 && (
+                    <button
+                        type="button"
+                        className="mx-1 h-9 rounded-xl px-3 text-left text-label-xs text-blue-500 transition-colors hover:bg-weak-50"
+                        onClick={() =>
+                            setVisibleCount((count) => count + PAGE_SIZE)
+                        }
+                    >
+                        View more · {hiddenCount} left
+                    </button>
+                )}
             </div>
         </div>
     );

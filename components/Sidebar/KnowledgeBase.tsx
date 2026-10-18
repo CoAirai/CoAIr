@@ -688,7 +688,6 @@ const KnowledgeBase = () => {
                     icon="document"
                     items={files}
                     canManage={canManage}
-                    defaultOpen
                     loading={docsLoading}
                     onAsk={(name) => void askAboutDocument(name)}
                     onRemove={removeDoc}
