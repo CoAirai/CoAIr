@@ -201,6 +201,36 @@ class ReportJobStore:
                  str(result.get("coverage_status") or ""), _now(), _now(), job_id],
             )
 
+    def set_chronology_reviews(self, job_id: str, project_id: str, entry_refs: List[str],
+                               reviewed: bool, username: str) -> Optional[Dict]:
+        """Mark chronology entries verified (or not) in one locked read-modify-write."""
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM report_jobs WHERE job_id=? AND project_id=? "
+                "AND module='chronology' AND status='ready'", [job_id, project_id],
+            ).fetchone()
+            if not row:
+                return None
+            result = self._row(row).get("result") or {}
+            known = {str(e.get("entry_ref")) for e in result.get("entries", []) if e.get("entry_ref")}
+            unknown = [ref for ref in entry_refs if ref not in known]
+            if unknown:
+                raise ValueError("unknown_entry_ref")
+            reviews = dict(result.get("reviews") or {})
+            for ref in entry_refs:
+                if reviewed:
+                    reviews[ref] = {"by": username, "at": _now()}
+                else:
+                    reviews.pop(ref, None)
+            result["reviews"] = reviews
+            conn.execute(
+                "UPDATE report_jobs SET result_json=?,updated_at=? WHERE job_id=?",
+                [json.dumps(result, ensure_ascii=False), _now(), job_id],
+            )
+            row = conn.execute("SELECT * FROM report_jobs WHERE job_id=?", [job_id]).fetchone()
+        return self._row(row)
+
     def replace_ready_result(self, job_id: str, result: Dict, docx_path: str) -> None:
         """Persist a user-reviewed draft/issue without changing job identity."""
         safe_result = {k: v for k, v in result.items() if k != "docx"}

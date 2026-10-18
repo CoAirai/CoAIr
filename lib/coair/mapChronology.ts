@@ -5,21 +5,16 @@ import type {
     ChronologySource,
     ChronologyStatus,
 } from "@/lib/chronology/types";
+import {
+    buildChronologyEvents,
+    type CoairEntryRaw,
+    type CoairEvidenceRaw,
+    type CoairReviewRaw,
+} from "@/lib/chronology/events";
 
-export type CoairReportEvidence = {
-    source_id?: string;
-    doc_id?: string;
-    file_name?: string;
-    title?: string;
-    page?: number | null;
-};
+export type CoairReportEvidence = CoairEvidenceRaw;
 
-export type CoairChronologyEntry = {
-    date?: string;
-    heading?: string;
-    title?: string;
-    claims?: Array<{ text?: string; source_ids?: string[] }>;
-};
+export type CoairChronologyEntry = CoairEntryRaw;
 
 export type CoairReportJob = {
     job_id: string;
@@ -28,9 +23,14 @@ export type CoairReportJob = {
     created_at?: string;
     sequence_number?: number;
     error?: string;
+    stage?: string;
+    progress?: number;
     result?: {
         entries?: CoairChronologyEntry[];
         evidence?: CoairReportEvidence[];
+        coverage_status?: string;
+        reviews?: Record<string, CoairReviewRaw>;
+        documents_considered?: number;
     };
 };
 
@@ -113,5 +113,12 @@ export function mapChronologyJob(
         error: job.error || undefined,
         sections,
         sources,
+        ...buildChronologyEvents(
+            entries,
+            job.result?.evidence ?? [],
+            job.result?.reviews ?? {}
+        ),
+        coveragePartial: job.result?.coverage_status === "partial",
+        documentsConsidered: job.result?.documents_considered,
     };
 }

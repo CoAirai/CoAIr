@@ -34,6 +34,24 @@ export async function retryReport(
     );
 }
 
+export async function setChronologyReview(
+    token: string,
+    projectId: string,
+    jobId: string,
+    entryRefs: string[],
+    reviewed: boolean
+) {
+    return coairFetch<CoairReportJob>(
+        `/reports/${encodeURIComponent(jobId)}/review`,
+        {
+            method: "PATCH",
+            token,
+            projectId,
+            body: { entry_refs: entryRefs, reviewed },
+        }
+    );
+}
+
 export async function generateChronology(
     token: string,
     projectId: string,

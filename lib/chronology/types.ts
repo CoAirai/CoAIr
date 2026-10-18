@@ -1,3 +1,5 @@
+import type { ChronologyEvent, ChronologyEventClaim } from "./events";
+
 export type ChronologyStatus = "ready" | "failed" | "generating";
 
 export type ChronologyCitation = {
@@ -33,6 +35,10 @@ export type ChronologyReport = {
     error?: string;
     sections: ChronologySection[];
     sources: ChronologySource[];
+    events?: ChronologyEvent[];
+    overview?: ChronologyEventClaim[];
+    coveragePartial?: boolean;
+    documentsConsidered?: number;
 };
 
 export type ChronologyDraft = {

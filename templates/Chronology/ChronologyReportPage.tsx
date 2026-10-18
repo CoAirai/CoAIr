@@ -1,20 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import SourcePdfPreview from "@/components/SourcePdfPreview";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import DocumentPreview from "@/components/Chat/DocumentPreview";
 import { ChronologyReportSkeleton } from "@/components/Skeleton/sections";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
+import { useChat } from "@/context/ChatContext";
 import { companyForSession } from "@/lib/workspace/companyForSession";
+import type { ChronologyEvent, ChronologyEventSource } from "@/lib/chronology/events";
 import type { ChronologyCitation, ChronologyReport } from "@/lib/chronology/types";
 import { mapChronologyJob } from "@/lib/coair/mapChronology";
 import {
     downloadReportDocument,
     getReport,
     retryReport,
+    setChronologyReview,
 } from "@/lib/coair/reports";
 import ChronologyShell from "./ChronologyShell";
+import EventTable, { type EventFilter } from "./Report/EventTable";
+import ReportHeader from "./Report/ReportHeader";
+import ReviewBar from "./Report/ReviewBar";
+import SourceChip from "./Report/SourceChip";
+import Timeline from "./Report/Timeline";
 
 type Props = {
     reportId: string;
@@ -23,6 +31,7 @@ type Props = {
 const ChronologyReportPage = ({ reportId }: Props) => {
     const { session } = useAuth();
     const { companies, companyWorkspaces } = useAdminData();
+    const { openCitation, openDocumentPreview, closeDocumentPreview } = useChat();
     const company = companyForSession(session, companies);
     const live = session?.source === "live";
     const mockReport = company
@@ -33,14 +42,20 @@ const ChronologyReportPage = ({ reportId }: Props) => {
     const [liveReport, setLiveReport] = useState<ChronologyReport | null>(null);
     const [liveError, setLiveError] = useState<string | null>(null);
     const report = live ? liveReport : mockReport;
-    const [openSource, setOpenSource] = useState<ChronologyCitation | null>(
-        null
-    );
     const [retrying, setRetrying] = useState(false);
     const [pollEpoch, setPollEpoch] = useState(0);
     const [downloading, setDownloading] = useState(false);
     const [downloadError, setDownloadError] = useState("");
-    const [sourcesOpen, setSourcesOpen] = useState(false);
+    const [selected, setSelected] = useState<{ ref: string; srcId: string } | null>(null);
+    const [filter, setFilter] = useState<EventFilter>("all");
+    const [savingRefs, setSavingRefs] = useState<string[]>([]);
+    const [reviewError, setReviewError] = useState("");
+
+    useEffect(() => () => closeDocumentPreview(), [closeDocumentPreview]);
+
+    useEffect(() => {
+        if (!openCitation) setSelected(null);
+    }, [openCitation]);
 
     useEffect(() => {
         if (!live || !session?.accessToken || !session.projectId) return;
@@ -87,17 +102,69 @@ const ChronologyReportPage = ({ reportId }: Props) => {
         session?.projectId,
     ]);
 
-    const createdLabel = useMemo(() => {
-        if (!report) return "";
-        return new Date(report.createdAt).toLocaleString("en-GB", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
+    const events = useMemo(() => report?.events ?? [], [report]);
+
+    const openSource = useCallback(
+        (event: ChronologyEvent | null, source: ChronologyEventSource | ChronologyCitation) => {
+            const srcId = source.srcId;
+            setSelected(event ? { ref: event.ref, srcId } : null);
+            openDocumentPreview({
+                documentId: source.documentId,
+                name: source.name,
+                page: source.page,
+                excerpt: "excerpt" in source ? source.excerpt : "",
+            });
+        },
+        [openDocumentPreview]
+    );
+
+    const toggleReview = async (event: ChronologyEvent) => {
+        if (!live || !session?.accessToken || !session.projectId || !report) return;
+        const next = !event.reviewed;
+        const patch = (reviewed: boolean) =>
+            setLiveReport((current) =>
+                current
+                    ? {
+                          ...current,
+                          events: (current.events ?? []).map((entry) =>
+                              entry.ref === event.ref ? { ...entry, reviewed } : entry
+                          ),
+                      }
+                    : current
+            );
+        patch(next);
+        setReviewError("");
+        setSavingRefs((refs) => [...refs, event.ref]);
+        try {
+            const job = await setChronologyReview(
+                session.accessToken,
+                session.projectId,
+                reportId,
+                [event.ref],
+                next
+            );
+            setLiveReport(mapChronologyJob(job, session.companyId ?? "live"));
+        } catch (err) {
+            patch(event.reviewed);
+            setReviewError(
+                err instanceof Error ? err.message : "Could not save the review."
+            );
+        } finally {
+            setSavingRefs((refs) => refs.filter((ref) => ref !== event.ref));
+        }
+    };
+
+    const reviewNext = () => {
+        const next = events.find((event) => !event.reviewed);
+        if (!next) return;
+        setFilter("all");
+        window.requestAnimationFrame(() => {
+            document
+                .getElementById(`chronology-row-${next.ref}`)
+                ?.scrollIntoView({ block: "center", behavior: "smooth" });
         });
-    }, [report]);
+        if (next.sources[0]) openSource(next, next.sources[0]);
+    };
 
     const downloadWord = async () => {
         if (!live || !session?.accessToken || !session.projectId || downloading) return;
@@ -122,6 +189,23 @@ const ChronologyReportPage = ({ reportId }: Props) => {
         } finally {
             setDownloading(false);
         }
+    };
+
+    const retry = () => {
+        if (!session?.accessToken || !session.projectId) return;
+        setRetrying(true);
+        setLiveError(null);
+        void retryReport(session.accessToken, session.projectId, reportId)
+            .then((job) => {
+                setLiveReport(mapChronologyJob(job, session.companyId ?? "live"));
+                setPollEpoch((value) => value + 1);
+            })
+            .catch((err) => {
+                setLiveError(
+                    err instanceof Error ? err.message : "Unable to retry chronology"
+                );
+            })
+            .finally(() => setRetrying(false));
     };
 
     if (live && !report && !liveError) {
@@ -157,7 +241,7 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                     key={index}
                     type="button"
                     className="text-blue-500 hover:underline"
-                    onClick={() => setOpenSource(citation)}
+                    onClick={() => openSource(null, citation)}
                 >
                     {citation.name}, p.{citation.page}
                 </button>
@@ -165,197 +249,129 @@ const ChronologyReportPage = ({ reportId }: Props) => {
         });
     };
 
+    const hasEvents = report.status === "ready" && events.length > 0;
+    const notices = [liveError, downloadError, reviewError].filter(Boolean);
+
     return (
         <ChronologyShell>
             <div className="chat-wrapper relative">
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-                <main className="min-w-0 flex-1 overflow-auto bg-weak-50/40 px-8 py-8 scrollbar-none max-md:px-4">
-                    <Link
-                        href="/workspace/chronology"
-                        className="text-label-xs uppercase tracking-[0.18em] text-soft-400 hover:text-strong-950"
-                    >
-                        Chronology
-                    </Link>
-                    <div className="mt-4 rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div>
-                                <p className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
-                                    {report.reference}
+                <div className="flex min-h-0 flex-1 overflow-hidden">
+                    <main className="min-w-0 flex-1 overflow-auto bg-weak-50/40 px-8 pb-6 pt-8 scrollbar-none max-md:px-4">
+                        <div className="mx-auto grid max-w-[1180px] gap-4">
+                            <Link
+                                href="/workspace/chronology"
+                                className="text-label-xs uppercase tracking-[0.18em] text-soft-400 hover:text-strong-950"
+                            >
+                                ← All chronologies
+                            </Link>
+
+                            {notices.map((notice) => (
+                                <p key={notice} role="alert" className="text-label-sm text-red-500">
+                                    {notice}
                                 </p>
-                                <h1 className="mt-2 max-w-3xl text-3xl font-medium text-strong-950">
-                                    {report.title}
-                                </h1>
-                                <p className="mt-2 text-label-xs text-sub-600">
-                                    Created {createdLabel} —{" "}
-                                    {report.status === "generating"
-                                        ? "generating. You can close this page. The report continues on the server."
-                                        : report.status === "failed"
-                                          ? "failed — retry to run it again"
-                                          : "read-only record"}
-                                </p>
-                                {liveError ? (
-                                    <p className="mt-2 text-label-sm text-red-500">
-                                        {liveError}
-                                    </p>
-                                ) : null}
-                                {downloadError ? (
-                                    <p className="mt-2 text-label-sm text-red-500">
-                                        {downloadError}
-                                    </p>
-                                ) : null}
-                                <button
-                                    type="button"
-                                    className="mt-3 h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 md:hidden"
-                                    onClick={() => setSourcesOpen(true)}
-                                >
-                                    Sources · {report.sources.length}
-                                </button>
-                            </div>
-                            {live && report.status === "ready" ? (
-                                <button
-                                    type="button"
-                                    disabled={downloading}
-                                    onClick={() => void downloadWord()}
-                                    className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-60"
-                                >
-                                    {downloading ? "Preparing Word…" : "Download Word ↓"}
-                                </button>
-                            ) : null}
-                            {live && report.status === "failed" ? (
-                                <button
-                                    type="button"
-                                    disabled={retrying}
-                                    onClick={() => {
-                                        if (
-                                            !session?.accessToken ||
-                                            !session.projectId
-                                        ) {
-                                            return;
+                            ))}
+
+                            {hasEvents ? (
+                                <>
+                                    {report.coveragePartial ? (
+                                        <div className="rounded-2xl border border-[#F6D89A] bg-[#FFF6E6] px-4 py-3 text-label-sm text-[#8A5200]">
+                                            This chronology was built from part of the matching records, so some
+                                            events may be missing. Check the record before relying on it.
+                                        </div>
+                                    ) : null}
+                                    <ReportHeader
+                                        report={report}
+                                        events={events}
+                                        downloading={downloading}
+                                        onDownloadWord={live ? () => void downloadWord() : undefined}
+                                    />
+                                    {report.overview && report.overview.length > 0 ? (
+                                        <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                                            <h2 className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-soft-400">
+                                                Overview
+                                            </h2>
+                                            <ul className="mt-3 grid gap-3">
+                                                {report.overview.map((claim, index) => (
+                                                    <li key={index} className="text-label-sm leading-6 text-sub-600">
+                                                        {claim.text}
+                                                        <span className="ml-2 inline-flex flex-wrap gap-1.5 align-middle">
+                                                            {claim.sources.map((source) => (
+                                                                <SourceChip
+                                                                    key={source.srcId}
+                                                                    source={source}
+                                                                    onOpen={(chosen) => openSource(null, chosen)}
+                                                                />
+                                                            ))}
+                                                        </span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </section>
+                                    ) : null}
+                                    <Timeline
+                                        events={events}
+                                        selectedRef={selected?.ref ?? null}
+                                        onSelect={(event) =>
+                                            event.sources[0] && openSource(event, event.sources[0])
                                         }
-                                        setRetrying(true);
-                                        setLiveError(null);
-                                        void retryReport(
-                                            session.accessToken,
-                                            session.projectId,
-                                            reportId
-                                        )
-                                            .then((job) => {
-                                                setLiveReport(
-                                                    mapChronologyJob(
-                                                        job,
-                                                        session.companyId ??
-                                                            "live"
-                                                    )
-                                                );
-                                                setPollEpoch((value) => value + 1);
-                                            })
-                                            .catch((err) => {
-                                                setLiveError(
-                                                    err instanceof Error
-                                                        ? err.message
-                                                        : "Unable to retry chronology"
-                                                );
-                                            })
-                                            .finally(() => setRetrying(false));
-                                    }}
-                                    className="h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-60"
-                                >
-                                    {retrying ? "Retrying…" : "Retry"}
-                                </button>
-                            ) : null}
+                                    />
+                                    <EventTable
+                                        events={events}
+                                        filter={filter}
+                                        onFilter={setFilter}
+                                        selectedRef={selected?.ref ?? null}
+                                        activeSourceId={selected?.srcId ?? null}
+                                        savingRefs={savingRefs}
+                                        canReview={live}
+                                        onOpenSource={openSource}
+                                        onToggleReview={(event) => void toggleReview(event)}
+                                    />
+                                    {live ? <ReviewBar events={events} onReviewNext={reviewNext} /> : null}
+                                </>
+                            ) : (
+                                <>
+                                    <div className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
+                                        <p className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
+                                            Chronology {report.reference}
+                                        </p>
+                                        <h1 className="mt-2 max-w-3xl text-3xl font-medium text-strong-950">
+                                            {report.title}
+                                        </h1>
+                                        <p className="mt-2 text-label-xs text-sub-600">
+                                            {report.status === "generating"
+                                                ? "Generating. You can close this page; the chronology continues on the server."
+                                                : report.status === "failed"
+                                                  ? "Failed. Retry to run it again."
+                                                  : "Read-only record"}
+                                        </p>
+                                        {live && report.status === "failed" ? (
+                                            <button
+                                                type="button"
+                                                disabled={retrying}
+                                                onClick={retry}
+                                                className="mt-3 h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 hover:bg-blue-600 disabled:opacity-60"
+                                            >
+                                                {retrying ? "Retrying…" : "Retry"}
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                    {report.sections.map((section) => (
+                                        <section
+                                            key={section.id}
+                                            className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
+                                        >
+                                            <h2 className="text-label-md text-strong-950">{section.heading}</h2>
+                                            <p className="mt-3 text-label-sm leading-7 text-sub-600">
+                                                {renderBody(section.body, section.citations)}
+                                            </p>
+                                        </section>
+                                    ))}
+                                </>
+                            )}
                         </div>
-                    </div>
-
-                    <div className="mt-8 grid gap-3">
-                        {report.sections.map((section) => (
-                            <section
-                                key={section.id}
-                                className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5"
-                            >
-                                <h2 className="text-label-md text-strong-950">
-                                    {section.heading}
-                                </h2>
-                                <p className="mt-3 text-label-sm leading-7 text-sub-600">
-                                    {renderBody(section.body, section.citations)}
-                                </p>
-                            </section>
-                        ))}
-                    </div>
-                </main>
-
-                {sourcesOpen ? (
-                    <div className="fixed inset-0 z-40 flex flex-col bg-white-0 p-4 md:hidden">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-label-sm text-strong-950">
-                                Sources · {report.sources.length}
-                            </h2>
-                            <button
-                                type="button"
-                                className="h-11 rounded-xl px-3 text-label-sm text-blue-500"
-                                onClick={() => setSourcesOpen(false)}
-                            >
-                                Close
-                            </button>
-                        </div>
-                        <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-auto">
-                            {report.sources.map((source) => (
-                                <button
-                                    key={source.id}
-                                    type="button"
-                                    onClick={() => {
-                                        setOpenSource(source);
-                                        setSourcesOpen(false);
-                                    }}
-                                    className="block w-full rounded-xl border border-stroke-soft-200 bg-white-0 p-3 text-left"
-                                >
-                                    <div className="truncate text-label-sm text-strong-950">
-                                        {source.name}
-                                    </div>
-                                    <div className="mt-1 text-label-xs text-sub-600">
-                                        p.{source.page}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                ) : null}
-
-                {!openSource ? (
-                    <aside className="hidden w-80 shrink-0 border-l border-stroke-soft-200 bg-weak-50/60 p-5 md:block">
-                        <h2 className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
-                            Verified sources · {report.sources.length}
-                        </h2>
-                        <div className="mt-4 space-y-3">
-                            {report.sources.map((source) => (
-                                <button
-                                    key={source.id}
-                                    type="button"
-                                    onClick={() => setOpenSource(source)}
-                                    className="block w-full rounded-xl border border-stroke-soft-200 bg-white-0 p-3 text-left hover:border-stroke-sub-300"
-                                >
-                                    <div className="truncate text-label-sm text-strong-950">
-                                        {source.name}
-                                    </div>
-                                    <div className="mt-1 truncate text-label-xs text-sub-600">
-                                        {source.srcId}
-                                    </div>
-                                    <div className="mt-1 text-label-xs text-sub-600">
-                                        p.{source.page}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    </aside>
-                ) : null}
-
-                <SourcePdfPreview
-                    open={Boolean(openSource)}
-                    documentId={openSource?.documentId}
-                    name={openSource?.name}
-                    page={openSource?.page}
-                    onClose={() => setOpenSource(null)}
-                />
-            </div>
+                    </main>
+                    <DocumentPreview />
+                </div>
             </div>
         </ChronologyShell>
     );

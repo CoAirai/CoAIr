@@ -168,9 +168,12 @@ def _public(job: dict) -> dict:
             # with no indication that anything was missing.
             value["result"] = {
                 key: result[key] for key in
-                ("entries", "evidence", "coverage_status", "partial_reasons")
+                ("entries", "evidence", "coverage_status", "partial_reasons", "reviews")
                 if key in result
             }
+            candidates = (result.get("research_audit") or {}).get("candidates")
+            if isinstance(candidates, list):
+                value["result"]["documents_considered"] = len(candidates)
         else:
             value["result"] = {key: item for key, item in result.items() if key not in {
                 "research_audit", "verification_audit", "research_questions",
@@ -421,6 +424,31 @@ def resolve_report_source(
     if source.get("kind") == "toolkit":
         return {"source": source, "record": {"status": "toolkit-evidence"}}
     raise HTTPException(409, "source_record_no_longer_resolves")
+
+
+class ChronologyReviewUpdate(BaseModel):
+    entry_refs: List[str] = Field(min_length=1, max_length=500)
+    reviewed: bool = True
+
+
+@router.patch("/reports/{job_id}/review")
+def update_chronology_review(
+    job_id: str,
+    body: ChronologyReviewUpdate,
+    user: UserContext = Depends(require_user_right("chronology")),
+    project: ProjectContext = Depends(require_project_editor),
+):
+    """Record that a reviewer checked chronology entries against their sources."""
+    store = get_report_job_store()
+    try:
+        job = store.set_chronology_reviews(
+            job_id, project.project_id, body.entry_refs, body.reviewed, user.username,
+        )
+    except ValueError:
+        raise HTTPException(422, "unknown_entry_ref")
+    if not job:
+        raise HTTPException(404, "chronology_report_not_found")
+    return _public(job)
 
 
 @router.patch("/reports/{job_id}/draft")
