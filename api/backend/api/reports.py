@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from dataclasses import asdict
 from typing import Dict, List
@@ -24,6 +25,7 @@ from src.docx_kit import safe_filename
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ChronologyGenerateRequest(BaseModel):
@@ -513,6 +515,16 @@ def update_forensic_draft(
 @router.get("/reports/{job_id}/document")
 def download_report(job_id: str, project: ProjectContext = Depends(get_current_project)):
     job = get_report_job_store().get(job_id, project.project_id)
+    if job and job["status"] == "ready" and job["module"] == "chronology" and job.get("result"):
+        from src.chronology_template_docx import build_event_chronology_docx
+        try:
+            blob = build_event_chronology_docx(
+                job=job,
+                project_name=str((job.get("request") or {}).get("project_name") or project.name),
+            )
+            return docx_response(blob, safe_filename(job["module"], job["title"]) + ".docx")
+        except Exception:
+            logger.exception("event chronology render failed for %s; serving stored file", job_id)
     if not job or job["status"] != "ready" or not job.get("docx_path"):
         raise HTTPException(404, "report_document_not_ready")
     path = Path(job["docx_path"])
