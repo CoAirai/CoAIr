@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from .chronology_prompts import chronology_v3_prompt_hash, load_chronology_v3_prompts
 from .chronology_v2 import COVERAGE_FACETS, PreparedChronologyQuery, coverage_matrix
 from .evidence_pack import select_pack
-from .document_index import CandidateDocument, get_document_index
+from .document_index import CandidateDocument, get_document_index, topic_stems
 from .evidence_model import ChronologyEntry, EvidenceItem, VerifiedClaim
 from .jargon_manager import jargon_dictionary_version, prepare_query, set_current_prepared_query
 from .report_errors import classify_report_error
@@ -29,8 +29,8 @@ MAP_READ_BATCHES = 8
 SYNTHESIS_BATCH_EVENTS = 12
 VERIFICATION_BATCH_CLAIMS = 30
 REPAIR_BATCH_CLAIMS = 20
-TARGET_DOCUMENTS = 12
-MAX_DOCUMENTS = 20
+TARGET_DOCUMENTS = 24
+MAX_DOCUMENTS = 40
 ALLOWED_DATE_SOURCES = {"content_header", "content_body", "table_period", "unresolved"}
 
 
@@ -297,14 +297,27 @@ def _table_evidence(
     return evidence, found
 
 
+def _passage_factor(excerpt: str, focus: Sequence[str]) -> float:
+    if not focus:
+        return 1.0
+    text = excerpt.casefold()
+    hits = sum(text.count(term) for term in focus)
+    return 0.25 if not hits else min(1.0, 0.55 + 0.15 * hits)
+
+
 def evidence_from_documents(project_id: str, doc_ids: Sequence[str],
-                            scores: Mapping[str, float] | None = None) -> List[EvidenceItem]:
+                            scores: Mapping[str, float] | None = None,
+                            focus: Sequence[str] = ()) -> List[EvidenceItem]:
     """Read the selected documents.
 
     `scores` carries each document's selection score onto its passages. Without
     it every passage arrives at 0.0 and any downstream ranking — including the
     pack budget — has nothing to order by, so a document that only just cleared
     selection contributes as much as the strongest one.
+
+    `focus` holds the topic's subject terms. A long record usually discusses the
+    topic on a few pages only; passages that never mention it are discounted so
+    the bounded pack is spent on the pages that do, across more records.
     """
     doc_scores = {str(k): float(v) for k, v in (scores or {}).items()}
     chosen = list(dict.fromkeys(str(value).strip() for value in doc_ids if str(value).strip()))
@@ -338,7 +351,7 @@ def evidence_from_documents(project_id: str, doc_ids: Sequence[str],
                 title=(record.title if record else str(file_name)),
                 document_date=(record.metadata_date if record else ""),
                 page=int(page or 1), kind=kind, excerpt=excerpt,
-                score=doc_scores.get(str(doc_id), 0.0),
+                score=doc_scores.get(str(doc_id), 0.0) * _passage_factor(excerpt, focus),
             ))
     evidence.extend(table_evidence)
     return evidence
@@ -504,6 +517,7 @@ def research_documents(
     save_step: Callable[[str, str, str, Dict | None, str], None] | None = None,
 ) -> Tuple[List[CandidateDocument], List[EvidenceItem], Dict]:
     index = get_document_index()
+    focus = topic_stems(prepared.original_query) or topic_stems(prepared.english_query)
     discovery_input = {
         "topic": prepared.english_query, "queries": prepared.research_queries,
         "parties": prepared.parties, "index_revision": _hash([
@@ -512,7 +526,7 @@ def research_documents(
     }
     discovery_hash = _hash(discovery_input)
     initial = index.search(
-        project_id=project_id, topic=prepared.english_query,
+        project_id=project_id, topic=prepared.english_query, focus=prepared.original_query,
         queries=prepared.research_queries, parties=prepared.parties, limit=100,
     )
     selected = _select(initial)
@@ -548,7 +562,7 @@ def research_documents(
         lead_queries = [value for item in selected[:5]
                         for value in (item.reference, item.title) if value]
     second = index.search(
-        project_id=project_id, topic=prepared.english_query,
+        project_id=project_id, topic=prepared.english_query, focus=prepared.original_query,
         queries=[*prepared.research_queries, *lead_queries],
         parties=prepared.parties, limit=120,
     )
@@ -563,7 +577,7 @@ def research_documents(
     # set up to the hard maximum; they never displace a stronger map/primary.
     evidence = evidence_from_documents(
         project_id, [item.doc_id for item in selected],
-        {item.doc_id: item.score for item in selected},
+        {item.doc_id: item.score for item in selected}, focus,
     )
     coverage = coverage_matrix(evidence)
     for _ in range(2):
@@ -572,7 +586,7 @@ def research_documents(
             break
         gap_queries = [f"{prepared.english_query} {facet.replace('_', ' ')}" for facet in missing]
         gap = index.search(
-            project_id=project_id, topic=prepared.english_query,
+            project_id=project_id, topic=prepared.english_query, focus=prepared.original_query,
             queries=gap_queries, parties=prepared.parties, limit=100,
         )
         before = len(selected)
@@ -585,7 +599,7 @@ def research_documents(
             break
         evidence = evidence_from_documents(
             project_id, [item.doc_id for item in selected],
-            {item.doc_id: item.score for item in selected},
+            {item.doc_id: item.score for item in selected}, focus,
         )
         coverage = coverage_matrix(evidence)
 
@@ -616,7 +630,9 @@ def research_documents(
     # cost of a report follows the evidence it needs rather than the length of
     # whatever documents happened to win selection. Coverage is then restated
     # over the pack that will be read, not over the superset used to choose it.
-    selection = select_pack(evidence, facets=COVERAGE_FACETS)
+    # A chronology is built from many dated records, so no single file may take
+    # more than an eighth of the pack.
+    selection = select_pack(evidence, facets=COVERAGE_FACETS, max_document_share=0.125)
     evidence = selection.evidence
     coverage = coverage_matrix(evidence)
     audit["coverage"] = coverage

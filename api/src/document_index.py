@@ -54,8 +54,62 @@ REFERENCE_RE = re.compile(
 )
 
 
+# Identifiers a user or planner can actually name. Unlike REFERENCE_RE (used to
+# guess a record's own reference from its header) this must not match ordinary
+# phrases such as "schedule revision" or "notice instruction": every match
+# here earns a strong exact-identifier boost.
+QUERY_REFERENCE_RE = re.compile(
+    r"\b(?:[A-Z]{2,10}[_-]?\d{4,}[A-Za-z0-9_-]*"
+    r"|(?i:notice|instruction|clause|schedule|intc)[\s:#-]*(?:no\.?\s*)?\d[A-Za-z0-9./-]*)\b"
+)
+
+# Words that describe the kind of report wanted rather than its subject. They
+# appear in most records, so letting them decide relevance ranks every letter
+# and minute alongside the documents that are actually about the topic.
+GENERIC_TOPIC_TERMS = frozenset({
+    "the", "and", "for", "with", "from", "into", "about", "regarding", "relating",
+    "related", "concerning", "between", "during", "under", "over", "all", "any",
+    "chronology", "timeline", "history", "events", "event", "report", "summary",
+    "overview", "project", "issue", "issues", "matter", "matters", "works", "work",
+    "record", "records", "document", "documents", "contract", "agreement",
+    "delay", "delays", "programme", "schedule", "notice", "notices", "claim", "claims",
+    "dispute", "progress", "position", "correspondence", "letter", "letters",
+})
+
+# Content relevance must outweigh the sum of the generic source-family signals
+# (map/primary/corroboration/counter-source/temporal, about 5 points together),
+# or an off-topic letter outranks a record that is about the subject.
+CONTENT_WEIGHT = 10.0
+
+
 def _normal(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+def _stem(token: str) -> str:
+    """Light plural folding so 'utility' also finds 'utilities' as a substring."""
+    if token.endswith("ies") and len(token) > 5:
+        return token[:-3]
+    if token.endswith("y") and len(token) > 5:
+        return token[:-1]
+    if token.endswith("s") and not token.endswith("ss") and len(token) > 4:
+        return token[:-1]
+    return token
+
+
+def topic_stems(*texts: str, limit: int = 8) -> List[str]:
+    """Subject-bearing terms of a topic, as lowercase substrings for matching."""
+    stems: List[str] = []
+    for text in texts:
+        for token in _normal(text).split():
+            if len(token) < 3 or token.isdigit() or token in GENERIC_TOPIC_TERMS:
+                continue
+            stem = _stem(token)
+            if stem not in stems:
+                stems.append(stem)
+            if len(stems) >= limit:
+                return stems
+    return stems
 
 
 def _values(value: Iterable[Any]) -> List[str]:
@@ -240,15 +294,75 @@ class DocumentIndex:
             ))
         return result
 
+    def content_relevance(
+        self, project_id: str, stems: Sequence[str],
+    ) -> Dict[str, float] | None:
+        """How much each record's own text is about the topic, normalised 0..1.
+
+        Metadata alone (file name, a guessed title, a short summary) cannot tell
+        a utility diversion letter from a rates claim that happens to share the
+        word "agreement". The page text can. Returns None when there is nothing
+        to measure (no subject terms or no chunk text), so callers fall back to
+        metadata ranking instead of treating every record as irrelevant.
+        """
+        terms = [stem for stem in stems if re.fullmatch(r"[a-z0-9]{3,}", stem)]
+        if not terms:
+            return None
+        con = self.connection
+        try:
+            total = int(con.execute(
+                "SELECT COUNT(DISTINCT doc_id) FROM chunks WHERE project_id=?", [project_id],
+            ).fetchone()[0] or 0)
+        except Exception:
+            return None
+        if not total:
+            return None
+        key = (project_id, tuple(terms), total)
+        cache = self.__dict__.setdefault("_content_cache", {})
+        if key in cache:
+            return cache[key]
+        counts = ", ".join(
+            f"SUM((length(t) - length(replace(t, '{term}', ''))) // {len(term)}) AS f{i}"
+            for i, term in enumerate(terms)
+        )
+        any_term = " OR ".join(f"contains(t, '{term}')" for term in terms)
+        rows = con.execute(
+            f"WITH c AS (SELECT doc_id, lower(text) AS t FROM chunks WHERE project_id=?) "
+            f"SELECT doc_id, {counts} FROM c WHERE {any_term} GROUP BY doc_id",
+            [project_id],
+        ).fetchall()
+        frequency = [sum(1 for row in rows if (row[i + 1] or 0) > 0) for i in range(len(terms))]
+        idf = [math.log(1 + (total - found + .5) / (found + .5)) for found in frequency]
+        raw: Dict[str, float] = {}
+        for row in rows:
+            values = [int(value or 0) for value in row[1:]]
+            present = sum(1 for value in values if value)
+            score = sum(weight * (value * 2.2) / (value + 1.2)
+                        for weight, value in zip(idf, values) if value)
+            # A record naming every part of the subject outranks one that
+            # repeats a single common word.
+            raw[str(row[0])] = score * (0.4 + 0.6 * present / len(terms))
+        best = max(raw.values(), default=0.0)
+        result = {doc_id: value / best for doc_id, value in raw.items()} if best else {}
+        if len(cache) > 32:
+            cache.clear()
+        cache[key] = result
+        return result
+
     def search(
         self, *, project_id: str, topic: str, queries: Sequence[str],
-        parties: Sequence[str] = (), limit: int = 100,
+        parties: Sequence[str] = (), limit: int = 100, focus: str = "",
     ) -> List[CandidateDocument]:
+        """`focus` is the user's own wording of the subject. It decides content
+        relevance when it yields subject terms; the expanded English topic is
+        the fallback (for example when the user wrote in another script)."""
         query_values = _values([topic, *queries])
         query_blob = _normal(" ".join(query_values))
         tokens = [token for token in query_blob.split() if len(token) >= 3]
         exact_ids = {_normal(match.group(0)) for value in query_values
-                     for match in REFERENCE_RE.finditer(value)}
+                     for match in QUERY_REFERENCE_RE.finditer(value)}
+        stems = topic_stems(focus) or topic_stems(topic)
+        content = self.content_relevance(project_id, stems)
         years = set(re.findall(r"\b(?:19|20)\d{2}\b", query_blob))
         party_terms = [_normal(value) for value in parties if _normal(value)]
         records = self.list_project(project_id)
@@ -282,9 +396,22 @@ class DocumentIndex:
             search = _normal(record.search_text)
             reference = _normal(record.reference)
             score = 0.0; reasons: List[str] = []
-            if exact_ids and any(value and value in {reference, _normal(record.file_name), title}
-                                 for value in exact_ids):
+            exact = bool(exact_ids) and any(
+                value and value in {reference, _normal(record.file_name),
+                                    _normal(Path(record.file_name).stem), title}
+                for value in exact_ids
+            )
+            if exact:
                 score += 3.0; reasons.append("exact_identifier")
+            topical = content.get(record.doc_id, 0.0) if content is not None else 0.0
+            metadata_topic = bool(stems) and any(stem in search for stem in stems)
+            if content is not None and not (topical or metadata_topic or exact):
+                continue
+            if topical:
+                score += CONTENT_WEIGHT * topical
+                reasons.append(f"content_relevance:{topical:.3f}")
+            if metadata_topic:
+                score += 1.0; reasons.append("topic_metadata")
             topic_normal = _normal(topic)
             if topic_normal and title and (topic_normal in title or title in topic_normal):
                 score += 2.0; reasons.append("title_phrase")
@@ -340,5 +467,5 @@ def get_document_index() -> DocumentIndex:
 
 __all__ = [
     "CandidateDocument", "DocumentIndex", "DocumentIndexRecord",
-    "get_document_index", "infer_document_record",
+    "get_document_index", "infer_document_record", "topic_stems",
 ]

@@ -387,7 +387,7 @@ def test_map_identifier_harvest_forces_a_second_document_search(monkeypatch):
 
     index = Index()
     monkeypatch.setattr("src.chronology_v3.get_document_index", lambda: index)
-    monkeypatch.setattr("src.chronology_v3.evidence_from_documents", lambda _p, ids, scores=None: [
+    monkeypatch.setattr("src.chronology_v3.evidence_from_documents", lambda _p, ids, scores=None, focus=(): [
         EvidenceItem(source_id=f"src-{doc_id}", doc_id=doc_id, file_name=f"{doc_id}.pdf",
                      excerpt="14 March 2025 Notice 417",
                      score=(scores or {}).get(doc_id, 0.0)) for doc_id in ids
@@ -468,7 +468,7 @@ def test_oversized_map_is_split_and_does_not_abort_research(monkeypatch):
             ]
 
     monkeypatch.setattr("src.chronology_v3.get_document_index", lambda: Index())
-    monkeypatch.setattr("src.chronology_v3.evidence_from_documents", lambda _p, ids, scores=None: [
+    monkeypatch.setattr("src.chronology_v3.evidence_from_documents", lambda _p, ids, scores=None, focus=(): [
         EvidenceItem(source_id=f"src-{doc_id}", doc_id=doc_id, file_name=f"{doc_id}.pdf",
                      excerpt="14 March 2025 Notice 417",
                      score=(scores or {}).get(doc_id, 0.0)) for doc_id in ids
@@ -498,6 +498,56 @@ def test_unreadable_title_only_document_is_never_loaded_as_evidence(document_ind
     assert ranked and ranked[0].ocr_quality == "unreadable"
     from src.chronology_v3 import _select
     assert _select(ranked) == []
+
+
+def test_record_text_about_the_topic_outranks_generic_letters(document_index):
+    index, store = document_index
+    index.upsert(_record("demo-a", "rates", "WED00000211", "Schedule 4 rates claim letter", "letter"))
+    index.upsert(_record("demo-a", "finance", "TRS00002043", "Tram Finance progress report", "letter"))
+    index.upsert(_record("demo-a", "minutes", "TIE00011111", "Board minutes", "minutes"))
+    rows = [
+        ("rates", "Letter concerning the Schedule 4 rates and prices claim and the agreement."),
+        ("finance", "Progress report on funding. Utility budget unchanged."),
+        ("minutes", "Board noted MUDFA utility diversion works on Leith Walk: diversions "
+                    "delayed by uncharted utilities; MUDFA contractor instructed 3 May 2007."),
+    ]
+    for doc_id, text in rows:
+        store._con.execute(
+            "INSERT INTO chunks VALUES (?,?,?,?,?,?)",
+            [f"c-{doc_id}", doc_id, f"{doc_id}.pdf", 1, text, "demo-a"],
+        )
+
+    ranked = index.search(
+        project_id="demo-a", topic="MUDFA utility diversion",
+        queries=["schedule revision notice instruction", "contract agreement letter progress"],
+        focus="MUDFA - Utility Diversion", limit=10,
+    )
+
+    assert ranked[0].doc_id == "minutes"
+    assert "rates" not in {item.doc_id for item in ranked}
+    assert not any("exact_identifier" in item.reasons for item in ranked)
+
+
+def test_off_topic_pages_of_a_selected_record_are_discounted(document_index):
+    index, store = document_index
+    index.upsert(_record("demo-a", "report", "CEC00000001", "Period report", "report"))
+    for page, text in ((1, "Finance and governance summary for the period."),
+                       (2, "Utility diversion works progressed; MUDFA section 1A complete.")):
+        store._con.execute(
+            "INSERT INTO chunks VALUES (?,?,?,?,?,?)",
+            [f"c-{page}", "report", "report.pdf", page, text, "demo-a"],
+        )
+    import src.chunk_store
+    original = src.chunk_store.get_chunk_store
+    src.chunk_store.get_chunk_store = lambda: store
+    try:
+        evidence = evidence_from_documents(
+            "demo-a", ["report"], {"report": 8.0}, ["mudfa", "utilit", "diversion"],
+        )
+    finally:
+        src.chunk_store.get_chunk_store = original
+    by_page = {item.page: item.score for item in evidence}
+    assert by_page[2] > by_page[1] * 3
 
 
 def test_excel_parquet_becomes_sheet_and_row_addressable_evidence(
@@ -671,7 +721,7 @@ def test_gap_round_reread_preserves_document_scores(monkeypatch):
         "skeleton": [], "leads": [],
     })
 
-    def evidence(_project, ids, scores=None):
+    def evidence(_project, ids, scores=None, focus=()):
         seen_scores.append(dict(scores or {}))
         return [EvidenceItem(
             f"src-{doc_id}", doc_id, f"{doc_id}.pdf",
@@ -687,7 +737,7 @@ def test_gap_round_reread_preserves_document_scores(monkeypatch):
         return {"framework": 1, "missing": 0 if coverage_calls == 1 else 1}
 
     monkeypatch.setattr("src.chronology_v3.coverage_matrix", coverage)
-    monkeypatch.setattr("src.chronology_v3.select_pack", lambda evidence, facets: SimpleNamespace(
+    monkeypatch.setattr("src.chronology_v3.select_pack", lambda evidence, facets, **_k: SimpleNamespace(
         evidence=list(evidence), stats={},
     ))
     prepared = PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",))
