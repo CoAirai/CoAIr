@@ -6,9 +6,9 @@ import Image from "@/components/Image";
 import Button from "@/components/Button";
 import Icon from "@/components/Icon";
 import { authHref } from "@/lib/auth/hosts";
-// The carousel (and the Swiper library) is decorative and hidden on small
-// screens, so it loads after the sign-in form instead of blocking it.
-const Slider = dynamic(() => import("./Slider"), { ssr: false });
+// The product preview is decorative and hidden on small screens, so it loads
+// after the sign-in form instead of blocking it.
+const Preview = dynamic(() => import("./Preview"), { ssr: false });
 
 type Props = {
     children: React.ReactNode;
@@ -19,25 +19,8 @@ type Props = {
 const LayoutLogin = ({ title, description, children }: Props) => (
     <div className="min-h-svh bg-weak-50/60 p-5">
         <div className="flex min-h-[calc(100svh-2.5rem)] overflow-hidden rounded-3xl bg-white-0 shadow-[0_1px_2px_rgba(14,18,27,0.04),0_24px_48px_-24px_rgba(14,18,27,0.12)] max-lg:rounded-2xl">
-            <div className="relative w-1/2 overflow-hidden text-static-white max-lg:hidden">
-                <Image
-                    className="object-cover"
-                    src="/images/auth-pic.jpg"
-                    fill
-                    sizes="(max-width: 1023px) 100vw, 50vw"
-                    alt=""
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-static-black/55 via-static-black/20 to-transparent" />
-                <div className="absolute top-19 left-10 right-10 max-2xl:top-8 max-2xl:left-8 max-2xl:right-8">
-                    <div className="mb-4 text-h1 max-2xl:text-h3">
-                        Chat, cite, and verify your project data
-                    </div>
-                    <div className="text-p-lg max-2xl:text-p-md">
-                        COAir keeps drawings, comms, and answers in one
-                        workspace your whole team can trust.
-                    </div>
-                </div>
-                <Slider />
+            <div className="flex w-1/2 overflow-hidden bg-[#0C1E2E] max-lg:hidden">
+                <Preview className="w-full" />
             </div>
             <div className="flex w-1/2 flex-col px-12 py-8 max-lg:w-full max-lg:px-6 max-md:px-4">
                 <div className="mb-auto flex items-center justify-between gap-4">
