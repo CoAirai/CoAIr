@@ -91,38 +91,55 @@ const Timeline = ({ events, selectedRef, onSelect }: Props) => {
                         </text>
                     </g>
                 ))}
-                {points.map(({ event, time }) => {
-                    const px = x(time);
-                    const on = event.ref === selectedRef;
-                    return (
-                        <g
-                            key={event.ref}
-                            className="cursor-pointer"
-                            onClick={() => onSelect(event)}
-                            onMouseMove={(e) => setTip({ x: e.clientX, y: e.clientY, event })}
-                            onMouseLeave={() => setTip(null)}
-                        >
-                            <rect x={px - 9} y={AXIS - 12} width={18} height={24} fill="transparent" />
-                            {event.delay ? (
-                                <path
-                                    d={`M${px} ${AXIS - 7} L${px + 7} ${AXIS + 5} L${px - 7} ${AXIS + 5} Z`}
-                                    fill="#F8A810"
-                                    stroke={on ? "var(--strong-950)" : "#fff"}
-                                    strokeWidth={1.5}
-                                />
-                            ) : (
-                                <circle
-                                    cx={px}
-                                    cy={AXIS}
-                                    r={on ? 6.5 : 5}
-                                    fill={on ? "var(--strong-950)" : "var(--text-soft-400)"}
-                                    stroke="#fff"
-                                    strokeWidth={1.5}
-                                />
-                            )}
-                        </g>
-                    );
-                })}
+                {/* Delay markers sit above the axis and are drawn last, so a record
+                    dot on the same or a neighbouring date never hides them. */}
+                {[...points]
+                    .sort((a, b) => Number(Boolean(a.event.delay)) - Number(Boolean(b.event.delay)))
+                    .map(({ event, time }) => {
+                        const px = x(time);
+                        const on = event.ref === selectedRef;
+                        return (
+                            <g
+                                key={event.ref}
+                                className="cursor-pointer"
+                                onClick={() => onSelect(event)}
+                                onMouseMove={(e) => setTip({ x: e.clientX, y: e.clientY, event })}
+                                onMouseLeave={() => setTip(null)}
+                            >
+                                {event.delay ? (
+                                    <>
+                                        <rect x={px - 9} y={AXIS - 26} width={18} height={20} fill="transparent" />
+                                        <line
+                                            x1={px}
+                                            x2={px}
+                                            y1={AXIS - 9}
+                                            y2={AXIS}
+                                            stroke="#F8A810"
+                                            strokeWidth={1.5}
+                                        />
+                                        <path
+                                            d={`M${px} ${AXIS - 24} L${px + 7} ${AXIS - 11} L${px - 7} ${AXIS - 11} Z`}
+                                            fill="#F8A810"
+                                            stroke={on ? "var(--strong-950)" : "#fff"}
+                                            strokeWidth={1.5}
+                                        />
+                                    </>
+                                ) : (
+                                    <>
+                                        <rect x={px - 9} y={AXIS - 9} width={18} height={18} fill="transparent" />
+                                        <circle
+                                            cx={px}
+                                            cy={AXIS}
+                                            r={on ? 6.5 : 5}
+                                            fill={on ? "var(--strong-950)" : "var(--text-soft-400)"}
+                                            stroke="#fff"
+                                            strokeWidth={1.5}
+                                        />
+                                    </>
+                                )}
+                            </g>
+                        );
+                    })}
             </svg>
             {tip ? (
                 <div
