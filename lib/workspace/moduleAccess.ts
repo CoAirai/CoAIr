@@ -46,16 +46,25 @@ export const MODULES: {
     },
 ];
 
-const MODULE_LOGOS: { href: string; src: string; alt: string }[] = [
-    { href: "/workspace/chat", src: "/images/modules/queris.png", alt: "QUERIS" },
-    { href: "/workspace/chronology", src: "/images/modules/chronos.png", alt: "CHRONOS" },
-    { href: "/workspace/forensic", src: "/images/modules/forensis.png", alt: "FORENSIS" },
-];
+const MODULE_LOGOS: Record<string, string> = {
+    chatbot: "/images/modules/queris.png",
+    chronology: "/images/modules/chronos.png",
+    forensic: "/images/modules/forensis.png",
+};
 
-/** The module's mark inside a module, the COAIr logo everywhere else. */
-export function workspaceLogo(pathname: string): { src: string; alt: string } {
-    const found = MODULE_LOGOS.find((entry) => pathname.startsWith(entry.href));
-    return found ?? { src: "/images/coair-logo.png", alt: "COAIr" };
+/** The module's mark and name inside a module, the COAIr logo everywhere else. */
+export function workspaceLogo(pathname: string): {
+    src: string;
+    alt: string;
+    name?: string;
+} {
+    const found = MODULES.find((entry) => pathname.startsWith(entry.href));
+    if (!found) return { src: "/images/coair-logo.png", alt: "COAIr" };
+    return {
+        src: MODULE_LOGOS[found.id],
+        alt: found.title,
+        name: found.title,
+    };
 }
 
 function sessionRoleToOrgRole(role?: SessionRole | string | null): string {

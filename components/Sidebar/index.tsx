@@ -19,24 +19,27 @@ import { useToast } from "@/context/ToastContext";
 import type { CompanyDocumentKind } from "@/lib/admin/companyDocuments";
 import { workspaceLogo } from "@/lib/workspace/moduleAccess";
 
-const FILE_KINDS: Record<CompanyDocumentKind, { exts: string[]; hint: string }> = {
-    document: {
-        exts: [".pdf", ".doc", ".docx"],
-        hint: "Add documents takes PDF and Word files. Use Sheets or Mail for the others.",
-    },
-    spreadsheet: {
-        exts: [".xls", ".xlsx", ".csv"],
-        hint: "Sheets takes Excel and CSV files.",
-    },
-    csv: {
-        exts: [".csv"],
-        hint: "Sheets takes Excel and CSV files.",
-    },
-    communication: {
-        exts: [".txt"],
-        hint: "Mail takes text files.",
-    },
+const KIND_BY_EXTENSION: Record<string, CompanyDocumentKind> = {
+    ".pdf": "document",
+    ".doc": "document",
+    ".docx": "document",
+    ".xls": "spreadsheet",
+    ".xlsx": "spreadsheet",
+    ".csv": "spreadsheet",
+    ".txt": "communication",
 };
+const UPLOAD_HINT =
+    "Add documents takes PDF, Word, Excel, CSV and text files.";
+const UPLOAD_ACCEPT = [
+    ...Object.keys(KIND_BY_EXTENSION),
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+    "text/plain",
+].join(",");
 
 function fileExtension(name: string) {
     const dot = name.lastIndexOf(".");
@@ -76,25 +79,18 @@ const Sidebar = ({
     const live = useLiveWorkspace();
     const { pushToast } = useToast();
     const documentInputRef = useRef<HTMLInputElement>(null);
-    const csvInputRef = useRef<HTMLInputElement>(null);
-    const mailInputRef = useRef<HTMLInputElement>(null);
 
-    const onPickFile = (
-        event: ChangeEvent<HTMLInputElement>,
-        kind: CompanyDocumentKind
-    ) => {
+    const onPickFile = (event: ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files || []);
         event.target.value = "";
         if (!files.length || !session?.companyId || !session.userId) return;
-        const allowed = new Set(FILE_KINDS[kind].exts);
-        const matched = files.filter((file) => allowed.has(fileExtension(file.name)));
-        if (!matched.length) {
-            pushToast(FILE_KINDS[kind].hint, "info");
-            return;
-        }
+        const matched = files.filter(
+            (file) => fileExtension(file.name) in KIND_BY_EXTENSION
+        );
         if (matched.length < files.length) {
-            pushToast(FILE_KINDS[kind].hint, "info");
+            pushToast(UPLOAD_HINT, "info");
         }
+        if (!matched.length) return;
         if (live.enabled) {
             void live.uploadFiles(matched);
             return;
@@ -103,7 +99,7 @@ const Sidebar = ({
             addCompanyDocument({
                 companyId: session.companyId,
                 name: file.name,
-                kind,
+                kind: KIND_BY_EXTENSION[fileExtension(file.name)],
                 addedByUserId: session.userId,
             });
         }
@@ -152,14 +148,9 @@ const Sidebar = ({
                                 height={32}
                                 alt={logo.alt}
                             />
-                            {isForensic ? (
-                                <span className="min-w-0">
-                                    <span className="block truncate text-label-sm text-strong-950">
-                                        COAIr - forensic
-                                    </span>
-                                    <span className="mt-0.5 block truncate text-[11px] leading-4 text-sub-600">
-                                        Programme / deterministic engine.
-                                    </span>
+                            {logo.name ? (
+                                <span className="min-w-0 truncate text-label-sm text-strong-950">
+                                    {logo.name}
                                 </span>
                             ) : null}
                         </button>
@@ -200,26 +191,10 @@ const Sidebar = ({
                         <input
                             ref={documentInputRef}
                             type="file"
-                            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            accept={UPLOAD_ACCEPT}
                             multiple
                             className="hidden"
-                            onChange={(event) => onPickFile(event, "document")}
-                        />
-                        <input
-                            ref={csvInputRef}
-                            type="file"
-                            accept=".xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
-                            multiple
-                            className="hidden"
-                            onChange={(event) => onPickFile(event, "spreadsheet")}
-                        />
-                        <input
-                            ref={mailInputRef}
-                            type="file"
-                            accept=".txt,text/plain"
-                            multiple
-                            className="hidden"
-                            onChange={(event) => onPickFile(event, "communication")}
+                            onChange={onPickFile}
                         />
                         <Button
                             className="w-full"
@@ -228,20 +203,6 @@ const Sidebar = ({
                             onClick={() => documentInputRef.current?.click()}
                         >
                             Add documents
-                        </Button>
-                        <Button
-                            className="w-full"
-                            isStroke
-                            onClick={() => csvInputRef.current?.click()}
-                        >
-                            Sheets
-                        </Button>
-                        <Button
-                            className="w-full"
-                            isStroke
-                            onClick={() => mailInputRef.current?.click()}
-                        >
-                            Mail
                         </Button>
                     </div>
                     ) : (

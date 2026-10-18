@@ -733,7 +733,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         const created = await createConversation(
                             session.accessToken!,
                             session.projectId,
-                            trimmed.slice(0, 80)
+                            trimmed.slice(0, 500)
                         );
                         conversationId = created.conversation_id;
                         const stillHere = viewTokenRef.current === startToken;
