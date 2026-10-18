@@ -8,6 +8,7 @@ from backend.models.requests import (
     ConversationRename,
     AddDocumentsRequest,
     PinRequest,
+    PinOrderRequest,
     ArchiveRequest,
 )
 from backend.models.responses import ConversationMeta, ConversationOut, MessageOut, LibraryDocument
@@ -113,6 +114,12 @@ async def rename_conversation(
 ):
     store.rename_conversation(conv_id, body.title)
     return {"ok": True}
+
+
+@router.post("/conversations/pin-order", response_model=List[ConversationMeta])
+async def set_pin_order(body: PinOrderRequest, store=Depends(get_conversation_store)):
+    """Reorder pinned conversations; ids are listed top first."""
+    return [_meta_to_out(c) for c in store.set_pin_order(body.conversation_ids)]
 
 
 @router.patch("/conversations/{conv_id}/pin", response_model=ConversationMeta)

@@ -3,16 +3,83 @@ import type { Citation } from "@/lib/chat/types";
 export type AnswerPart =
     | { type: "text"; text: string }
     | { type: "bold"; text: string }
-    | { type: "cite"; name: string; page: number };
+    | { type: "cite"; name: string; page?: number };
 
 export type AnswerBlock =
     | { type: "heading"; parts: AnswerPart[] }
     | { type: "paragraph"; parts: AnswerPart[] }
     | { type: "table"; headers: string[]; rows: string[][] };
 
-const FILE_NAME =
-    "[A-Za-z0-9][A-Za-z0-9_.\\- ]{0,160}?\\.(?:pdf|docx|doc|xlsx|xls|csv|txt|msg|eml)";
-const CITE = new RegExp(`\\*?(${FILE_NAME})\\s*,\\s*p\\.?\\s*(\\d+)\\*?`, "gi");
+const EXTENSIONS = "pdf|docx|doc|xlsx|xls|csv|txt|msg|eml";
+const FILE_NAME = `[A-Za-z0-9][A-Za-z0-9_.\\- ]{0,160}?\\.(?:${EXTENSIONS})`;
+const FILE_NAME_NO_SPACE = `[A-Za-z0-9][A-Za-z0-9_.\\-]{0,160}\\.(?:${EXTENSIONS})\\b`;
+const OPEN = "(?:\\*\\*|\\*|`)?";
+const CLOSE = "(?:\\*\\*|\\*|`)?";
+// "(p. 31)", ", p.80", " page 12"; "pages 88 and 107" links to the first page.
+const PAGE = `(?:\\s*\\(\\s*(?:pp?\\.?|pages?)\\s*(\\d+)\\s*\\)|\\s*,?\\s*(?:pp?\\.|pages?\\b)\\s*(\\d+))?\\*?`;
+const DOC_ID = /`?\b([A-Za-z]{2,5}\d{5,}(?:_[A-Za-z0-9]+)*)\b`?/g;
+
+type Span = { start: number; end: number; part: AnswerPart };
+
+function escapeRegExp(text: string) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function pageOf(match: RegExpMatchArray, first: number): number | undefined {
+    const raw = match[first] ?? match[first + 1];
+    return raw ? Number.parseInt(raw, 10) : undefined;
+}
+
+function citeSpans(text: string, sources: string[]): Span[] {
+    const spans: Span[] = [];
+    const taken = (start: number, end: number) =>
+        spans.some((span) => start < span.end && end > span.start);
+    const add = (match: RegExpMatchArray, name: string, page?: number) => {
+        const start = match.index ?? 0;
+        const end = start + match[0].length;
+        if (taken(start, end)) return;
+        spans.push({ start, end, part: { type: "cite", name, page } });
+    };
+
+    const known = [...new Set(sources.filter(Boolean))].sort(
+        (a, b) => b.length - a.length
+    );
+    if (known.length) {
+        const pattern = new RegExp(
+            `${OPEN}(${known.map(escapeRegExp).join("|")})${CLOSE}${PAGE}`,
+            "gi"
+        );
+        for (const match of text.matchAll(pattern)) {
+            const name =
+                known.find((entry) => entry.toLowerCase() === match[1].toLowerCase()) ??
+                match[1];
+            add(match, name, pageOf(match, 2));
+        }
+    }
+    for (const match of text.matchAll(
+        new RegExp(`${OPEN}(${FILE_NAME_NO_SPACE})${CLOSE}${PAGE}`, "gi")
+    )) {
+        add(match, match[1].trim(), pageOf(match, 2));
+    }
+    for (const match of text.matchAll(
+        new RegExp(`\\*?(${FILE_NAME})\\s*,\\s*p\\.?\\s*(\\d+)\\*?`, "gi")
+    )) {
+        add(match, match[1].trim(), Number.parseInt(match[2], 10));
+    }
+    if (known.length) {
+        const byStem = new Map(
+            known.map((name) => [name.replace(/\.[^.]+$/, "").toLowerCase(), name])
+        );
+        for (const match of text.matchAll(DOC_ID)) {
+            const token = match[1].toLowerCase();
+            const stem = [...byStem.keys()].find(
+                (key) => token === key || token.startsWith(`${key}_`)
+            );
+            if (stem) add(match, byStem.get(stem)!);
+        }
+    }
+    return spans.sort((a, b) => a.start - b.start);
+}
 
 function emphasisParts(text: string): AnswerPart[] {
     const cleaned = text.replace(
@@ -36,21 +103,15 @@ function emphasisParts(text: string): AnswerPart[] {
     return parts.filter((part) => part.type !== "text" || part.text.length > 0);
 }
 
-function inlineParts(text: string): AnswerPart[] {
+export function inlineParts(text: string, sources: string[] = []): AnswerPart[] {
     const parts: AnswerPart[] = [];
-    const cites = new RegExp(CITE.source, "gi");
     let last = 0;
-    for (const match of text.matchAll(cites)) {
-        const index = match.index ?? 0;
-        if (index > last) {
-            parts.push(...emphasisParts(text.slice(last, index)));
+    for (const span of citeSpans(text, sources)) {
+        if (span.start > last) {
+            parts.push(...emphasisParts(text.slice(last, span.start)));
         }
-        parts.push({
-            type: "cite",
-            name: match[1].trim(),
-            page: Number.parseInt(match[2], 10),
-        });
-        last = index + match[0].length;
+        parts.push(span.part);
+        last = span.end;
     }
     if (last < text.length) {
         parts.push(...emphasisParts(text.slice(last)));
@@ -111,7 +172,8 @@ export function tableCsv(headers: string[], rows: string[][]): string {
         .join("\n");
 }
 
-export function parseAnswer(content: string): AnswerBlock[] {
+/** `sources` are the answer's cited file names; mentions of them become links. */
+export function parseAnswer(content: string, sources: string[] = []): AnswerBlock[] {
     const blocks: AnswerBlock[] = [];
     let paragraph: string[] = [];
     const lines = content.replace(/\r\n/g, "\n").split("\n");
@@ -120,7 +182,7 @@ export function parseAnswer(content: string): AnswerBlock[] {
         const text = paragraph.join(" ").trim();
         paragraph = [];
         if (!text) return;
-        const parts = inlineParts(text);
+        const parts = inlineParts(text, sources);
         if (parts.length) blocks.push({ type: "paragraph", parts });
     };
 
@@ -150,7 +212,7 @@ export function parseAnswer(content: string): AnswerBlock[] {
         }
         if (kind === "heading" || kind === "bullet") {
             flush();
-            const parts = inlineParts(lineText(line, kind));
+            const parts = inlineParts(lineText(line, kind), sources);
             if (!parts.length) continue;
             blocks.push({
                 type: kind === "heading" ? "heading" : "paragraph",
@@ -166,17 +228,17 @@ export function parseAnswer(content: string): AnswerBlock[] {
 
 export function citationForReference(
     name: string,
-    page: number,
+    page: number | undefined,
     citations: Citation[] | undefined
 ): Citation {
     const key = name.trim().toLowerCase();
     const sameName = (citations ?? []).filter(
         (entry) => entry.name.trim().toLowerCase() === key
     );
-    const exact = sameName.find((entry) => entry.page === page);
+    const exact = page ? sameName.find((entry) => entry.page === page) : undefined;
     const match = exact ?? sameName[0];
     if (!match) {
-        return { documentId: name, name, page, excerpt: "" };
+        return { documentId: name, name, page: page ?? 1, excerpt: "" };
     }
-    return { ...match, page };
+    return { ...match, page: page ?? match.page };
 }

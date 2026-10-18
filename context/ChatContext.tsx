@@ -24,6 +24,7 @@ import {
     listConversations,
     pinConversation,
     renameConversation,
+    setConversationPinOrder,
     sendLiveChat,
 } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
@@ -51,6 +52,7 @@ type ChatContextValue = {
     selectQuery: (queryId: string) => void;
     archivedQueries: RecentQuery[];
     pinQuery: (queryId: string, pinned: boolean) => Promise<void>;
+    reorderPinned: (pinnedIds: string[]) => Promise<void>;
     renameQuery: (queryId: string, title: string) => Promise<void>;
     deleteQuery: (queryId: string) => Promise<void>;
     archiveQuery: (queryId: string, archived: boolean) => Promise<void>;
@@ -317,6 +319,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             } catch (err) {
                 pushToast(
                     err instanceof Error ? err.message : "Could not pin query",
+                    "error"
+                );
+                void reloadQueries();
+            }
+        },
+        [activeWorkspaceUserId, liveSession, pushToast, reloadQueries]
+    );
+
+    const reorderPinned = useCallback(
+        async (pinnedIds: string[]) => {
+            if (!activeWorkspaceUserId) return;
+            setRecentsByUserId((prev) => {
+                const current = prev[activeWorkspaceUserId] ?? [];
+                const byId = new Map(current.map((entry) => [entry.id, entry]));
+                const pinned = pinnedIds
+                    .map((id) => byId.get(id))
+                    .filter((entry): entry is RecentQuery => Boolean(entry?.pinned));
+                const placed = new Set(pinned.map((entry) => entry.id));
+                return {
+                    ...prev,
+                    [activeWorkspaceUserId]: [
+                        ...pinned,
+                        ...current.filter((entry) => !placed.has(entry.id)),
+                    ],
+                };
+            });
+            const auth = liveSession();
+            if (!auth) return;
+            try {
+                await setConversationPinOrder(auth.token, auth.projectId, pinnedIds);
+            } catch (err) {
+                pushToast(
+                    err instanceof Error ? err.message : "Could not save the pin order",
                     "error"
                 );
                 void reloadQueries();
@@ -947,6 +982,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             stopReply,
             selectQuery,
             pinQuery,
+            reorderPinned,
             renameQuery,
             deleteQuery,
             archiveQuery,
@@ -971,6 +1007,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             openDocumentPreview,
             pinQuery,
             recentQueries,
+            reorderPinned,
             renameQuery,
             selectQuery,
             selectedQueryId,

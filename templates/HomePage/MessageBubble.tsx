@@ -2,6 +2,7 @@ import Image from "@/components/Image";
 import { useChat } from "@/context/ChatContext";
 import {
     citationForReference,
+    inlineParts,
     parseAnswer,
     tableCsv,
     type AnswerPart,
@@ -43,7 +44,8 @@ function AnswerParts({
                                 )
                             }
                         >
-                            {part.name}, p.{part.page}
+                            {part.name}
+                            {part.page ? `, p.${part.page}` : ""}
                         </button>
                     );
                 }
@@ -121,7 +123,10 @@ function AnswerTable({
                                         } ${column === 1 ? "font-medium" : ""}`}
                                     >
                                         <AnswerParts
-                                            parts={inlinePartsSafe(row[column] ?? "")}
+                                            parts={inlineParts(
+                                                row[column] ?? "",
+                                                sourceNames(citations)
+                                            )}
                                             citations={citations}
                                             onOpen={onOpen}
                                         />
@@ -136,11 +141,8 @@ function AnswerTable({
     );
 }
 
-function inlinePartsSafe(text: string) {
-    const blocks = parseAnswer(text);
-    const paragraph = blocks.find((block) => block.type === "paragraph");
-    if (paragraph && paragraph.type === "paragraph") return paragraph.parts;
-    return [{ type: "text" as const, text }];
+function sourceNames(citations?: Citation[]) {
+    return (citations ?? []).map((citation) => citation.name);
 }
 
 type Props = { message: Message };
@@ -148,7 +150,9 @@ type Props = { message: Message };
 const MessageBubble = ({ message }: Props) => {
     const { openCitation, openDocumentPreview } = useChat();
     const isUser = message.role === "user";
-    const blocks = isUser ? [] : parseAnswer(message.content);
+    const blocks = isUser
+        ? []
+        : parseAnswer(message.content, sourceNames(message.citations));
     const hasTable = blocks.some((block) => block.type === "table");
 
     return (

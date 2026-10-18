@@ -25,6 +25,7 @@ class ConversationMeta:
     pinned: bool = False
     archived: bool = False
     project_id: str = ""
+    pin_order: Optional[int] = None
 
 
 @dataclass
@@ -252,6 +253,7 @@ class ConversationStore:
             pinned=bool(item.get("pinned", False)),
             archived=bool(item.get("archived", False)),
             project_id=item.get("project_id", "") or "",
+            pin_order=item.get("pin_order") if isinstance(item.get("pin_order"), int) else None,
         )
 
     def _save_index(self) -> None:
@@ -478,15 +480,26 @@ class ConversationStore:
 
     def list_conversations(self, include_archived: bool = False) -> List[ConversationMeta]:
         """
-        List conversations. Pinned first, then by recency.
+        List conversations. Pinned first in the user's order, then by recency.
         Archived conversations are excluded unless include_archived=True.
         """
         items = [m for m in self._index if include_archived or not m.archived]
-        # Stable sort: by updated_at desc first, then by pinned desc.
-        # Pinned items end up on top, each group sorted by recency.
+        # Stable sorts: recency, then pin position (pins saved before
+        # positions existed have none and stay on top by recency), then pinned.
         items.sort(key=lambda m: m.updated_at, reverse=True)
+        items.sort(key=lambda m: (m.pin_order is not None, m.pin_order or 0))
         items.sort(key=lambda m: m.pinned, reverse=True)
         return items
+
+    def set_pin_order(self, conv_ids: List[str]) -> List[ConversationMeta]:
+        """Store the order of pinned conversations as given, top first."""
+        position = {conv_id: i for i, conv_id in enumerate(conv_ids)}
+        for meta in self._index:
+            if meta.pinned and meta.conversation_id in position:
+                meta.pin_order = position[meta.conversation_id]
+        self._save_index()
+        self.sync_to_gcs()
+        return self.list_conversations()
 
     def list_archived(self) -> List[ConversationMeta]:
         """List only archived conversations, most recently updated first."""
@@ -498,6 +511,12 @@ class ConversationStore:
         """Pin or unpin a conversation. Returns updated meta or None if not found."""
         for meta in self._index:
             if meta.conversation_id == conv_id:
+                if pinned and not meta.pinned:
+                    orders = [m.pin_order for m in self._index
+                              if m.pinned and m.pin_order is not None]
+                    meta.pin_order = min(orders, default=0) - 1
+                elif not pinned:
+                    meta.pin_order = None
                 meta.pinned = bool(pinned)
                 meta.updated_at = datetime.now().isoformat()
                 self._save_index()
@@ -513,6 +532,7 @@ class ConversationStore:
                 # Archiving also unpins
                 if archived:
                     meta.pinned = False
+                    meta.pin_order = None
                 meta.updated_at = datetime.now().isoformat()
                 self._save_index()
                 self.sync_to_gcs()

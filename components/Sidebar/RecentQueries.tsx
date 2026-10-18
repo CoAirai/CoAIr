@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { Reorder, useDragControls } from "framer-motion";
 import Icon from "@/components/Icon";
 import { useAdminData } from "@/context/AdminDataContext";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
+import type { RecentQuery } from "@/lib/chat/types";
 import type { ChronologyReport } from "@/lib/chronology/types";
 import { mapChronologyJob } from "@/lib/coair/mapChronology";
 import { listReports } from "@/lib/coair/reports";
@@ -131,6 +133,51 @@ function QueryActions({
     );
 }
 
+function PinnedRow({
+    id,
+    draggable,
+    className,
+    onDragEnd,
+    children,
+}: {
+    id: string;
+    draggable: boolean;
+    className: string;
+    onDragEnd: () => void;
+    children: ReactNode;
+}) {
+    const controls = useDragControls();
+    return (
+        <Reorder.Item
+            as="div"
+            value={id}
+            dragListener={false}
+            dragControls={controls}
+            onDragEnd={onDragEnd}
+            className={`group relative ${className}`}
+        >
+            {draggable && (
+                <span
+                    aria-hidden
+                    title="Drag to reorder"
+                    className="flex h-10 w-3 shrink-0 cursor-grab touch-none items-center justify-center text-soft-400 opacity-60 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+                    onPointerDown={(event) => controls.start(event)}
+                >
+                    <svg width="6" height="12" viewBox="0 0 6 12" fill="currentColor">
+                        <circle cx="1" cy="2" r="1" />
+                        <circle cx="5" cy="2" r="1" />
+                        <circle cx="1" cy="6" r="1" />
+                        <circle cx="5" cy="6" r="1" />
+                        <circle cx="1" cy="10" r="1" />
+                        <circle cx="5" cy="10" r="1" />
+                    </svg>
+                </span>
+            )}
+            {children}
+        </Reorder.Item>
+    );
+}
+
 const RecentQueries = () => {
     const pathname = usePathname();
     const router = useRouter();
@@ -141,11 +188,14 @@ const RecentQueries = () => {
         recentQueries,
         archivedQueries,
         pinQuery,
+        reorderPinned,
         renameQuery,
         deleteQuery,
         archiveQuery,
         activeWorkspaceUserId,
     } = useChat();
+    const [dragOrder, setDragOrder] = useState<string[] | null>(null);
+    const dragOrderRef = useRef<string[] | null>(null);
     const [viewingArchive, setViewingArchive] = useState(false);
     const [querySearch, setQuerySearch] = useState("");
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -280,8 +330,18 @@ const RecentQueries = () => {
             return entry.title.toLowerCase().includes(needle);
         }
     );
-    const visibleQueries = queries.slice(0, visibleCount);
-    const hiddenCount = queries.length - visibleQueries.length;
+    const canReorder = !viewingArchive && !querySearch.trim();
+    const pinnedRows = canReorder ? queries.filter((q) => q.pinned) : [];
+    const pinnedById = new Map(pinnedRows.map((q) => [q.id, q]));
+    const pinnedShown = dragOrder
+        ? dragOrder.flatMap((id) => pinnedById.get(id) ?? [])
+        : pinnedRows;
+    const otherRows = canReorder ? queries.filter((q) => !q.pinned) : queries;
+    const visibleOthers = otherRows.slice(
+        0,
+        Math.max(0, visibleCount - pinnedRows.length)
+    );
+    const hiddenCount = otherRows.length - visibleOthers.length;
     const saveRename = (id: string) => {
         if (renameSaved.current) return;
         renameSaved.current = true;
@@ -290,6 +350,60 @@ const RecentQueries = () => {
         if (!title) return;
         void renameQuery(id, title);
     };
+    const rowClass = (id: string) =>
+        `flex items-center gap-1 rounded-xl px-1 ${
+            selectedQueryId === id
+                ? "bg-weak-50 dark:shadow-[0_0_0.1875rem_0_rgba(255,255,255,0.16)]"
+                : "bg-white-0"
+        }`;
+    const rowContent = (q: RecentQuery) => (
+        <>
+            {renamingId === q.id ? (
+                <input
+                    autoFocus
+                    value={renameDraft}
+                    className="h-10 min-w-0 grow rounded-xl bg-transparent px-2 text-label-sm text-strong-950 outline-none"
+                    onChange={(event) => setRenameDraft(event.target.value)}
+                    onBlur={() => saveRename(q.id)}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                            event.preventDefault();
+                            saveRename(q.id);
+                        }
+                        if (event.key === "Escape") {
+                            setRenamingId(null);
+                        }
+                    }}
+                />
+            ) : (
+                <button
+                    type="button"
+                    className="flex h-10 min-w-0 grow items-center gap-2 rounded-xl px-2 text-left text-label-sm transition-colors hover:bg-weak-50/70"
+                    title={q.title}
+                    onClick={() => selectQuery(q.id)}
+                >
+                    <span className="min-w-0 grow truncate">{q.title}</span>
+                    {q.pinned && !viewingArchive && (
+                        <span className="shrink-0 text-label-xs text-blue-500">
+                            pinned
+                        </span>
+                    )}
+                </button>
+            )}
+            <QueryActions
+                pinned={q.pinned}
+                archived={viewingArchive}
+                onPin={() => void pinQuery(q.id, !q.pinned)}
+                onRename={() => {
+                    renameSaved.current = false;
+                    setRenameDraft(q.title);
+                    setRenamingId(q.id);
+                }}
+                onArchive={() => void archiveQuery(q.id, !viewingArchive)}
+                onDelete={() => void deleteQuery(q.id)}
+            />
+        </>
+    );
 
     return (
         <div className="mb-4">
@@ -327,70 +441,40 @@ const RecentQueries = () => {
                               : "No queries yet"}
                     </div>
                 )}
-                {visibleQueries.map((q) => {
-                    const active = selectedQueryId === q.id;
-                    return (
-                        <div
-                            key={q.id}
-                            className={`flex items-center gap-1 rounded-xl px-1 ${
-                                active
-                                    ? "bg-weak-50 dark:shadow-[0_0_0.1875rem_0_rgba(255,255,255,0.16)]"
-                                    : ""
-                            }`}
-                        >
-                            {renamingId === q.id ? (
-                                <input
-                                    autoFocus
-                                    value={renameDraft}
-                                    className="h-10 min-w-0 grow rounded-xl bg-transparent px-2 text-label-sm text-strong-950 outline-none"
-                                    onChange={(event) =>
-                                        setRenameDraft(event.target.value)
-                                    }
-                                    onBlur={() => saveRename(q.id)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Enter") {
-                                            event.preventDefault();
-                                            saveRename(q.id);
-                                        }
-                                        if (event.key === "Escape") {
-                                            setRenamingId(null);
-                                        }
-                                    }}
-                                />
-                            ) : (
-                                <button
-                                    type="button"
-                                    className="flex h-10 min-w-0 grow items-center gap-2 rounded-xl px-2 text-left text-label-sm transition-colors hover:bg-weak-50/70"
-                                    title={q.title}
-                                    onClick={() => selectQuery(q.id)}
-                                >
-                                    <span className="min-w-0 grow truncate">
-                                        {q.title}
-                                    </span>
-                                    {q.pinned && !viewingArchive && (
-                                        <span className="shrink-0 text-label-xs text-blue-500">
-                                            pinned
-                                        </span>
-                                    )}
-                                </button>
-                            )}
-                            <QueryActions
-                                pinned={q.pinned}
-                                archived={viewingArchive}
-                                onPin={() => void pinQuery(q.id, !q.pinned)}
-                                onRename={() => {
-                                    renameSaved.current = false;
-                                    setRenameDraft(q.title);
-                                    setRenamingId(q.id);
+                {pinnedShown.length > 0 && (
+                    <Reorder.Group
+                        as="div"
+                        axis="y"
+                        values={pinnedShown.map((q) => q.id)}
+                        onReorder={(ids: string[]) => {
+                            dragOrderRef.current = ids;
+                            setDragOrder(ids);
+                        }}
+                        className="flex flex-col gap-0.5"
+                    >
+                        {pinnedShown.map((q) => (
+                            <PinnedRow
+                                key={q.id}
+                                id={q.id}
+                                draggable={pinnedShown.length > 1}
+                                className={rowClass(q.id)}
+                                onDragEnd={() => {
+                                    const ids = dragOrderRef.current;
+                                    dragOrderRef.current = null;
+                                    setDragOrder(null);
+                                    if (ids) void reorderPinned(ids);
                                 }}
-                                onArchive={() =>
-                                    void archiveQuery(q.id, !viewingArchive)
-                                }
-                                onDelete={() => void deleteQuery(q.id)}
-                            />
-                        </div>
-                    );
-                })}
+                            >
+                                {rowContent(q)}
+                            </PinnedRow>
+                        ))}
+                    </Reorder.Group>
+                )}
+                {visibleOthers.map((q) => (
+                    <div key={q.id} className={rowClass(q.id)}>
+                        {rowContent(q)}
+                    </div>
+                ))}
                 {hiddenCount > 0 && (
                     <button
                         type="button"

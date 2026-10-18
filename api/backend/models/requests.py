@@ -62,6 +62,10 @@ class PinRequest(BaseModel):
     pinned: bool
 
 
+class PinOrderRequest(BaseModel):
+    conversation_ids: List[str]
+
+
 class ArchiveRequest(BaseModel):
     archived: bool
 

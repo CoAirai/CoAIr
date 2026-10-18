@@ -408,6 +408,19 @@ export async function pinConversation(
     );
 }
 
+export async function setConversationPinOrder(
+    token: string,
+    projectId: string,
+    conversationIds: string[]
+) {
+    return coairFetch<CoairConversationMeta[]>("/conversations/pin-order", {
+        method: "POST",
+        token,
+        projectId,
+        body: { conversation_ids: conversationIds },
+    });
+}
+
 export async function archiveConversation(
     token: string,
     projectId: string,

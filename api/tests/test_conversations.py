@@ -158,6 +158,40 @@ class TestMessages:
         store.add_message("conv_missing", Message(role="user", content="x", timestamp="t"))
 
 
+# ── Pin Order Tests ───────────────────────────────────────
+
+
+class TestPinOrder:
+    def _titles(self, store):
+        return [m.title for m in store.list_conversations() if m.pinned]
+
+    def test_new_pin_goes_to_top(self, store):
+        a = store.create_conversation("A")
+        b = store.create_conversation("B")
+        store.set_pinned(a.conversation_id, True)
+        store.set_pinned(b.conversation_id, True)
+        assert self._titles(store) == ["B", "A"]
+
+    def test_reorder_persists_and_ignores_recency(self, store):
+        ids = {t: store.create_conversation(t).conversation_id for t in "ABC"}
+        for t in "ABC":
+            store.set_pinned(ids[t], True)
+        store.set_pin_order([ids["A"], ids["B"], ids["C"]])
+        store.rename_conversation(ids["C"], "C2")
+        assert self._titles(store) == ["A", "B", "C2"]
+        reloaded = ConversationStore("testuser")
+        assert [m.title for m in reloaded.list_conversations() if m.pinned] == ["A", "B", "C2"]
+
+    def test_unpin_and_repin_returns_to_top(self, store):
+        ids = {t: store.create_conversation(t).conversation_id for t in "AB"}
+        store.set_pinned(ids["A"], True)
+        store.set_pinned(ids["B"], True)
+        store.set_pin_order([ids["A"], ids["B"]])
+        store.set_pinned(ids["B"], False)
+        store.set_pinned(ids["B"], True)
+        assert self._titles(store) == ["B", "A"]
+
+
 # ── Auto-Title Tests ──────────────────────────────────────
 
 
