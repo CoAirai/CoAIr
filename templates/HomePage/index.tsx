@@ -5,12 +5,14 @@ import Layout from "@/components/Layout";
 import Image from "@/components/Image";
 import PanelMessage from "@/components/PanelMessage";
 import DocumentPreview from "@/components/Chat/DocumentPreview";
+import ReplyOrb from "@/components/Chat/ReplyOrb";
 import { useChat } from "@/context/ChatContext";
 import { chatTransition } from "@/lib/chat/motion";
 import MessageBubble from "./MessageBubble";
 
 const HomePage = () => {
-    const { messages, isReplying, activeWorkspaceUserId, sendMessage } = useChat();
+    const { messages, isReplying, replyActivity, activeWorkspaceUserId, sendMessage } =
+        useChat();
     const examples = [
         "Which notices were issued this month?",
         "What does the latest programme update change?",
@@ -99,9 +101,8 @@ const HomePage = () => {
                                             <motion.div
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
-                                                className="px-1 text-label-sm text-sub-600"
                                             >
-                                                COAIr is thinking…
+                                                <ReplyOrb activity={replyActivity} />
                                             </motion.div>
                                         )}
                                     </motion.div>

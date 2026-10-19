@@ -489,3 +489,17 @@ export async function sendLiveChat(input: {
         },
     });
 }
+
+export type ChatActivityStep = { kind: string; label: string; detail?: string };
+
+export async function getChatProgress(
+    token: string,
+    projectId: string,
+    requestId: string,
+    signal?: AbortSignal
+) {
+    return coairFetch<{ steps: ChatActivityStep[]; done: boolean }>(
+        `/chat/progress/${encodeURIComponent(requestId)}`,
+        { token, projectId, signal, timeoutMs: 10000 }
+    );
+}

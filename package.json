@@ -36,7 +36,8 @@
     "swiper": "^12.0.2",
     "tailwind-merge": "^3.6.0",
     "tailwind-scrollbar": "^4.0.2",
-    "takumi-pdf": "^0.14.1"
+    "takumi-pdf": "^0.14.1",
+    "thinking-orbs": "^0.3.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

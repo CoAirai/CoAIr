@@ -26,6 +26,8 @@ import {
     renameConversation,
     setConversationPinOrder,
     sendLiveChat,
+    getChatProgress,
+    type ChatActivityStep,
 } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
 import { buildMockAnswer, buildMockReply } from "@/lib/chat/mockReply";
@@ -41,6 +43,7 @@ type ChatContextValue = {
     messages: Message[];
     recentQueries: RecentQuery[];
     isReplying: boolean;
+    replyActivity: ChatActivityStep | null;
     sendError: string | null;
     selectedQueryId: string | null;
     activeKbId: string;
@@ -184,6 +187,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         });
     }, []);
     const isReplying = pendingKeys.includes(openConversationId ?? "__local__");
+    const [activityByKey, setActivityByKey] = useState<
+        Record<string, ChatActivityStep>
+    >({});
+    const replyActivity = isReplying
+        ? activityByKey[openConversationId ?? "__local__"] ?? null
+        : null;
+    const setActivity = useCallback(
+        (key: string, step: ChatActivityStep | null) =>
+            setActivityByKey((prev) => {
+                if (!step) {
+                    if (!(key in prev)) return prev;
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                }
+                const current = prev[key];
+                if (current?.kind === step.kind && current.label === step.label) return prev;
+                return { ...prev, [key]: step };
+            }),
+        []
+    );
     const [archivedByUserId, setArchivedByUserId] = useState<
         Record<string, RecentQuery[]>
     >({});
@@ -794,14 +818,44 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     }
                     conversationIdForRecent = conversationId;
                     if (abort.signal.aborted) throw new Error("stopped");
-                    const response = await sendLiveChat({
-                        token: session.accessToken!,
-                        projectId: session.projectId,
-                        conversationId,
-                        message: trimmed,
-                        requestId: makeId("req"),
-                        signal: abort.signal,
-                    });
+                    const requestId = makeId("req");
+                    const activityKey = pendingKey;
+                    const projectId = session.projectId;
+                    let polling = true;
+                    const poll = async () => {
+                        while (polling && !abort.signal.aborted) {
+                            await new Promise((resolve) => setTimeout(resolve, 1000));
+                            if (!polling) break;
+                            try {
+                                const progress = await getChatProgress(
+                                    session.accessToken!,
+                                    projectId,
+                                    requestId,
+                                    abort.signal
+                                );
+                                const last = progress.steps[progress.steps.length - 1];
+                                if (polling && last) setActivity(activityKey, last);
+                                if (progress.done) break;
+                            } catch {
+                                // The feed is decorative; the answer request decides success.
+                            }
+                        }
+                    };
+                    void poll();
+                    let response: Awaited<ReturnType<typeof sendLiveChat>>;
+                    try {
+                        response = await sendLiveChat({
+                            token: session.accessToken!,
+                            projectId,
+                            conversationId,
+                            message: trimmed,
+                            requestId,
+                            signal: abort.signal,
+                        });
+                    } finally {
+                        polling = false;
+                        setActivity(activityKey, null);
+                    }
                     assistantText = response.assistant_text;
                     citations = mapLiveCitations(response.citations);
                 } else {
@@ -947,6 +1001,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             pushToast,
             rememberConversation,
             session,
+            setActivity,
         ]
     );
 
@@ -972,6 +1027,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             recentQueries,
             archivedQueries,
             isReplying,
+            replyActivity,
             sendError,
             selectedQueryId,
             activeKbId,
@@ -1002,6 +1058,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             deleteQuery,
             closeDocumentPreview,
             isReplying,
+            replyActivity,
             messages,
             openCitation,
             openDocumentPreview,
