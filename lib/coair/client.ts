@@ -176,16 +176,53 @@ async function once<T>(
     }
 }
 
+type UnauthorizedHandler = (staleToken: string) => Promise<string | null>;
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+let recovering: Promise<string | null> | null = null;
+
+/** The auth layer supplies a fresh access token when a request is rejected
+ * with 401, or null when the session cannot be recovered. */
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+    unauthorizedHandler = handler;
+}
+
+function recoverToken(staleToken: string): Promise<string | null> {
+    if (!unauthorizedHandler) return Promise.resolve(null);
+    // Many panels poll at once; an expired token must trigger one refresh, not one each.
+    recovering ??= unauthorizedHandler(staleToken).finally(() => {
+        recovering = null;
+    });
+    return recovering;
+}
+
 export async function coairFetch<T>(
     path: string,
     options: CoairFetchOptions = {}
 ): Promise<T> {
     const method = (options.method ?? "GET").toUpperCase();
     let lastError: CoairApiError | null = null;
+    let tokenRecovered = false;
     for (let attempt = 0; attempt < 4; attempt += 1) {
         try {
             return await once<T>(path, options);
         } catch (error) {
+            if (
+                error instanceof CoairApiError &&
+                error.status === 401 &&
+                options.token &&
+                !tokenRecovered &&
+                // Sign-in endpoints run their own refresh while adopting a token.
+                !path.startsWith("/auth/")
+            ) {
+                tokenRecovered = true;
+                const next = await recoverToken(options.token);
+                if (next && next !== options.token) {
+                    options = { ...options, token: next };
+                    continue;
+                }
+                throw error;
+            }
             if (!(error instanceof CoairApiError) || !shouldRetry(error, method)) {
                 throw error;
             }

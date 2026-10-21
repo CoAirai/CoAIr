@@ -7,6 +7,7 @@ import {
     useEffect,
     useLayoutEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from "react";
@@ -18,7 +19,7 @@ import {
     type AuthSession,
     resolveLogin,
 } from "@/lib/auth/resolveLogin";
-import { CoairApiError } from "@/lib/coair/client";
+import { CoairApiError, setUnauthorizedHandler } from "@/lib/coair/client";
 import {
     tryLiveLogin,
     sessionFromLiveToken,
@@ -136,6 +137,8 @@ function readStoredSession(): AuthSession | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
     const { users } = useAdminData();
     const { pushToast } = useToast();
+    const pushToastRef = useRef(pushToast);
+    pushToastRef.current = pushToast;
     const [session, setSession] = useState<AuthSession | null>(null);
     const [ready, setReady] = useState(false);
 
@@ -356,10 +359,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         document.addEventListener("visibilitychange", onVisible);
 
+        // An API call was rejected with an expired or revoked token. Refresh once;
+        // if that fails, end the session visibly instead of leaving every panel
+        // silently failing behind a page that still looks signed in.
+        setUnauthorizedHandler(async () => {
+            if (isSignedOutFlag()) return null;
+            const supabase = getSupabaseBrowser();
+            if (supabase) {
+                try {
+                    await hydrateSharedSupabaseSession();
+                    const { data: refreshed, error: refreshError } =
+                        await supabase.auth.refreshSession();
+                    const next = refreshed.session?.access_token?.trim() || "";
+                    if (!refreshError && next) {
+                        if (refreshed.session?.refresh_token) {
+                            writeSharedItem(
+                                REFRESH_TOKEN_KEY,
+                                refreshed.session.refresh_token,
+                                true
+                            );
+                        }
+                        writeSharedItem(ACCESS_TOKEN_KEY, next, true);
+                        patchToken(next);
+                        return next;
+                    }
+                } catch {
+                    /* fall through to ending the session */
+                }
+            }
+            persist(null, { wipeAll: false });
+            if (!cancelled) {
+                setSession(null);
+                pushToastRef.current(
+                    "Your session expired. Please sign in again.",
+                    "info"
+                );
+            }
+            return null;
+        });
+
         return () => {
             cancelled = true;
             data.subscription.unsubscribe();
             document.removeEventListener("visibilitychange", onVisible);
+            setUnauthorizedHandler(null);
         };
     }, []);
 
