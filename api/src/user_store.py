@@ -52,6 +52,10 @@ def normalize_account_status(
 ) -> str:
     clean = (status or "").strip().lower()
     if clean in VALID_ACCOUNT_STATUSES:
+        # Soft deletes used to clear is_active without touching the status, which
+        # left "active" rows that the admin lists hid but login still accepted.
+        if clean == ACCOUNT_ACTIVE and not is_active:
+            return ACCOUNT_DISABLED
         return clean
     return ACCOUNT_ACTIVE if is_active else ACCOUNT_INVITED
 
@@ -468,10 +472,17 @@ class UserStore:
     def delete_user(self, username: str, *, soft: bool = True) -> bool:
         with self._write_lock, self._connect() as conn:
             if soft:
-                cursor = conn.execute(
-                    "UPDATE users SET is_active = 0, updated_at = ? WHERE username = ?",
-                    (datetime.utcnow().isoformat(), username),
-                )
+                if "account_status" in table_columns(conn, "users"):
+                    cursor = conn.execute(
+                        "UPDATE users SET is_active = 0, account_status = ?, updated_at = ? "
+                        "WHERE username = ?",
+                        (ACCOUNT_DISABLED, datetime.utcnow().isoformat(), username),
+                    )
+                else:
+                    cursor = conn.execute(
+                        "UPDATE users SET is_active = 0, updated_at = ? WHERE username = ?",
+                        (datetime.utcnow().isoformat(), username),
+                    )
             else:
                 cursor = conn.execute(
                     "DELETE FROM users WHERE username = ?", (username,)

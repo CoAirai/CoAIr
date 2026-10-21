@@ -32,7 +32,9 @@ from src.ops_store import OpsStore, get_ops_store
 from src.org_store import OrgStore, get_org_store
 from src.project_store import PROJECT_ROLES, ProjectStore, get_project_store
 from src.supabase_auth import ensure_auth_user, use_supabase_auth
-from src.user_store import UserStore, get_user_store
+from src.user_store import (
+    ACCOUNT_ACTIVE, ACCOUNT_INVITED, UserStore, get_user_store, normalize_account_status,
+)
 
 
 router = APIRouter()
@@ -94,6 +96,9 @@ def _org_user(store: UserStore, record: Dict[str, Any], org_role: str) -> Dict[s
     out["features"] = {k: v for k, v in (record.get("features") or {}).items()
                        if k in ORG_ASSIGNABLE_FEATURES}
     out["org_role"] = org_role
+    out["account_status"] = normalize_account_status(
+        record.get("account_status"), is_active=bool(record.get("is_active", True))
+    )
     return out
 
 
@@ -190,9 +195,11 @@ async def list_org_users(
     out: List[Dict[str, Any]] = []
     for member in orgs.list_members(org.org_id):
         record = users.get_user(member["username"])
-        if not record or not record.get("is_active", True):
+        if not record:
             continue
         entry = _org_user(users, record, member["role"])
+        if entry["account_status"] not in (ACCOUNT_ACTIVE, ACCOUNT_INVITED):
+            continue
         entry["project_count"] = grants.get(member["username"], 0)
         out.append(entry)
     return {"users": out}

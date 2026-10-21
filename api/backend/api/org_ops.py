@@ -425,16 +425,17 @@ async def invite_org_user(
         raise HTTPException(400, "invalid_email")
     from src.auth_provision import issue_invite_activation_email
     from src.org_token_pool import rebalance_equal_remaining
-    from src.user_store import ACCOUNT_INVITED
+    from src.user_store import ACCOUNT_ACTIVE, ACCOUNT_INVITED, normalize_account_status
 
     package_storage = int(org.policy.get("default_storage_bytes") or 0)
     existing = users.get_user(email)
     password = secrets.token_urlsafe(12)
     if existing:
-        status = existing.get("account_status") or (
-            "active" if existing.get("is_active", True) else "invited"
+        status = normalize_account_status(
+            existing.get("account_status"),
+            is_active=bool(existing.get("is_active", True)),
         )
-        if status == "active" or existing.get("is_active", True):
+        if status == ACCOUNT_ACTIVE:
             raise HTTPException(409, "email_already_registered")
         users.update_user(
             email,

@@ -32,7 +32,9 @@ from src.supabase_auth import (
     sign_out_user,
     use_supabase_auth,
 )
-from src.user_store import UserStore, get_user_store
+from src.user_store import (
+    ACCOUNT_ACTIVE, ACCOUNT_INVITED, UserStore, get_user_store, normalize_account_status,
+)
 
 
 router = APIRouter()
@@ -85,6 +87,9 @@ class UpdateUserRequest(BaseModel):
 def _enriched(record: Dict[str, Any], usage: Dict[str, Any]) -> Dict[str, Any]:
     return {
         **record,
+        "account_status": normalize_account_status(
+            record.get("account_status"), is_active=bool(record.get("is_active", True))
+        ),
         "used_tokens": usage["used_tokens"],
         "percent_remaining": usage["percent_remaining"],
         "total_calls": usage["total_calls"],
@@ -129,7 +134,10 @@ def list_users(
         membership = memberships.get(record["username"])
         if org_id and (not membership or membership["org_id"] != org_id):
             continue
-        if not include_inactive and not record["is_active"]:
+        status = normalize_account_status(
+            record.get("account_status"), is_active=bool(record.get("is_active"))
+        )
+        if not include_inactive and status not in (ACCOUNT_ACTIVE, ACCOUNT_INVITED):
             continue
         if needle and needle not in record["username"].casefold() \
                 and needle not in (record.get("display_name") or "").casefold():

@@ -30,6 +30,7 @@ import {
     approveMemberTokenRequest,
     denyMemberTokenRequest,
     listMemberTokenRequests,
+    memberStatus,
     patchOrgUser,
     rebalanceOrgTokenPool,
     type CoairMemberTokenRequest,
@@ -700,11 +701,7 @@ const LiveTeamPage = () => {
                                             />
                                             <td className="px-5 py-4">
                                                 <StatusBadge
-                                                    status={
-                                                        user.is_active === false
-                                                            ? "suspended"
-                                                            : "active"
-                                                    }
+                                                    status={memberStatus(user)}
                                                 />
                                             </td>
                                             <td className="px-5 py-4 text-sub-600">

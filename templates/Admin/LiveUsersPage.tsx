@@ -16,6 +16,7 @@ import {
     resetAdminUserUsage,
 } from "@/lib/coair/admin";
 import { apiErrorMessage } from "@/lib/coair/commerce";
+import { memberStatus } from "@/lib/coair/org";
 import { startLiveImpersonation } from "@/lib/coair/impersonate";
 import { portalPush } from "@/lib/auth/portalNav";
 import { useLiveAdmin } from "@/lib/coair/useLiveAdmin";
@@ -44,7 +45,7 @@ const LiveUsersPage = () => {
                     companyId: user.org_id ?? "",
                     orgRole: user.org_role ?? "",
                     platformRole: user.role ?? "user",
-                    status: user.is_active === false ? "suspended" : "active",
+                    status: memberStatus(user),
                 }))
                 .filter((user) => {
                     const query = search.trim().toLowerCase();

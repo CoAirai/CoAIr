@@ -81,6 +81,7 @@ export type CoairAdminUser = {
     display_name?: string;
     role?: string;
     is_active?: boolean;
+    account_status?: string;
     org_id?: string | null;
     org_name?: string | null;
     org_role?: string | null;

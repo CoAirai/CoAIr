@@ -46,6 +46,7 @@ import {
     type CoairProviderKey,
 } from "@/lib/coair/admin";
 import { CoairApiError } from "@/lib/coair/client";
+import { memberStatus } from "@/lib/coair/org";
 import { startLiveImpersonation } from "@/lib/coair/impersonate";
 import { portalPush } from "@/lib/auth/portalNav";
 import { listAdminTickets, listPackages } from "@/lib/coair/commerce";
@@ -1077,11 +1078,7 @@ const LiveCompanyDetailPage = ({ id }: Props) => {
                                         </td>
                                         <td className="px-5 py-4">
                                             <StatusBadge
-                                                status={
-                                                    user.is_active === false
-                                                        ? "suspended"
-                                                        : "active"
-                                                }
+                                                status={memberStatus(user)}
                                             />
                                         </td>
                                         <td className="px-5 py-4">

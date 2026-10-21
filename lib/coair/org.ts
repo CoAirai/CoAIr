@@ -6,6 +6,7 @@ export type CoairOrgUser = {
     display_name?: string;
     org_role?: string;
     is_active?: boolean;
+    account_status?: string;
     used_tokens?: number;
     token_limit?: number;
     credits_remaining?: number;
@@ -16,6 +17,15 @@ export type CoairOrgUser = {
     project_count?: number;
     features?: Record<string, boolean>;
 };
+
+/** Badge status for a member row; pending invites are inactive but not suspended. */
+export function memberStatus(user: {
+    is_active?: boolean;
+    account_status?: string;
+}): "active" | "invited" | "suspended" {
+    if (user.account_status === "invited") return "invited";
+    return user.is_active === false ? "suspended" : "active";
+}
 
 export type CoairOrgUsageGroup = {
     project_id?: string;

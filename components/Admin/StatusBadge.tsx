@@ -7,6 +7,7 @@ const STATUS_CLASSES: Record<string, string> = {
     suspended: "bg-red-500/10 text-red-600",
     trial: "bg-blue-500/10 text-blue-500",
     pending: "bg-orange-500/10 text-orange-600",
+    invited: "bg-orange-500/10 text-orange-600",
 };
 
 const StatusBadge = ({ status }: Props) => (

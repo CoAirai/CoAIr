@@ -6,7 +6,9 @@ export function mapLiveOrgUsersToWorkspaceUsers(
     users: CoairOrgUser[],
     companyId: string
 ): WorkspaceUser[] {
-    return users.map((user) => ({
+    return users
+        .filter((user) => user.account_status !== "invited")
+        .map((user) => ({
         id: user.username,
         name: (user.display_name || user.username).trim() || user.username,
         companyId,

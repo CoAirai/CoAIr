@@ -9,7 +9,9 @@ from src.commerce_store import resolve_user_provision_limits
 from src.email_delivery import send_coair_email
 from src.ops_store import OpsStore, get_ops_store
 from src.supabase_auth import invite_or_recover, use_supabase_auth
-from src.user_store import ACCOUNT_ACTIVE, ACCOUNT_INVITED, SUPERADMIN_ROLE, UserStore
+from src.user_store import (
+    ACCOUNT_ACTIVE, ACCOUNT_INVITED, SUPERADMIN_ROLE, UserStore, normalize_account_status,
+)
 
 EmailKind = Literal["owner_invite", "team_invite"]
 
@@ -115,15 +117,21 @@ def provision_invited_user(
                 plan_type=plan_type,
                 storage_limit_bytes=limits["storage_limit_bytes"],
             )
-        if (
-            send_welcome_email
-            and not operator
+        reinvite = (
+            not operator
             and require_email_activation
-            and (
-                existing.get("account_status") == ACCOUNT_INVITED
-                or not existing.get("is_active", True)
-            )
-        ):
+            and normalize_account_status(
+                existing.get("account_status"),
+                is_active=bool(existing.get("is_active", True)),
+            ) != ACCOUNT_ACTIVE
+        )
+        if reinvite and existing.get("account_status") != ACCOUNT_INVITED:
+            # A deactivated or deleted account must go back through activation;
+            # otherwise the invite link is refused and the account stays hidden.
+            existing = store.update_user(
+                existing["username"], account_status=ACCOUNT_INVITED,
+            ) or existing
+        if send_welcome_email and reinvite:
             issue_invite_activation_email(
                 email=username,
                 display_name=existing.get("display_name") or username.split("@")[0],
