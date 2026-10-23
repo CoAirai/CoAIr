@@ -37,3 +37,17 @@ class ReleaseGuardTests(unittest.TestCase):
                     release.main()
                 self.assertEqual(run.call_args_list[-1].kwargs["env"]["INTEGRATION_API_IMAGE"], "previous-api")
                 self.assertEqual(json.loads((root / "release.json").read_text()), previous)
+
+    def test_healthy_containers_with_failed_public_smoke_also_roll_back(self):
+        import json
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            (root / "api.env").touch()
+            previous = {"INTEGRATION_API_IMAGE": "previous-api", "INTEGRATION_WEB_IMAGE": "previous-web"}
+            (root / "release.json").write_text(json.dumps(previous))
+            failure = release.subprocess.CalledProcessError(1, "smoke")
+            with patch.object(release, "ROOT", root), patch.object(sys, "argv", ["release", "--api-image", "ghcr.io/coairai/coair-integration-api:" + "a" * 40, "--web-image", "ghcr.io/coairai/coair-integration-web:" + "a" * 40]), patch.object(release.subprocess, "run", side_effect=[None, None, failure, None]) as run:
+                with self.assertRaises(release.subprocess.CalledProcessError):
+                    release.main()
+                self.assertEqual(run.call_args_list[-1].kwargs["env"]["INTEGRATION_WEB_IMAGE"], "previous-web")
+                self.assertEqual(json.loads((root / "release.json").read_text()), previous)

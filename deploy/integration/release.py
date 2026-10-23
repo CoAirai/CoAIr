@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 
 ROOT = Path("/opt/coair-integration")
@@ -40,6 +41,9 @@ def main() -> None:
     subprocess.run(command + ["pull"], env=env, check=True)
     try:
         subprocess.run(command + ["up", "-d", "--wait", "--wait-timeout", "240"],
+                       env=env, check=True)
+        subprocess.run([sys.executable, str(compose.with_name("smoke.py")),
+                        "--commit", args.api_image.rsplit(":", 1)[1]],
                        env=env, check=True)
     except subprocess.CalledProcessError:
         if previous:

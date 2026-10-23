@@ -108,11 +108,14 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           target="$DEPLOY_USER@$DEPLOY_HOST"
           release="/opt/coair-integration/releases/$COMMIT"
+          cleanup() {
+            ssh -i "$HOME/.ssh/integration_key" "$target" \
+              "python3 -c \"from pathlib import Path; import shutil; shutil.rmtree(Path('$release/registry'), ignore_errors=True)\"" || true
+          }
+          trap cleanup EXIT
           ssh -i "$HOME/.ssh/integration_key" "$target" "mkdir -p '$release'"
-          tar -cf - deploy/integration | ssh -i "$HOME/.ssh/integration_key" "$target" "tar -xf - -C '$release'"
+          git archive HEAD deploy/integration | ssh -i "$HOME/.ssh/integration_key" "$target" "tar -xf - -C '$release'"
           printf '%s' "$REGISTRY_TOKEN" | ssh -i "$HOME/.ssh/integration_key" "$target" \
             "docker --config '$release/registry' login ghcr.io -u '$REGISTRY_USER' --password-stdin"
           ssh -i "$HOME/.ssh/integration_key" "$target" \
             "DOCKER_CONFIG='$release/registry' python3 '$release/deploy/integration/release.py' --api-image '$API_IMAGE' --web-image '$WEB_IMAGE'"
-          ssh -i "$HOME/.ssh/integration_key" "$target" \
-            "python3 -c \"from pathlib import Path; import shutil; shutil.rmtree(Path('$release/registry'), ignore_errors=True)\""

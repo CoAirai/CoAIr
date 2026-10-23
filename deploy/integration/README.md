@@ -56,7 +56,8 @@ The API also binds loopback 8200 for operator checks. Never proxy this hostname
 to production port 8000. Qdrant has no public port.
 
 `release.py` accepts only matched, commit-tagged integration image pairs. It
-waits for container health before marking a release current. On health failure,
+waits for container health and the public proxy/login/project smoke check before
+marking a release current. On either check failing,
 it restores the previously successful image pair. This is an image rollback,
 not a database migration rollback; staging schema changes need a separate
 compatibility decision before deployment.
@@ -73,3 +74,15 @@ compatibility decision before deployment.
 The initial database is intentionally separate. Import a representative,
 read-only source sample before comparing agent quality; do not copy a live
 users, billing or organization database into this stack.
+
+## Initial qualification (24 October 2026)
+
+The initial deployed Coair baseline passed 50 API tests and 151 frontend tests,
+plus the Next.js production build. A real browser completed password/MFA login
+and opened the workspace without page errors or missing images. Three original
+Edinburgh PDFs were uploaded through the public proxy: CEC01546478,
+CEC01123743 and CEC01630357. Keep them as the deployment smoke-test dataset.
+They completed indexing and produced eight vectors in the isolated collection.
+One real chat answer returned three source citations in 14.43 seconds. This
+qualifies the deployment connections; it is not full RAG-agent parity or a
+chronology/forensic acceptance benchmark.

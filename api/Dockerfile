@@ -21,9 +21,6 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 FROM python:3.11-slim
 
-ARG COAIR_COMMIT_SHA=development
-ENV COAIR_COMMIT_SHA=${COAIR_COMMIT_SHA}
-
 WORKDIR /app
 
 # Install runtime-only system dependencies. Node and the C toolchain remain in
@@ -91,6 +88,10 @@ COPY storage/schemas/ ./storage/schemas/
 # which masks whatever the image put there. Files here are visible at runtime
 # because nothing mounts over /app/content.
 COPY content/ ./content/
+
+# Stamp the release after dependency/model layers so every commit can reuse them.
+ARG COAIR_COMMIT_SHA=development
+ENV COAIR_COMMIT_SHA=${COAIR_COMMIT_SHA}
 
 # Cloud Run injects PORT env variable (default 8080)
 ENV PORT=8080
