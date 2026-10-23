@@ -41,8 +41,11 @@ COAIR_APP_URL=https://coair-test.duckdns.org
 CORS_ORIGINS=https://coair-test.duckdns.org
 ```
 
-The test hostname must have a separate Nginx access password: staging displays
-MFA test codes and does not send emails. Compose explicitly disables live payment,
+The test hostname has a separate Nginx access password: staging displays
+MFA test codes and does not send emails. A server-rendered HttpOnly gate cookie
+protects `/coair-api/` while leaving Authorization available for Bearer tokens.
+Render `__INTEGRATION_GATE_TOKEN__` in nginx.conf from protected server state;
+never commit the token. Compose explicitly disables live payment,
 email, Supabase and object-bucket connections. Those are configuration choices,
 not changes to Coair payment or management code. Real email/payment integration
 needs separate test credentials in a later stage.
