@@ -25,6 +25,7 @@ services:
     env_file: ${INTEGRATION_ROOT:?Set the isolated integration directory}/api.env
     environment:
       APP_MODE: api
+      COAIR_INTEGRATION: "1"
       PORT: "8000"
       LLM_PRIMARY_PROVIDER: gemini
       GEMINI_MODEL: gemini-3.6-flash
