@@ -1,0 +1,79 @@
+name: coair-integration
+services:
+  web:
+    image: ${INTEGRATION_WEB_IMAGE:?Set an immutable integration web image}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3200:3000"
+    environment:
+      COAIR_API_ORIGIN: http://api:8000
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/auth/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: &logging
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  api:
+    image: ${INTEGRATION_API_IMAGE:?Set an immutable integration API image}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8200:8000"
+    env_file: ${INTEGRATION_ROOT:?Set the isolated integration directory}/api.env
+    environment:
+      APP_MODE: api
+      PORT: "8000"
+      LLM_PRIMARY_PROVIDER: gemini
+      GEMINI_MODEL: gemini-3.6-flash
+      GEMINI_MODEL_LITE: gemini-2.5-flash-lite
+      GEMINI_INGESTION_MODEL: gemini-2.5-flash-lite
+      EMBEDDING_PROVIDER: fastembed
+      VECTOR_STORE_BACKEND: qdrant
+      QDRANT_URL: http://qdrant:6333
+      CHRONOLOGY_PIPELINE_VERSION: v2
+      CHRONOLOGY_V3_DEMO_ENABLED: "false"
+      EVENT_INDEX_ENABLED: "false"
+      FORENSIC_NATIVE_UI_V1: "false"
+      SKIP_STARTUP_OBJECT_SYNC: "true"
+      INGEST_MAX_CONCURRENCY: "1"
+      OCR_MAX_WORKERS: "1"
+      # Staging must never inherit a production relational DB or object bucket.
+      DATABASE_URL: ""
+      SUPABASE_DB_URL: ""
+      SUPABASE_URL: ""
+      SUPABASE_ANON_KEY: ""
+      SUPABASE_SERVICE_ROLE_KEY: ""
+      EVENT_DATABASE_URL: ""
+      S3_BUCKET_NAME: ""
+      AWS_S3_BUCKET: ""
+      GCS_BUCKET_NAME: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_PUBLISHABLE_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      RESEND_API_KEY: ""
+      COAIR_EMAIL_RELAY_URL: ""
+    volumes:
+      - ${INTEGRATION_ROOT}/storage:/app/storage
+      - ${INTEGRATION_ROOT}/data:/app/data
+      - ${INTEGRATION_ROOT}/provider-keys:/run/secrets/google_keys:ro
+    mem_limit: 2g
+    depends_on: [qdrant]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    logging: *logging
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${INTEGRATION_QDRANT_KEY:?Set a dedicated staging key}
+    volumes:
+      - ${INTEGRATION_ROOT}/qdrant:/qdrant/storage
+    mem_limit: 512m
+    logging: *logging

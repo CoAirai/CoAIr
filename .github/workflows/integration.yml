@@ -1,0 +1,118 @@
+name: Coair AWS integration
+on:
+  push:
+    branches: [integration/rag-agent-parity]
+  pull_request:
+    branches: [integration/rag-agent-parity]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: coair-integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      api_image: ${{ steps.images.outputs.api }}
+      web_image: ${{ steps.images.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate the isolated release guard
+        run: python -m unittest discover -s deploy/integration/tests -v
+      - id: images
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          echo "api=ghcr.io/coairai/coair-integration-api:$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "web=ghcr.io/coairai/coair-integration-web:$COMMIT" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build API from the monorepo API directory
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          load: true
+          tags: ${{ steps.images.outputs.api }}
+          build-args: COAIR_COMMIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=integration-api
+          cache-to: type=gha,mode=max,scope=integration-api
+      - name: Check existing API authorization and accounting contracts
+        env:
+          API_IMAGE: ${{ steps.images.outputs.api }}
+        run: |
+          docker run --rm --entrypoint sh \
+            -e JWT_SECRET=integration-tests-only-not-a-runtime-secret \
+            -e GOOGLE_API_KEY=integration-test-key-never-used-for-generation \
+            -v "$PWD/api/tests:/app/tests:ro" "$API_IMAGE" -c \
+            'pip install --quiet pytest && python -m pytest tests/test_org_visibility.py tests/test_cross_project_leaks.py tests/test_billing_store.py tests/test_tenant_idor.py -q'
+      - name: Build and test the existing Next.js UI
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/integration/Dockerfile.web
+          load: true
+          tags: ${{ steps.images.outputs.web }}
+          build-args: PUBLIC_ORIGIN=${{ vars.INTEGRATION_PUBLIC_ORIGIN || 'https://integration.invalid' }}
+          cache-from: type=gha,scope=integration-web
+          cache-to: type=gha,mode=max,scope=integration-web
+      - name: Publish the tested pair
+        if: github.event_name != 'pull_request'
+        env:
+          API_IMAGE: ${{ steps.images.outputs.api }}
+          WEB_IMAGE: ${{ steps.images.outputs.web }}
+        run: |
+          docker push "$API_IMAGE"
+          docker push "$WEB_IMAGE"
+
+  deploy:
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/integration/rag-agent-parity' &&
+      github.event_name != 'pull_request' &&
+      vars.INTEGRATION_DEPLOY_ENABLED == 'true'
+    environment: integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy only the integration stack
+        env:
+          DEPLOY_HOST: ${{ secrets.INTEGRATION_HOST }}
+          DEPLOY_USER: ${{ secrets.INTEGRATION_SSH_USER }}
+          DEPLOY_KEY: ${{ secrets.INTEGRATION_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.INTEGRATION_KNOWN_HOSTS }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          API_IMAGE: ${{ needs.build.outputs.api_image }}
+          WEB_IMAGE: ${{ needs.build.outputs.web_image }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_HOST:?}" "${DEPLOY_USER:?}" "${DEPLOY_KEY:?}" "${KNOWN_HOSTS:?}"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/integration_key"
+          chmod 600 "$HOME/.ssh/integration_key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          release="/opt/coair-integration/releases/$COMMIT"
+          ssh -i "$HOME/.ssh/integration_key" "$target" "mkdir -p '$release'"
+          tar -cf - deploy/integration | ssh -i "$HOME/.ssh/integration_key" "$target" "tar -xf - -C '$release'"
+          printf '%s' "$REGISTRY_TOKEN" | ssh -i "$HOME/.ssh/integration_key" "$target" \
+            "docker --config '$release/registry' login ghcr.io -u '$REGISTRY_USER' --password-stdin"
+          ssh -i "$HOME/.ssh/integration_key" "$target" \
+            "DOCKER_CONFIG='$release/registry' python3 '$release/deploy/integration/release.py' --api-image '$API_IMAGE' --web-image '$WEB_IMAGE'"
+          ssh -i "$HOME/.ssh/integration_key" "$target" \
+            "python3 -c \"from pathlib import Path; import shutil; shutil.rmtree(Path('$release/registry'), ignore_errors=True)\""
