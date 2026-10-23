@@ -7,9 +7,8 @@ agent behavior or changing payment logic. The current AWS RAG service remains
 the reference implementation. The integration stack uses its own SQLite stores,
 DuckDB, Qdrant and uploads under `/opt/coair-integration`.
 
-Public address: `https://dental-clinic-app-dev.duckdns.org`. The owner approved
-using this former dental development hostname for Coair. Keep the original Nginx
-configuration for reverting the hostname; do not remove the dental containers.
+Public address: `https://coair-test.duckdns.org`. The owner configured this dedicated hostname for Coair on AWS63. Existing RAG
+and dental hostnames and containers are not deployment targets.
 
 ## Deployment
 
@@ -35,11 +34,11 @@ test provider key and these staging-only settings:
 ```dotenv
 COAIR_ENV=development
 COAIR_DEBUG_MFA=true
-COAIR_LOGIN_URL=https://dental-clinic-app-dev.duckdns.org
-COAIR_USER_URL=https://dental-clinic-app-dev.duckdns.org
-COAIR_ADMIN_URL=https://dental-clinic-app-dev.duckdns.org
-COAIR_APP_URL=https://dental-clinic-app-dev.duckdns.org
-CORS_ORIGINS=https://dental-clinic-app-dev.duckdns.org
+COAIR_LOGIN_URL=https://coair-test.duckdns.org
+COAIR_USER_URL=https://coair-test.duckdns.org
+COAIR_ADMIN_URL=https://coair-test.duckdns.org
+COAIR_APP_URL=https://coair-test.duckdns.org
+CORS_ORIGINS=https://coair-test.duckdns.org
 ```
 
 The test hostname must have a separate Nginx access password: staging displays
