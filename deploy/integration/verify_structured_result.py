@@ -19,7 +19,8 @@ OUTPUT = ROOT/'qualification/quality-parity/table-live.json'
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--commit', required=True)
-    parser.add_argument('--cleanup', action='store_true');args=parser.parse_args()
+    parser.add_argument('--cleanup', action='store_true')
+    parser.add_argument('--verify-existing', action='store_true');args=parser.parse_args()
     image=subprocess.check_output(['docker','inspect','coair-integration-api-1','--format','{{.Config.Image}}'],text=True).strip()
     assert image.endswith(':'+args.commit), 'Run only against the reviewed immutable staging image'
     access=json.loads((ROOT/'.access.json').read_text())
@@ -46,32 +47,40 @@ def main():
         result['cleanup']='own file deleted and QA project archived'
         result['original_project_unchanged']=set(result['original_file_ids'])=={f['id'] for f in api('/files',project=workspace['project_id'])}
         OUTPUT.write_text(json.dumps(result,indent=2));print(json.dumps(result));return
-    if OUTPUT.exists() and not json.loads(OUTPUT.read_text()).get('cleanup'):
+    if OUTPUT.exists() and not args.verify_existing and not json.loads(OUTPUT.read_text()).get('cleanup'):
         raise SystemExit('An unfinished QA project exists; inspect it before creating another')
-    project=api('/projects',{'name':'Structured result acceptance','embedding_profile':'local-bge-v1'})['project_id']
-    result={'commit':args.commit,'project_id':project,'accepted':False,'original_file_ids':sorted(original_ids)}
-    OUTPUT.write_text(json.dumps(result,indent=2))
-    source="""import base64,io,openpyxl
+    if args.verify_existing:
+        result=json.loads(OUTPUT.read_text());assert not result.get('cleanup')
+        project=result['project_id'];fid=result['file_id']
+        result.update(commit=args.commit,accepted=False)
+        for key in ('conversation_id','empty_conversation_id'):
+            if result.get(key):api('/conversations/'+result[key],project=project,method='DELETE')
+    else:
+        project=api('/projects',{'name':'Structured result acceptance','embedding_profile':'local-bge-v1'})['project_id']
+        result={'commit':args.commit,'project_id':project,'accepted':False,'original_file_ids':sorted(original_ids)}
+        OUTPUT.write_text(json.dumps(result,indent=2))
+        source="""import base64,io,openpyxl
 w=openpyxl.Workbook();s=w.active;s.title='Sheet1';s.append(['Month','Amount','Approved'])
 for row in [('2026-01',0,False),('2026-02',-12.5,True),('2026-03',1250.75,True)]:s.append(row)
 b=io.BytesIO();w.save(b);print(base64.b64encode(b.getvalue()).decode())"""
-    payload=base64.b64decode(subprocess.check_output(['docker','exec','-i','coair-integration-api-1','python','-'],input=source,text=True).strip())
-    boundary='CoairTableAcceptance'
-    body=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="quality-costs.xlsx"\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n').encode()+payload+f'\r\n--{boundary}--\r\n'.encode()
-    upload=api('/upload',body,project,ctype='multipart/form-data; boundary='+boundary)
-    fid=upload['file_id'];result['file_id']=fid;OUTPUT.write_text(json.dumps(result,indent=2))
-    for _ in range(90):
-        status=api('/files/'+fid+'/status',project=project)['status']
-        if status=='ready':break
-        assert status not in ('failed','credit_balance_exhausted'),status
-        time.sleep(2)
-    assert status=='ready'
+        payload=base64.b64decode(subprocess.check_output(['docker','exec','-i','coair-integration-api-1','python','-'],input=source,text=True).strip())
+        boundary='CoairTableAcceptance'
+        body=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="quality-costs.xlsx"\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n').encode()+payload+f'\r\n--{boundary}--\r\n'.encode()
+        upload=api('/upload',body,project,ctype='multipart/form-data; boundary='+boundary)
+        fid=upload['file_id'];result['file_id']=fid;OUTPUT.write_text(json.dumps(result,indent=2))
+        for _ in range(90):
+            status=api('/files/'+fid+'/status',project=project)['status']
+            if status=='ready':break
+            assert status not in ('failed','credit_balance_exhausted'),status
+            time.sleep(2)
+        assert status=='ready'
     conv=api('/conversations',{'title':'Structured monthly cost result'},project)['conversation_id']
     response=api('/chat',{'message':'Show Month, Amount and Approved for every record, ordered by Month. Use the exact stored values, without aggregation or rounding.','conversation_id':conv},project)
     artifact=response.get('sql_artifact');assert artifact, response
     amount=next(c for c in artifact['columns'] if c.lower()=='amount')
     assert sorted(row[amount] for row in artifact['preview_rows'])==[-12.5,0,1250.75],artifact
     assert artifact['row_count']==3
+    assert artifact['source_file_id']==fid and artifact['source_file_name']=='quality-costs.xlsx',artifact
     history=api('/conversations/'+conv,project=project)
     assert history['messages'][-1]['response']['sql_artifact']==artifact
     preview=api('/docs/'+fid+'/content',project=project)

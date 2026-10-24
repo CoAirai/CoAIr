@@ -38,6 +38,13 @@ describe("structured SQL results", () => {
         expect(repeatsSqlTable(["Total"], [["20"]], artifact)).toBe(false);
         expect(repeatsSqlTable(table.headers, table.rows.slice(0, 1), artifact)).toBe(false);
     });
+    it("recognizes harmless numeric and boolean formatting without rounding distinct values", () => {
+        const table = sqlTable(artifact);
+        const formatted = [["2026-10-24", "0.00", "False"], ["2026-10-25", "-12.50", "True"], ["2026-10-26", "1,000,000,000.25", ""]];
+        expect(repeatsSqlTable(table.headers.map(x => x.toUpperCase()), formatted, artifact)).toBe(true);
+        formatted[2][1] = "1,000,000,000.20";
+        expect(repeatsSqlTable(table.headers, formatted, artifact)).toBe(false);
+    });
     it("survives message persistence without dropping chart, totals or provenance", () => {
         const message = JSON.parse(JSON.stringify({ role: "assistant", content: "Result", sqlArtifact: artifact }));
         expect(message.sqlArtifact).toEqual(artifact);

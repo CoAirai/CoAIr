@@ -95,14 +95,15 @@ change. No claim of complete legal/factual correctness is made here.
 The existing backend SQL artifact now reaches live chat and persisted history.
 The UI displays ordered columns, exact database values, empty-result headings,
 row counts, CSV export, optional provider-independent chart metadata, source
-opening and generated SQL. Chart code loads only when a chart is actually shown.
+opening and generated SQL. SQL source metadata resolves the original project-owned
+Excel/CSV rather than an internal Parquet view. Chart code loads only when a chart is actually shown.
 The current backend preview remains bounded exactly as in RAG, and the UI labels
 how many rows are shown rather than implying that a preview is the full result.
 
 The full structured artifact is stored with each new assistant message so reload
 preserves chart, column order, original total count and source provenance. Older
-messages still reconstruct through the existing response builder. An exact
-markdown duplicate is suppressed; different analytical tables stay visible.
+messages still reconstruct through the existing response builder. A duplicate with equivalent typed values (including harmless decimal/boolean
+formatting) is suppressed; different analytical tables stay visible.
 
 Source tables share one renderer across the side panel, enlarged reader and
 report source viewer. The extra frontend-only 40-row slice is removed; all rows

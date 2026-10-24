@@ -31,8 +31,18 @@ export function sqlChart(artifact: SqlArtifact) {
     return y.length ? { ...chart, y } : null;
 }
 
-/** Only suppress an exact duplicate; different analytical tables stay visible. */
+/** Suppress the same typed values, while preserving different analytical tables. */
 export function repeatsSqlTable(headers: string[], rows: string[][], artifact: SqlArtifact): boolean {
     const table = sqlTable(artifact);
-    return JSON.stringify([headers, rows]) === JSON.stringify([table.headers, table.rows]);
+    if (headers.length !== table.headers.length || rows.length !== table.rows.length) return false;
+    if (!headers.every((header, i) => header.trim().toLowerCase() === table.headers[i].trim().toLowerCase())) return false;
+    return rows.every((row, i) => row.length === headers.length && row.every((cell, j) => {
+        const value = artifact.preview_rows[i][table.headers[j]];
+        const text = cell.trim();
+        if (typeof value === "boolean") return text.toLowerCase() === String(value);
+        if (typeof value === "number" && /^[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/.test(text)) {
+            return Number(text.replaceAll(",", "")) === value;
+        }
+        return text === table.rows[i][j];
+    }));
 }

@@ -43,3 +43,37 @@ def test_empty_result_keeps_column_headings_and_old_messages_still_load():
         'sql': 'SELECT amount FROM costs', 'result_data': [{'amount': 0}], 'sources': []})
     assert old.sql_artifact.preview_rows == [{'amount': 0}]
     assert old.sql_artifact.columns == ['amount']
+
+
+def test_sql_source_resolves_original_document_within_active_project():
+    from types import SimpleNamespace
+    from src.project_context import current_project_id_var
+    token = current_project_id_var.set('project-a')
+    records = [SimpleNamespace(project_id='project-a', file_name='costs.xlsx', doc_id='original-a')]
+    catalog = SimpleNamespace(entries={
+        'foreign': SimpleNamespace(project_id='project-b', source_file='/private/b/secret.xlsx',
+                                   tables=[SimpleNamespace(table_name='cost_view')]),
+        'local': SimpleNamespace(project_id='project-a', source_file='/data/a/costs.xlsx',
+                                 tables=[SimpleNamespace(table_name='cost_view')]),
+    })
+    try:
+        with patch('src.catalog.get_catalog', return_value=catalog), \
+             patch('src.document_registry.get_document_registry', return_value=SimpleNamespace(
+                 get_all=lambda project_id: records if project_id=='project-a' else [])):
+            result = build_chat_response({'query_type':'data','answer':'Amounts','sql':'SELECT amount FROM cost_view',
+                'result_data':[{'amount':0}], 'sources':[{'type':'structured_data','file_name':'cache.parquet',
+                'doc_id':'cache-id','table_name':'cost_view'}]})
+        assert result.sql_artifact.source_file_id == 'original-a'
+        assert result.sql_artifact.source_file_name == 'costs.xlsx'
+        assert not result.citations  # Structured provenance has its own source control.
+        persisted = result.sql_artifact.model_dump()
+        persisted.update(source_file_name='cache.parquet', source_file_id='cache-id')
+        with patch('src.catalog.get_catalog', return_value=catalog), \
+             patch('src.document_registry.get_document_registry', return_value=SimpleNamespace(
+                 get_all=lambda project_id: records if project_id=='project-a' else [])):
+            restored = build_chat_response({'query_type':'data','answer':'Amounts',
+                'project_id':'project-a','sql_artifact':persisted})
+        assert restored.sql_artifact.source_file_id == 'original-a'
+        assert restored.sql_artifact.source_file_name == 'costs.xlsx'
+    finally:
+        current_project_id_var.reset(token)
