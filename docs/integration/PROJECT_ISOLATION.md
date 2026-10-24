@@ -25,6 +25,8 @@ must apply before data reaches retrieval results, prompts or document previews.
   than filenames, so identical filenames cannot mix projects' metadata.
 - Removed the global corpus filename cache from request routing. Agent survey
   enrichment rejects foreign registry records and omits global cluster labels.
+- Applied the same project document-ID boundary to correspondence threads,
+  unanswered-message selection for drafts, and same-name RAG body previews.
 - Retained canonical file IDs in dense fallback/provider source responses.
   Optional metadata retries preserve the project and document filters.
 
@@ -39,7 +41,7 @@ The focused isolated run passed 199 tests and four subtests, including real
 DuckDB, a real local Qdrant adapter, project/header authorization, conversation
 scope and existing authorized source-preview contracts. Tests include same-name
 PDFs/notices, foreign document IDs, forged SQL allowlists, empty projects and
-missing vector project scope. The full selected API deployment gate also passed **306 tests and 13 subtests**
+missing vector project scope. The full selected API deployment gate also passed **309 tests and 13 subtests**
 against the updated source in the isolated API runtime. The deployment CI now requires the expanded
 preview, SQL and router regression cases in addition to its existing checks.
 

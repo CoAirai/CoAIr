@@ -131,3 +131,34 @@ def test_unified_search_applies_project_to_registry_and_bulk_chunk_query(chunks,
         assert router._unified_document_search("SOURCE") == []
     finally:
         corpus_var.reset(token)
+
+
+@pytest.mark.parametrize("method", ["find_threads", "get_thread_between", "get_latest_unanswered"])
+def test_correspondence_and_draft_threads_never_use_other_projects(chunks, method):
+    from src.light_graph import LightGraph
+    from src.thread_builder import ThreadBuilder
+    chunks.execute("CREATE TABLE notices (doc_id VARCHAR, file_name VARCHAR, date VARCHAR, "
+                   "sender VARCHAR, recipient VARCHAR, subject VARCHAR, doc_type VARCHAR, actions VARCHAR)")
+    chunks.execute("INSERT INTO notices VALUES "
+                   "('other-doc','same.pdf','2026-12-31','Alice','Bob','FOREIGN_SUBJECT','letter',''),"
+                   "('local-doc','same.pdf','2026-01-01','Alice','Bob','LOCAL_SUBJECT','letter','')")
+    graph = LightGraph.__new__(LightGraph)
+    graph._db = chunks
+    graph._notices_table_ready = True
+    builder = ThreadBuilder()
+    builder._graph = graph
+    builder._rag = SimpleNamespace(documents=[
+        SimpleNamespace(metadata={"file_name": "same.pdf", "project_id": project}, text=text)
+        for project, text in [("project-b", "FOREIGN_BODY"), ("project-a", "LOCAL_BODY")]])
+    for project in ("project-a", "project-empty", ""):
+        set_current_project(project)
+        if method == "find_threads":
+            messages = [m for t in builder.find_threads("Alice") for m in t.messages]
+        elif method == "get_thread_between":
+            messages = builder.get_thread_between("Alice", "Bob").messages
+        else:
+            messages = builder.get_latest_unanswered()
+        assert [m.doc_id for m in messages] == (["local-doc"] if project == "project-a" else [])
+        if messages:
+            assert messages[0].subject == "LOCAL_SUBJECT"
+            assert messages[0].body_preview == "LOCAL_BODY"
