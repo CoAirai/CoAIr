@@ -20,3 +20,8 @@ Bounded three-worker synthesis is ported. Isolated API-image execution passed 57
 ### Stage 2 — passed
 
 Coair now uses the RAG selective follow-up policy: last two messages, at most 3,000 characters, only for referential questions. Standalone queries omit unrelated history. Coair passed 26 tests and 4 subtests (including source-context restoration and both provider modes). The same executable memory and document-follow-up contract passed 14 tests against the actual RAG orchestrator source in an isolated dependency image. Production files were not edited. End-to-end performance qualification follows in stage 4.
+
+
+### Stage 3 — passed
+
+Retained the existing storage engines and Coair ownership/accounting model. SQLite qualification passed 101 tests. The same three new database contracts passed against actual disposable PostgreSQL 16: all nine migrations and safe reapplication, membership/persistent project ownership, concurrent CA increments, idempotent ledger entries, and rollback. Existing DuckDB cursor isolation/durable FTS and Qdrant project filters passed. Three obsolete organization-test calls were updated to supply the required `created_by`; production management/payment implementation was unchanged. PostgreSQL migration/contract execution is now a required CI gate. Supabase-hosted network/RLS roles, external buckets and the full production corpus remain outside this local-adapter qualification.
