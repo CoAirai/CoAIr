@@ -565,25 +565,22 @@ class JargonManager:
         if not query:
             return query
 
-        replaced = query
-        for abbr, meaning in sorted(
-            self._abbr_to_meaning.items(), key=lambda kv: len(kv[0]), reverse=True
-        ):
-            if not abbr or not meaning:
+        meanings = {abbr.casefold(): meaning for abbr, meaning in self._abbr_to_meaning.items()
+                    if abbr and meaning}
+        if not meanings:
+            return query
+        terms = "|".join(re.escape(abbr) for abbr in sorted(meanings, key=len, reverse=True))
+        pattern = re.compile(rf"(?<![A-Za-z0-9])(?:{terms})(?![A-Za-z0-9])", re.IGNORECASE)
+        parts = []
+        position = 0
+        for match in pattern.finditer(query):
+            if match.start() < position:
                 continue
-            paired_pattern = re.compile(
-                rf"(?<![A-Za-z0-9]){re.escape(abbr)}(?![A-Za-z0-9])"
-                rf"\s*\(\s*{re.escape(meaning)}\s*\)",
-                re.IGNORECASE,
-            )
-            replaced = paired_pattern.sub(meaning, replaced)
-            pattern = re.compile(
-                rf"(?<![A-Za-z0-9]){re.escape(abbr)}(?![A-Za-z0-9])",
-                re.IGNORECASE,
-            )
-            replaced = pattern.sub(meaning, replaced)
-
-        return replaced
+            meaning = meanings[match.group().casefold()]
+            paired = re.match(rf"\s*\(\s*{re.escape(meaning)}\s*\)", query[match.end():], re.IGNORECASE)
+            parts.extend((query[position:match.start()], meaning))
+            position = match.end() + (paired.end() if paired else 0)
+        return "".join(parts) + query[position:]
 
     def lookup_concept_group(self, term: str) -> Optional[List[str]]:
         """
@@ -616,17 +613,18 @@ class JargonManager:
         Returns:
             Expanded query with abbreviation meanings
         """
-        expanded = query
-        words = re.findall(r'\b[A-Z][A-Z0-9&/]{1,10}\b', query)
+        original_lower = query.lower()
 
-        for word in words:
+        def expand_original(match):
+            word = match.group()
             meaning = self.expand(word)
-            if meaning:
-                # Add meaning in parentheses if not already present
-                if meaning.lower() not in query.lower():
-                    expanded = expanded.replace(word, f"{word} ({meaning})")
+            if meaning and meaning.lower() not in original_lower:
+                return f"{word} ({meaning})"
+            return word
 
-        return expanded
+        # Match the original input once. Replacing inside already-generated
+        # definitions can recursively grow a selected document until OOM.
+        return re.sub(r'\b[A-Z][A-Z0-9&/]{1,10}\b', expand_original, query)
 
     def normalize_column_name(self, column: str) -> Tuple[str, Optional[str]]:
         """

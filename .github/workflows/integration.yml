@@ -58,7 +58,7 @@ jobs:
             -e JWT_SECRET=integration-tests-only-not-a-runtime-secret \
             -e GOOGLE_API_KEY=integration-test-key-never-used-for-generation \
             -v "$PWD/api/tests:/app/tests:ro" "$API_IMAGE" -c \
-            'pip install --quiet pytest && python -m pytest tests/test_org_visibility.py tests/test_cross_project_leaks.py tests/test_billing_store.py tests/test_tenant_idor.py tests/test_agent_retrieval_parity.py -q'
+            'pip install --quiet pytest && python -m pytest tests/test_org_visibility.py tests/test_cross_project_leaks.py tests/test_billing_store.py tests/test_tenant_idor.py tests/test_agent_retrieval_parity.py tests/test_agent_metadata_scope.py tests/test_jargon_expansion_bounds.py -q'
       - name: Build and test the existing Next.js UI
         uses: docker/build-push-action@v6
         with:

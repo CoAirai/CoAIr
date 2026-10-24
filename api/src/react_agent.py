@@ -104,7 +104,7 @@ class ReActAgent:
         seen: set = set()
         seen_files: List[str] = []
         survey_cache: Dict[str, List[Dict[str, Any]]] = {}  # file_name → already-retrieved chunks
-        corpus_map = self._corpus_map()
+        corpus_map = self._corpus_map(doc_ids)
         tools_used: List[str] = []
         last_step: Optional[Tuple[str, str]] = None  # (action, input) for stuck-loop detection
         empty_obs_streak = 0
@@ -312,21 +312,15 @@ class ReActAgent:
 
     # ── metadata-first helpers ──────────────────────────────────
     @staticmethod
-    def _corpus_map() -> str:
-        """Compact corpus topic map (cluster labels + counts) so the agent knows
-        what topic-clusters exist before searching. Reuses the document clusterer
-        (wires the otherwise-dormant cluster layer). Empty when unavailable."""
+    def _corpus_map(doc_ids: Optional[List[str]] = None) -> str:
+        """Show only document topics from the active project; fail closed."""
         try:
-            from .document_clusterer import get_clusterer
-            clusters = get_clusterer().list_clusters() or []
-            parts = []
-            for c in clusters[:12]:
-                label = getattr(c, "label", None) if not isinstance(c, dict) else c.get("label")
-                cnt = getattr(c, "doc_count", None) if not isinstance(c, dict) else c.get("doc_count")
-                if label:
-                    parts.append(f"{label} ({cnt})" if cnt else str(label))
-            if parts:
-                return "Corpus topic clusters: " + "; ".join(parts) + "\n\n"
+            from .agent_metadata import document_topics, scoped_documents
+            topics = document_topics(scoped_documents(doc_ids))
+            if topics:
+                return "Corpus document topics: " + "; ".join(
+                    f"{label} ({count})" for label, count in topics
+                ) + "\n\n"
         except Exception:
             pass
         return ""

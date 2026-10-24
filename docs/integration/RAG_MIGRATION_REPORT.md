@@ -47,10 +47,10 @@ Coair additions without reproducing the running AWS system.
 
 | Area | Gap / consequence | Change and acceptance | Status |
 |---|---|---|---|
-| DuckDB readers | Shared connection result state can mix parallel query results | Independent cursors; synchronized eight-worker regression | Offline regressions passed; CI/deploy pending |
-| Lexical startup | Restart forces avoidable FTS rebuild; dirty flag is not durable | Persist dirty flag, rebuild old databases once, reuse clean persisted index; retain Coair async sync | Offline regressions passed; CI/deploy pending |
-| Evidence retrieval | Repeated expansion/duplicate searches; worker context can lose project/user/progress/accounting identity | Deduplicate questions; copy request context independently into each lane | Offline regressions passed; CI/deploy pending |
-| Planner metadata | Global clusters, summaries, SQL inventory and graph parties may enter another project's prompt | Scope metadata before prompt construction; empty/unknown scope must not expose other projects | Next patch |
+| DuckDB readers | Shared connection result state can mix parallel query results | Independent cursors; synchronized eight-worker regression | Deployed in 533e84f; 54 API tests passed |
+| Lexical startup | Restart forces avoidable FTS rebuild; dirty flag is not durable | Persist dirty flag, rebuild old databases once, reuse clean persisted index; retain Coair async sync | Deployed in 533e84f; 54 API tests passed |
+| Evidence retrieval | Repeated expansion/duplicate searches; worker context can lose project/user/progress/accounting identity | Deduplicate questions; copy request context independently into each lane | Deployed in 533e84f; 54 API tests passed |
+| Planner metadata | Global clusters, summaries, SQL inventory and graph parties may enter another project's prompt | Scope metadata before prompt construction; empty/unknown scope must not expose other projects | Eight offline regressions passed; CI/deploy pending |
 | Chronology V2 | Serial synthesis; one unsupported claim can discard valid claims; numeric punctuation/date normalization differ | Bounded workers with context, prune unsupported claims before verification; accept supported facts and reject invented facts | Pending |
 | Word output | Coair download may regenerate a table instead of serving accepted narrative | Preserve numbered narrative and real footnotes through actual download route; explicit format policy | Pending |
 | Progress and failed reports | Backend and public Next.js need end-to-end confirmation | English stages, actual timing, terminal errors; hide failed items from normal list while keeping diagnostics | Pending |
@@ -100,3 +100,33 @@ container without production mounts. The original image fails these checks;
 the worker test specifically reproduces missing project/correlation context and
 redundant query variants. The FTS reuse decision is mocked in this unit suite;
 actual extension/index reuse still requires runtime confirmation.
+
+Planner metadata patch: eight offline regressions passed for project switching,
+empty/missing scope, selected document IDs, registry failure, overbroad registry
+results, SQL allow-list intersection and the existing legacy corpus table policy.
+The global graph-party hint is deliberately omitted from planning because it
+has no safe project API. Legacy documents without project ownership are not
+used as prompt metadata; ownership needs an explicit migration rather than a
+global fallback. These checks do not certify every tool or graph endpoint.
+
+The deploy smoke check now also checks a real PDF preview, production RAG
+health and original production/dental container identities. Successful checks
+append a compact per-release record to `verification_history.jsonl`.
+
+Retrieval release `533e84f`: CI passed 54 API tests and the frontend build/test
+gate, then deployed successfully. Public password/MFA/project/library checks
+passed. Workflow: https://github.com/CoAirai/CoAIr/actions/runs/40048617388.
+
+The smoke script accepts `--chat` for a deliberate real provider query after
+deployment. It checks selected-document citations and actual completed progress
+events, and records elapsed time and the full answer in server `chat-check.json`.
+It is not enabled for every automatic deploy, so a deployment does not incur an
+unnecessary AI call.
+
+A legacy Gemini adapter import emits a deprecated SDK warning in the test image.
+Keep dependency cleanup separate from behavioral migration and verify the active
+provider path before upgrading.
+
+## Selected-document runtime failure and corrective patch
+
+The real selected-PDF chat on 533e84f returned HTTP 502. Docker recorded an OOM event and one API restart at the isolated 2 GiB limit. Logs showed recursive glossary growth over the injected document text. Both source repositories have the same multi-pass routines. Two regressions fail on the original routines; four pass with single-pass replacement over original matches. Generated definitions are never recursively expanded. The same public selected-PDF query must pass after deploy before this finding can close. Separating the original question from full answer context, as RAG does, remains a further migration task.
