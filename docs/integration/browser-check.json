@@ -1,0 +1,22 @@
+{
+  "commit": "6d1559d709ca28e5acd5bb9bd31a5d952252712d",
+  "accepted": true,
+  "stages": [
+    "Planning research · 0%. You can close this page; the chronology continues on the server.",
+    "Planning research · 8%. You can close this page; the chronology continues on the server.",
+    "Preparing evidence · 20%. You can close this page; the chronology continues on the server.",
+    "Extracting evidence · 30%. You can close this page; the chronology continues on the server.",
+    "Writing chronology · 68%. You can close this page; the chronology continues on the server."
+  ],
+  "page_errors": [],
+  "report_id": "09846d13c7914bc0bdfc",
+  "url": "https://coair-test.duckdns.org/workspace/chronology/09846d13c7914bc0bdfc",
+  "seconds": 100.31,
+  "word": {
+    "footnotes": 32,
+    "resolved": true,
+    "tables": 0,
+    "bytes": 39436
+  },
+  "broken_images": 0
+}

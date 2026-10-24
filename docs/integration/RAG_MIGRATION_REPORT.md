@@ -1,187 +1,166 @@
-# RAG → Coair development and migration report
+# RAG → Coair development report
 
 Updated: 24 October 2026 (Europe/Istanbul).
 
-## Objective and current scope
+## Current result
 
-Port proven AWS RAG behavior into Coair through small verified changes, preserving
-Coair's interface, organizations, project permissions, account lifecycle, CA
-accounting and payment implementation. Target branch: `integration/rag-agent-parity`,
-based on Coair main `ca5302b`. Test: https://coair-test.duckdns.org.
-Production RAG remains the reference; live Coair, RAG and dental are not deployment targets.
+The first agent migration packages are deployed to https://coair-test.duckdns.org
+on branch `integration/rag-agent-parity`. Production RAG remains the reference.
+Coair main, live RAG and dental services were preserved.
+
+The integration now has gated deployment, focused agent regressions and real
+API/browser qualification. A real chronology was generated from the Edinburgh
+sample and downloaded as narrative Word with resolving footnotes. Full agent,
+content-quality, large-corpus and external-service parity remains incomplete.
 
 The comparison covered 177 relevant files: 80 identical, 61 different, 36 Coair-only.
-ReAct, query planner and document agent were identical. Major missing improvements
-are around retrieval, request context, chronology validation, progress and exports.
-Copying all RAG agent files would not reproduce the deployed system.
+ReAct, query planner and document agent were identical. Important RAG improvements
+are in their surrounding retrieval, context, synthesis, verification and export
+paths. We ported those changes selectively instead of replacing the backend.
 
-The integration checkout is on Adata because the Mac volume repeatedly refused
-writes for lack of space. The original Desktop integration path is a symlink to
-`/Volumes/Adata/Codex/CoAIr-integration`. Original dirty RAG and Coair worktrees
-were preserved. All nine then-uncommitted files were hash-verified before removing
-the superseded integration worktree.
+## Implemented changes
 
-## Verification contract
+| Area | Result and verification |
+|---|---|
+| Isolated deployment | Dedicated TLS hostname; separate SQLite, DuckDB, Qdrant, uploads and credentials; matched immutable API/web images |
+| DuckDB concurrency | Independent reader cursors prevent shared-result races; synchronized eight-worker regression |
+| Lexical retrieval | Durable dirty state, migration rebuild and persisted FTS reuse; native scoring query fixed after a real DuckDB Binder error |
+| Research workers | Duplicate questions removed; user/project/run/progress context copied into each worker |
+| Agent metadata | Project-local topics/summaries, scoped SQL inventory and selected-document filtering; global graph-party hint omitted |
+| Selected documents | Raw document text reaches synthesis without glossary/classification/retrieval expansion; context restored after success and failure |
+| Glossary | Original text is processed once; generated definitions cannot recursively grow; repeated-query OOM did not recur |
+| Source references | Metadata respects selected IDs; page evidence keeps its citations; canonical document IDs resolve within the active project |
+| Chronology V2 | Supported numeric punctuation accepted; proven day precision normalized; invalid claims pruned before independent verification; RAG's five overview / four event claims and evidence-led writing profile ported |
+| Word delivery | Stored narrative is the default download; explicit `format=table` remains available; Coair XML safety retained |
+| Progress UI | Existing report status line displays English backend stage labels and percentages; real browser observed live updates |
+| Failed chronology | Failed chronology jobs are hidden from normal lists; direct diagnostics remain; forensic failure/retry visibility is preserved |
+| Diagnostics | Structured-output rejection logs field paths and error types without copying private source text |
 
-1. Reproduce the defect with a meaningful failing regression.
-2. Port the smallest behavior change, preserving tenancy and Coair accounting.
-3. Run focused tests in a disposable container without production mounts.
+Coair account, organization, project-security and CA billing implementations were
+preserved. `source-manifest.json` records reviewed RAG/Coair SHA256 snapshots and
+unchanged protected backend files. RAG worktree overlays are part of the source
+baseline; GitHub main alone does not reproduce the running reference system.
+
+## How each migration step is controlled
+
+1. Reproduce a concrete defect with a meaningful failing regression.
+2. Port the smallest behavior change and preserve Coair tenancy/accounting.
+3. Run focused checks in disposable containers without production mounts.
 4. CI runs release guards, authorization/accounting/agent regressions, frontend
-   tests and production builds before publishing matched immutable images.
-5. Deploy only the isolated integration stack. Container health and real public
-   TLS, access gate, password/MFA, project, persisted library, PDF preview and
-   reference-container checks must pass. Failure restores the previous image
-   pair. Database migration rollback is not provided by image rollback.
-6. Qualify the actual feature through its public API. A health check alone does
-   not establish AI correctness. Paid AI checks are deliberate operator runs.
-7. Prepare the next patch while CI builds the current patch. Review the current
-   qualification before starting the next deployment. Record failures as gaps,
-   not successful migrations.
+   tests and production builds before publishing a matched image pair.
+5. Deploy only to the integration stack. Health and real public TLS, access gate,
+   password/MFA, project, persisted library, PDF preview and failed-list checks
+   must pass. Original RAG/dental container identities and RAG health are checked.
+6. Health or public-smoke failure restores the previous image pair. Database
+   migrations require their own compatibility decision; image rollback does not
+   roll back schema or data.
+7. Qualify the actual feature through the public API or browser and record its
+   source links, stages, elapsed time and exported Word structure.
+8. Prepare the next patch while CI builds the current patch. Review current
+   qualification before starting the next deployment.
 
-`deploy/integration/smoke.py --commit <sha> --chat` performs a real selected-PDF
-query, source and completed-progress checks. `--chronology` generates a real
-report, polls stages and checks the downloaded DOCX for narrative structure and
-resolvable Word footnotes. These options incur provider usage and are not run
-on every automatic deploy. Successful release checks append to server
-`verification_history.jsonl`; current detailed checks remain in `chat-check.json`
-and `report-check.json`.
+The workflow is `.github/workflows/integration.yml`. Paid feature checks are
+deliberate operator runs:
 
-## Migration ledger
+- `smoke.py --commit <sha> --chat`: selected-source answer and completed progress.
+- `smoke.py --commit <sha> --chronology`: actual report, stages and narrative DOCX.
+- Add `--retry-report <job-id>` to qualify recovery of an existing failed report.
 
-| Area | Implemented change | Evidence / remaining gate |
+These commands run on the server with protected local credentials. Provider keys
+and passwords are excluded from report and source-control artifacts.
+
+## Measured evidence
+
+The fixed dataset contains three original Edinburgh PDFs: CEC01546478,
+CEC01123743 and CEC01630357 (eight indexed vectors). Production source files were
+read for upload; production users, balances and writable databases were not copied.
+
+| Check | Observed result |
+|---|---|
+| Qualified feature release `6d1559d` | 121 API tests, 13 subtests, 152 frontend tests across 38 files, production builds and public deploy checks passed |
+| Selected-PDF chat | 13.5 seconds; one correct page citation; five completed backend progress steps |
+| Failed-report recovery | Same job `0d1f37b56e4c4effb4b7` retried successfully in 48.97 seconds |
+| Recovery Word output | 8 records including overview; 11 resolving footnotes; no tables; 38,543 bytes |
+| Full browser workflow | Password/MFA → chronology form → real generation → live stages → Download Word |
+| Browser report | 100.31 seconds; 10 events shown; 32 resolving Word footnotes; no tables; 39,436 bytes |
+| Browser integrity | No JavaScript page errors or broken images |
+| Runtime FTS | Persisted index reuse observed; Binder/LIKE fallback error did not recur in the qualified run |
+| Production protection | Original RAG/dental container identities and RAG health remained unchanged; Coair main stayed at `ca5302b` |
+
+The final list-scoping regression additionally checks that forensic failures remain
+visible for retry. Current CI/deployment results:
+https://github.com/CoAirai/CoAIr/actions/workflows/integration.yml.
+The full browser proof is in `browser-check.json`; the qualified UI release is
+https://github.com/CoAirai/CoAIr/actions/runs/40051982229.
+
+On AWS, current records are under `/opt/coair-integration`: `release.json`,
+`smoke.json`, `verification_history.jsonl`, `chat-check.json` and
+`report-check.json`. The first qualified Word artifact is
+`qualification-chronology.docx`. Both ready reports remain available in the
+authenticated test application's chronology list.
+
+## Failures found and corrected during qualification
+
+- A selected-document query returned HTTP 502 and triggered an isolated API OOM.
+  Logs showed recursive glossary growth over injected source text. Single-pass
+  glossary handling and separation of answer context corrected that path.
+- A subsequent answer lost page citations behind metadata-only records and
+  included unselected documents. Source merging/filtering was corrected; strict
+  selected-source acceptance then passed.
+- The first real chronology failed after 83.81 seconds at overview synthesis with
+  `model_output_invalid`. The old code did not retain a field-level rejection
+  cause. After RAG capacity/style alignment and safe diagnostics, the same job
+  retried successfully. This establishes recovery, not definitive proof of the
+  original response's exact schema violation.
+- Native BM25 hit a DuckDB side-effecting-alias Binder error. A real DuckDB
+  side-effecting-UDF regression fails on the old query and passes with score
+  materialization, including project/document filtering.
+
+A missing project header in the operator progress check was corrected separately;
+the existing answer's progress was checked without repeating its provider call.
+
+## Remaining deficiencies and next gates
+
+| Priority | Gap | Required acceptance |
 |---|---|---|
-| Deployment | Dedicated TLS hostname, isolated SQLite/DuckDB/Qdrant/uploads, automatic branch deployment and rollback guard | Baseline browser, upload, source preview and persistence passed |
-| DuckDB | Independent query cursors; reader results no longer share state | Eight-worker regression; deployed in 533e84f |
-| Lexical index | Durable dirty state, one-time old-DB rebuild, clean persisted-index reuse; Coair async sync retained | Restart/mutation and reuse-decision regressions passed; native runtime reused the persisted FTS index on release 3b98054 |
-| Research retrieval | Deduplicated questions and independently copied request context per worker | Context/correlation regressions; deployed in 533e84f |
-| Planner / ReAct metadata | Project-local document topics and summaries; project/explicit SQL allow-list applied before ranking; global graph-party hint omitted | Eight project/empty-scope/selected-document/failure/legacy-table regressions; deployed in aa234b1 |
-| Glossary | Single-pass expansion and replacement over original matches | Four regressions; deployed in aa234b1; the repeated-query OOM did not recur |
-| Selected evidence | Keep raw source text out of glossary/classification/retrieval and supply it only to synthesis; preserve Coair follow-up history | Five focused tests; deployed in c3d1b8b; selected-PDF chat passed in 13.74 seconds with completed progress |
-| Source references | Respect selected IDs during metadata enrichment, retain actual page evidence, resolve canonical IDs within active project | Deployed in c3d1b8b; actual selected-PDF answer returned only its page citation |
-| Chronology validation | Ignore sentence punctuation around supported numbers; normalize proven day precision; prune invalid claims before independent verification | Deployed in c3d1b8b; first overview failed; RAG capacity/style alignment in 3b98054 produced a ready report |
-| Word download | Serve stored narrative by default; table remains available through explicit `format=table`; retain Coair XML safety | Deployed in c3d1b8b; default/explicit-format/project-boundary regression passed; real narrative DOCX passed: 11 resolving footnotes, no tables |
-| Failed reports | Hide failed jobs from normal project list; keep active jobs and direct diagnostics | Deployed in c3d1b8b; list/diagnostic regression and actual failed-list exclusion passed |
+| Critical | Normalized date proof | Prove normalized year/month/day against the cited wording at the claimed precision; add ambiguous, relative and OCR date cases |
+| High | Full content-quality parity | Same corpus/topic/model/settings on RAG and Coair; compare grounded claims, dates, coverage, source anchors and professional narrative |
+| High | Large-corpus speed and bounded parallel synthesis | Port RAG's three-worker synthesis only with verified user/project/run attribution, atomic CA accounting and useful aggregate timing |
+| High | Full tenant/tool coverage | Extend beyond tested prompt paths to all graph/tools, cache keys, structured SQL and cross-company source handling |
+| High | Account/payment/external-store qualification | Invite, activation, reset and session lifecycle; Stripe test-mode checkout/duplicate webhooks; Supabase/Postgres/object-storage dry runs with separate credentials |
+| High | Forensic and structured-tool parity | Representative source-grounded forensic narratives and spreadsheet/calculation cases; preserve Coair sheet/TXT/XML improvements |
+| Medium | Remaining routing/history/timing ports | Compare RAG selective history and routing changes while retaining Coair follow-up behavior; show useful retry/elapsed details for long stages |
+| Medium | Legacy ownership and deployment continuity | Assign project ownership to legacy records; restore graph-party hints only through scoped APIs; qualify active-job restart/drain/resume before wider use |
+| Medium | Dependency maintenance | Separate tested upgrade for the deprecated Gemini adapter/SDK import |
 
-## Verified releases and observed failures
+The date gap is demonstrated, shared by both repositories, and remains unresolved.
+An isolated guard accepted `event_date=2099-12-25` with wording `19 April 2007`.
+The actual sample also contains short anchors such as `3rd` and `29th April`;
+matching a substring does not prove full date precision. Independent claim
+verification alone does not establish correctness of every event-date field.
 
-- Baseline `8efc3b1`: 50 API tests, 151 frontend tests and production builds.
-  Browser password/MFA login and workspace passed. Three original Edinburgh
-  PDFs indexed into eight vectors. Initial source-cited chat took 14.43 seconds;
-  preview and conversation survived deployment. This is a connection baseline,
-  not a full report-quality benchmark.
-- Retrieval `533e84f`: 54 API tests and successful deployment:
-  https://github.com/CoAirai/CoAIr/actions/runs/40048617388.
-  A stricter real selected-PDF query returned HTTP 502; Docker recorded an OOM
-  and API restart at the isolated 2 GiB limit. Logs showed recursive glossary
-  growth over injected source text. Both source repositories had that defect.
-- Scope/glossary `aa234b1`: 66 API tests and successful public deployment checks:
-  https://github.com/CoAirai/CoAIr/actions/runs/40049317592.
-  Repeating the selected-PDF question returned an answer without restart.
-  Strict source acceptance still failed: metadata records hid page citations
-  and included other documents. That finding motivated the next source patch.
-- The next combined API regression gate passed 117 tests before the final
-  citation refinements; the five updated selected-context/source tests then
-  passed separately. CI and feature qualification remain the release gate.
+The browser correctly labels the report Preliminary/partial, and its manual
+review count remains zero until a person reviews it. AI checks and Word structure
+are separate from that human verification. Some same-page source chips repeat
+because distinct evidence excerpts share an anchor; presentation deduplication
+can be assessed without losing evidence identity.
 
-## Remaining deficiencies, in priority order
+The two successful reports use different topics and source-selection paths, so
+49 versus 100 seconds is not a fair speed comparison. Three PDFs cannot qualify
+the full Edinburgh corpus. The existing RAG reference has 29 paragraphs and 53
+footnote references on different source coverage; matching its quality requires
+the controlled same-data comparison, not matching a paragraph count.
 
-1. **Normalized date proof (critical before live promotion).** The deterministic
-   guard checks that quoted date wording exists but does not prove that the
-   normalized event date matches it. An isolated reproduction accepted
-   `event_date=2099-12-25` with source wording `19 April 2007`. This shared
-   defect needs strict date/precision matching and representative regressions.
-   The independent claim verifier is not proof that every event-date field is
-   correct. Day/exact normalization does not fix this mismatch.
-2. **Full quality and latency parity.** Three PDFs cannot qualify large corpora,
-   conflicting evidence, emails, spreadsheets or long legal narratives. Freeze
-   the same sources, topic, model and settings on RAG and Coair; compare grounded
-   claims, dates, source anchors, document coverage, footnotes and stage/total
-   time. A structurally valid DOCX is not a content-quality approval.
-3. **Bounded parallel synthesis.** RAG's three-worker V2 synthesis is not yet
-   ported. Verify real user/project/run attribution, atomic CA ledger updates,
-   one charge per provider attempt, cache behavior and aggregate usage reporting
-   before enabling it. Copying ContextVars does not merge numeric counters.
-4. **Remaining context/routing parity.** Keep Coair follow-up support, original
-   sheet reader and content retrieval. Compare RAG's selective history,
-   routing/timing changes and multi-step tools with focused cases; do not
-   overwrite the whole router or planner.
-5. **Progress in the public UI.** Backend stage/progress checks are necessary,
-   but the real Next.js chronology screen must also be observed through a report
-   run. Do not confuse changes under legacy `api/frontend` with public Next.js.
-6. **Accounts, payments and external stores.** Existing authorization/accounting
-   regressions are retained. Full invite/activation/reset/revocation lifecycle,
-   Stripe test-mode checkout and duplicate webhooks, Supabase/Postgres and object
-   storage migration need separate test credentials and dry-run checks. Staging
-   deliberately disables real email/payment/bucket/live-database connections.
-7. **Legacy ownership and graph metadata.** Records without project ownership
-   are omitted from agent metadata. Assign ownership explicitly instead of
-   allowing global fallback. The project-unsafe graph-party hint needs a scoped
-   API before it can be restored; this patch does not certify every graph/tool.
-8. **Forensic and structured-tool parity.** Preserve Coair sheet/TXT/XML
-   improvements; compare source-grounded forensic narratives and structured
-   calculations on representative files. No forensic parity claim yet.
-9. **Runtime reproducibility and maintenance.** Production RAG includes local
-   overlays and effective environment overrides. Preserve source/config hashes,
-   stable IDs and approved V2/model policy. A legacy Gemini adapter emits a
-   deprecated SDK warning; dependency upgrades belong in a separate tested change.
+Staging deliberately disables real email/payment/bucket/live-database connections.
+Only the configured Gemini/BGE/V2 policy was exercised. Coair CA micros differ
+from legacy RAG model-token/demo-credit units: do not copy balances or replace
+Coair billing with legacy methods. Source-level tenant defects used fake fixtures;
+no live customer-data access or exfiltration was demonstrated.
 
-Coair CA micros and legacy RAG model-token/demo-credit units are different.
-Do not copy balances or replace the Coair ledger with legacy billing methods.
-The source-level tenant defects were reproduced with fake fixtures; no live
-customer-data access or exfiltration was demonstrated. Keep production untouched
-until the remaining source/date, quality, accounting and migration gates pass.
+## Working location
 
-## Latest qualification and corrective work
-
-Release c3d1b8b passed 118 API tests and 13 subtests, frontend/build and public
-deploy checks: https://github.com/CoAirai/CoAIr/actions/runs/40050472261.
-The real selected-PDF answer took 13.74 seconds, cited only CEC01546478 page 1
-and produced completed progress events. A missing project header in the operator
-progress check was corrected; progress was verified against the existing answer,
-without repeating the provider call.
-
-Real chronology job 0d1f37b56e4c4effb4b7 failed after 83.81 seconds. Stages reached:
-research_plan → evidence_extraction → synthesis. Extraction produced 12 candidates;
-overview synthesis exhausted retries with model_output_invalid. The old rejection
-path did not retain a field-level cause, so claim capacity is a discovered schema
-difference, not yet a proven diagnosis of this specific response.
-
-The corrective patch ports RAG's five overview / four event claims and evidence-led
-style profile, adds matching prompt limits, and logs only rejection field paths and
-error types (never source text). Source-ID limits and independent verification remain.
-The same failed job will be retried through the existing API, preserving diagnostics.
-
-The real run also exposed a DuckDB BM25 alias/side-effect Binder error and LIKE
-fallback. A materialized-score query fixes it. A real DuckDB regression with a
-side-effecting scoring UDF fails on the old query and passes on the new query,
-including project and document-ID filtering. Native FTS query and warm-index
-reuse still need runtime confirmation after this deploy.
-
-## Successful retry and current boundaries
-
-Release 3b98054 passed 121 API tests and 13 subtests, then deployed:
-https://github.com/CoAirai/CoAIr/actions/runs/40051411916.
-The same failed job was retried through the API and became ready in 48.97 seconds:
-8 entries (including the overview), 11 resolving Word footnotes, a 38,543-byte
-narrative DOCX and no Word tables. Every retained claim source ID resolved to
-the eight evidence items. The actual artifact is
-/opt/coair-integration/qualification-chronology.docx; it is also accessible
-through the authenticated report download in the test application.
-
-A real selected-PDF answer took 13.5 seconds, returned one correct page citation
-and five completed progress steps. Runtime logs confirmed persisted FTS reuse;
-the BM25 Binder/LIKE fallback error did not recur during these checks.
-
-This is structural/source-link and small-sample qualification, not complete
-content-quality parity. The Word sample has 11 paragraphs; the existing RAG
-reference has 29 paragraphs and 53 footnote references on a different corpus.
-Those counts cannot establish a fair quality or speed comparison. The date
-gap remains material: the sample contains short date_evidence anchors such as
-"3rd" and "29th April". Correct-looking normalized dates still need strict
-proof of the full claimed precision.
-
-The public Next.js mapping was also dropping backend stage/progress and showed
-only Generating. A small UI patch preserves these fields and displays English
-stage labels and the actual percentage in the existing status line. Its
-frontend build/test and browser checks are the next gate; layout, payment and
-management flows remain outside that change.
+The integration checkout is `/Volumes/Adata/Codex/CoAIr-integration`; its original
+Desktop path is a symlink. Mac disk pressure caused write failures, so the small
+integration checkout moved to Adata after all pending changes were hash-verified.
+Original dirty RAG and Coair worktrees were preserved. No local dependency
+installation or large corpus copy was required.

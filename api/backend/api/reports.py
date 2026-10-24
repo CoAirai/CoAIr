@@ -316,7 +316,7 @@ def list_reports(
         raise HTTPException(403, f"feature_not_available:{module}")
     return {"reports": [_public(j) for j in get_report_job_store().list_project(
         project.project_id, module=module,
-    ) if j.get("status") != "failed"]}
+    ) if not (j.get("status") == "failed" and j.get("module") == "chronology")]}
 
 
 @router.get("/reports/{job_id}")

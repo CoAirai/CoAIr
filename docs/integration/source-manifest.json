@@ -1,7 +1,7 @@
 {
   "date": "2026-10-24",
   "rag_head": "77c52954d2cdc07cafd348945843d84e0bd55b45",
-  "target_parent_commit": "c3d1b8bc7af05a3c86b74ceb14082016bf156e85",
+  "target_parent_commit": "6d1559d709ca28e5acd5bb9bd31a5d952252712d",
   "coair_base": "ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417",
   "note": "SHA256 snapshots of the reviewed RAG and candidate Coair worktrees before commit. RAG includes deployed overlays. Target changes are focused adaptations; billing logic is preserved.",
   "files": [
@@ -81,7 +81,7 @@
       "rag_path": "backend/api/reports.py",
       "rag_sha256": "af14e1ef62ca0b629a8ef79c3ed11c82356ff7fbf59147bebc4898f94aeccaa8",
       "coair_path": "api/backend/api/reports.py",
-      "coair_sha256": "5ffb98ec0462e0b2dd7a3eaf005e52e0a039f20d27df417d1f541ab25ebe70e2"
+      "coair_sha256": "4ecfc5babe62d66f00b12bafd85036c65cdcc7dc33c2e5759e1144acece59fed"
     }
   ],
   "protected_files": [

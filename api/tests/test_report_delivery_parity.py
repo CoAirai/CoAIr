@@ -28,8 +28,9 @@ class ReportDeliveryParityTests(unittest.TestCase):
                 self.assertEqual(error.exception.status_code, 404)
 
     def test_failed_jobs_are_hidden_without_losing_running_jobs_or_diagnostics(self):
-        jobs = [dict(job_id='bad', status='failed'), dict(job_id='active', status='processing'),
-                dict(job_id='done', status='ready')]
+        jobs = [dict(job_id='bad', status='failed', module='chronology'),
+                dict(job_id='active', status='processing', module='chronology'),
+                dict(job_id='done', status='ready', module='chronology')]
         store = MagicMock()
         store.list_project.return_value = jobs
         store.get.return_value = jobs[0]
@@ -41,6 +42,15 @@ class ReportDeliveryParityTests(unittest.TestCase):
             self.assertEqual([job['job_id'] for job in result['reports']], ['active', 'done'])
             self.assertEqual(reports.get_report('bad', project)['status'], 'failed')
             store.list_project.assert_called_once_with('a', module='chronology')
+
+    def test_forensic_failures_keep_the_existing_retry_visibility(self):
+        job = dict(job_id='forensic-bad', status='failed', module='forensic')
+        store = SimpleNamespace(list_project=lambda *args, **kwargs: [job])
+        with patch.object(reports, 'get_report_job_store', return_value=store), \
+             patch.object(reports, '_public', side_effect=lambda value: value), \
+             patch.object(reports, 'user_has_right', return_value=True):
+            result = reports.list_reports('forensic', SimpleNamespace(), SimpleNamespace(project_id='a'))
+            self.assertEqual(result['reports'], [job])
 
 
 if __name__ == '__main__':
