@@ -1,12 +1,15 @@
 """Check the real staging hostname, proxy, MFA, identity and project database."""
 import argparse
 import http.cookiejar
+import io
 import json
 from pathlib import Path
 import subprocess
 import time
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
+import zipfile
 
 
 ROOT = Path("/opt/coair-integration")
@@ -18,6 +21,8 @@ def main():
     parser.add_argument("--commit", required=True)
     parser.add_argument("--chat", action="store_true",
                         help="Also run one real, billable staging AI query")
+    parser.add_argument("--chronology", action="store_true",
+                        help="Also generate and inspect one real, billable staging Word report")
     args = parser.parse_args()
     credentials = json.loads((ROOT / ".access.json").read_text())
     workspace = json.loads((ROOT / "workspace.json").read_text())
@@ -99,18 +104,60 @@ def main():
             "doc_ids": ["161298c26281926a"], "request_id": request_id,
         }, token=token, project=workspace["project_id"])
         elapsed = round(time.monotonic() - started, 2)
+        chat_check = {"commit": args.commit, "elapsed_seconds": elapsed, **answer,
+                      "accepted": False, "conversation_id": conversation["conversation_id"],
+                      "project_id": workspace["project_id"]}
+        (ROOT / "chat-check.json").write_text(json.dumps(chat_check, indent=2) + "\n")
         citations = answer.get("citations") or []
         assert citations and all(citation["doc_id"] == "161298c26281926a" for citation in citations), \
             "Selected-document citations did not resolve to the source"
         assert "utilit" in answer.get("assistant_text", "").lower(), "Expected source-grounded subject"
         progress = api("/chat/progress/" + request_id, token=token)
         assert progress["steps"] and progress["done"], "Real query progress did not complete"
-        chat_check = {"commit": args.commit, "elapsed_seconds": elapsed, **answer,
-                      "conversation_id": conversation["conversation_id"],
-                      "project_id": workspace["project_id"], "progress": progress}
+        chat_check.update(accepted=True, progress=progress)
         (ROOT / "chat-check.json").write_text(json.dumps(chat_check, indent=2) + "\n")
         result["real_chat"] = {"seconds": elapsed, "citations": len(citations),
                                "progress_steps": len(progress["steps"]), "selected_source": "passed"}
+    if args.chronology:
+        started = time.monotonic()
+        job = api("/chronology/generate", {
+            "topic": "Utilities diversion obligations and programme changes in the supplied Edinburgh documents",
+            "source_doc_ids": ["161298c26281926a", "0235aed85faa16ec", "8a04f0812c996d8b"],
+        }, token=token, project=workspace["project_id"])
+        stages = []
+        for _ in range(120):
+            job = api("/reports/" + job["job_id"], token=token, project=workspace["project_id"])
+            stage = job.get("stage") or job["status"]
+            if not stages or stage != stages[-1]:
+                stages.append(stage)
+                print(json.dumps({"chronology_stage": stage, "progress": job.get("progress")}), flush=True)
+            check = {"commit": args.commit, "job_id": job["job_id"], "status": job["status"],
+                     "seconds": round(time.monotonic() - started, 2), "stages": stages,
+                     "error_code": job.get("error_code"), "accepted": False}
+            (ROOT / "report-check.json").write_text(json.dumps(check, indent=2) + "\n")
+            if job["status"] in ("ready", "failed", "credit_balance_exhausted"):
+                break
+            time.sleep(2)
+        assert job["status"] == "ready", "Chronology qualification failed: " + str(check)
+        request = urllib.request.Request(ORIGIN + "/coair-api/reports/" + job["job_id"] + "/document",
+            headers={"Authorization": "Bearer " + token, "X-Project-ID": workspace["project_id"]})
+        with opener.open(request, timeout=60) as response:
+            blob = response.read()
+        namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            document = ET.fromstring(archive.read("word/document.xml"))
+            footnotes = ET.fromstring(archive.read("word/footnotes.xml"))
+        attr = "{" + namespace["w"] + "}id"
+        references = {node.attrib[attr] for node in document.findall(".//w:footnoteReference", namespace)}
+        records = {node.attrib[attr] for node in footnotes.findall("w:footnote", namespace)}
+        assert references and references <= records, "Word footnotes do not resolve"
+        assert not document.findall(".//w:tbl", namespace), "Expected the narrative download"
+        check.update(accepted=True, footnotes=len(references),
+                     entries=len((job.get("result") or {}).get("entries") or []), bytes=len(blob))
+        assert check["entries"] > 0, "No sourced events survived"
+        (ROOT / "qualification-chronology.docx").write_bytes(blob)
+        (ROOT / "report-check.json").write_text(json.dumps(check, indent=2) + "\n")
+        result["real_chronology"] = check
     (ROOT / "smoke.json").write_text(json.dumps(result, indent=2) + "\n")
     with (ROOT / "verification_history.jsonl").open("a") as history:
         history.write(json.dumps(result) + "\n")

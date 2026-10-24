@@ -109,11 +109,13 @@ class ChatOrchestrator:
         # fallback below) so we can inject the selected docs' full text directly.
         explicit_doc_ids = list(doc_ids) if doc_ids else []
 
+        answer_context_parts = []
+
         # 3. Build email context for correspondence mode (email files only)
         if email_ids:
             email_context = self._build_email_context(email_ids, project_id)
             if email_context:
-                augmented = f"{email_context}\n\n{augmented}"
+                answer_context_parts.append(email_context)
                 # Also scope doc_ids to selected emails for RAG
                 if not doc_ids:
                     doc_ids = email_ids
@@ -126,7 +128,7 @@ class ChatOrchestrator:
             list(dict.fromkeys((email_ids or []) + explicit_doc_ids)), project_id,
         )
         if doc_context:
-            augmented = f"{doc_context}\n\n{augmented}"
+            answer_context_parts.append(doc_context)
 
         # Preserve ``query`` for routing/history while making its compact
         # glossary interpretation available to every downstream retrieval and
@@ -175,9 +177,13 @@ class ChatOrchestrator:
         if email_ids and self._is_draft_intent(query):
             support = self._build_draft_support_context(query, project_id=project_id)
             if support:
-                augmented = f"{augmented}\n\n{support}"
+                answer_context_parts.append(support)
 
         is_dual = ENABLE_DUAL_PROVIDER and len(LLM_PROVIDERS) >= 2
+        # Selected evidence belongs in synthesis, never glossary expansion,
+        # classification or the retrieval query. Keep Coair's history contract.
+        from src.document_rag import answer_context_var
+        context_token = answer_context_var.set("\n\n".join(answer_context_parts))
         try:
             if is_dual:
                 raw_result = await asyncio.to_thread(
@@ -232,6 +238,9 @@ class ChatOrchestrator:
                         "used_llm": False,
                     },
                 }
+
+        finally:
+            answer_context_var.reset(context_token)
 
         # 4b. Corpus catch-all: for an 'edinburgh' user, drop any source whose file
         # isn't in their (chunk-store) corpus. Belt-and-suspenders over the handler

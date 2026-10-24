@@ -1864,6 +1864,8 @@ class QueryRouter:
             from src.light_graph import get_light_graph
             graph = get_light_graph()
             meta_results = graph.search_by_topic(search_topic, limit=20) if _demo_only_sources else []
+            if doc_ids:
+                meta_results = [row for row in meta_results if row.get("doc_id") in doc_ids]
             if meta_results:
                 metadata_doc_ids = [r["doc_id"] for r in meta_results if r.get("doc_id")]
                 for r in meta_results:
@@ -1938,8 +1940,12 @@ class QueryRouter:
             conversation_history_var.reset(history_token)
             answer_question_var.reset(question_token)
 
-        # 3. Merge sources — metadata first, then RAG (deduplicated)
+        # 3. Prefer actual page evidence over a metadata-only discovery record.
         rag_sources = result.get("sources", [])
+        evidence_keys = {(source.get("file_name"), source.get("page_number"))
+                         for source in rag_sources}
+        metadata_sources = [source for source in metadata_sources
+                            if (source.get("file_name"), source.get("page_number")) not in evidence_keys]
         seen_keys = {
             (s.get("file_name"), s.get("page_number"))
             for s in metadata_sources

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from dataclasses import asdict
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -316,7 +316,7 @@ def list_reports(
         raise HTTPException(403, f"feature_not_available:{module}")
     return {"reports": [_public(j) for j in get_report_job_store().list_project(
         project.project_id, module=module,
-    )]}
+    ) if j.get("status") != "failed"]}
 
 
 @router.get("/reports/{job_id}")
@@ -513,9 +513,10 @@ def update_forensic_draft(
 
 
 @router.get("/reports/{job_id}/document")
-def download_report(job_id: str, project: ProjectContext = Depends(get_current_project)):
+def download_report(job_id: str, project: ProjectContext = Depends(get_current_project),
+                    format: Literal["narrative", "table"] = "narrative"):
     job = get_report_job_store().get(job_id, project.project_id)
-    if job and job["status"] == "ready" and job["module"] == "chronology" and job.get("result"):
+    if format == "table" and job and job["status"] == "ready" and job["module"] == "chronology" and job.get("result"):
         from src.chronology_template_docx import build_event_chronology_docx
         try:
             blob = build_event_chronology_docx(

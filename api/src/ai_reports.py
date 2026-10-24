@@ -269,7 +269,7 @@ def _claim_supported(claim: VerifiedClaim, evidence_by_id: Dict[str, EvidenceIte
     combined_sources = " ".join(evidence_by_id[sid].excerpt for sid in claim.source_ids).lower()
     # Numbers and quoted passages are the highest-risk hallucinations in this
     # domain; every one must occur verbatim in at least one cited excerpt.
-    claim_numbers = re.findall(r"(?<![a-z])\d[\d,.%/-]*", claim.text.lower())
+    claim_numbers = [number.rstrip(".,") for number in re.findall(r"(?<![a-z])\d[\d,.%/-]*", claim.text.lower())]
     if any(number not in combined_sources for number in claim_numbers):
         return False
     quoted = re.findall(r"[\"“]([^\"”]{3,})[\"”]", claim.text)

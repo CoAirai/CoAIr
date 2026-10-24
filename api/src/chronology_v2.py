@@ -150,7 +150,7 @@ def _claims_are_source_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> b
                 return False
             source_text = " ".join(by_id[sid] for sid in source_ids)
             text = str(claim.get("text") or "").casefold()
-            numbers = re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)
+            numbers = [number.rstrip(".,") for number in re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)]
             if any(number not in source_text for number in numbers):
                 return False
             quotations = re.findall(r'["“]([^"”]{3,})["”]', str(claim.get("text") or ""))
@@ -199,6 +199,8 @@ def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
             "date_precision": "unknown", "date_source": "unresolved",
             "date_evidence": "",
         })
+    elif str(value.get("date_precision") or "").casefold() == "day":
+        value["date_precision"] = "exact"
     return value
 
 
@@ -802,9 +804,6 @@ def synthesize(
     overview = call_step(
         "synthesis:overview", overview_hash, overview_prompt,
         schema_name="chronology_v2_overview", validation_model=OverviewModel,
-        semantic_validator=lambda value: _claims_are_source_valid(
-            {"overview_claims": value.get("overview_claims", []), "entries": []}, selected,
-        ),
     )
 
     entries: List[Dict] = []
@@ -818,7 +817,6 @@ def synthesize(
             returned = [str(item.get("cluster_id") or "") for item in values]
             return (
                 len(returned) == len(expected) and set(returned) == expected
-                and _claims_are_source_valid({"entries": values}, batch_evidence)
             )
 
         input_hash = _hash({
@@ -845,6 +843,8 @@ def synthesize(
             str(item.get("event_date") or "9999-99-99"), str(item.get("cluster_id") or ""),
         )),
     }
+    # Keep source-supported claims before the independent verifier; one invalid
+    # claim must not reject a usable batch before this safety pass can run.
     return _prune_source_invalid_claims(draft, selected)
 
 

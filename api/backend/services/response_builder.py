@@ -325,8 +325,12 @@ def _resolve_canonical_doc_id(file_name: str, fallback: str) -> str:
         return fallback
     try:
         from src.document_registry import get_document_registry
+        from src.project_context import get_current_project_id
+        project_id = get_current_project_id()
+        if not project_id:
+            return fallback
         registry = get_document_registry()
-        for rec in registry.get_all():
+        for rec in registry.get_all(project_id=project_id):
             if rec.file_name == file_name:
                 return rec.doc_id
     except Exception:
