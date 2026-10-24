@@ -25,3 +25,15 @@ Coair now uses the RAG selective follow-up policy: last two messages, at most 3,
 ### Stage 3 — passed
 
 Retained the existing storage engines and Coair ownership/accounting model. SQLite qualification passed 101 tests. The same three new database contracts passed against actual disposable PostgreSQL 16: all nine migrations and safe reapplication, membership/persistent project ownership, concurrent CA increments, idempotent ledger entries, and rollback. Existing DuckDB cursor isolation/durable FTS and Qdrant project filters passed. Three obsolete organization-test calls were updated to supply the required `created_by`; production management/payment implementation was unchanged. PostgreSQL migration/contract execution is now a required CI gate. Supabase-hosted network/RLS roles, external buckets and the full production corpus remain outside this local-adapter qualification.
+
+
+### Stage 4 — qualification in progress
+
+Actual matched-corpus execution exposed and corrected canonical Qdrant file-ID
+selection during deep-agent escalation (41 focused tests and 4 subtests passed).
+Runtime readiness now refuses an early success before validation (3 tests).
+Native RAG/Coair user schemas are intentionally separate. DuckDB 2.0.0 files
+cannot be read by RAG's 1.5.5 runtime; `src.corpus_snapshot` supplies a scoped,
+integrity-checked, new-destination-only transfer and passed two regressions.
+Reference measurements from incompatible physical DB copies are excluded.
+Final valid native-version reference timing is being recorded.

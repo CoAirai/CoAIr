@@ -1,9 +1,9 @@
 {
   "date": "2026-10-24",
   "rag_head": "77c52954d2cdc07cafd348945843d84e0bd55b45",
-  "target_parent_commit": "6d1559d709ca28e5acd5bb9bd31a5d952252712d",
+  "target_parent_commit": "f586b81624efe29d7b0fa2679325690bd4a01e84",
   "coair_base": "ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417",
-  "note": "SHA256 snapshots of the reviewed RAG and candidate Coair worktrees before commit. RAG includes deployed overlays. Target changes are focused adaptations; billing logic is preserved.",
+  "note": "Current reviewed source snapshots after four-stage alignment. RAG includes deployed overlays. Protected billing, CA, user and authorization files remain identical to Coair main. Remaining differences are documented, not assumed to be defects.",
   "files": [
     {
       "rag_path": "src/chunk_store.py",
@@ -27,7 +27,7 @@
       "rag_path": "src/chronology_v2.py",
       "rag_sha256": "b5b81ee24f2843577a2faa43389d97ce9078c90d33b50fd10f3fef9bd08d848c",
       "coair_path": "api/src/chronology_v2.py",
-      "coair_sha256": "b6d78365f81ade9e33a4ab84c60012a9a4d7f4c425932ebfff004e6ae80cb658"
+      "coair_sha256": "7b32c5bedd4fd7a49648b687b51c71862d892db3ab9b14004aeb1efb4b89826d"
     },
     {
       "rag_path": "src/router.py",
@@ -51,7 +51,7 @@
       "rag_path": "src/document_rag.py",
       "rag_sha256": "dddf18a65829019c481c7a6f6d64207b167faba621563e591e0d7c03109b793c",
       "coair_path": "api/src/document_rag.py",
-      "coair_sha256": "8a37b238188c107c40a26fd2f5393aae1170504cc78db7a887d5e4fe294393a8"
+      "coair_sha256": "8753907d685f1875d30a4705d8cf9c02947780bd2ff98c61a49f5cca2ded8bc5"
     },
     {
       "rag_path": "src/llm_client.py",
@@ -69,7 +69,7 @@
       "rag_path": "backend/services/chat_orchestrator.py",
       "rag_sha256": "9cf741c43c56be15f6836e266bded5ee6fef5678b29f2a69d45bba473aa7a4bd",
       "coair_path": "api/backend/services/chat_orchestrator.py",
-      "coair_sha256": "8c6756729bfb3b6c28ad53cde5c3f44d7b832e8feef6f0cef82e7782736afc23"
+      "coair_sha256": "60acd267c829dcbe07177a7ae30be32de16247fd8337baee3a6849ad41f0d6ee"
     },
     {
       "rag_path": "backend/services/response_builder.py",
@@ -82,6 +82,12 @@
       "rag_sha256": "af14e1ef62ca0b629a8ef79c3ed11c82356ff7fbf59147bebc4898f94aeccaa8",
       "coair_path": "api/backend/api/reports.py",
       "coair_sha256": "4ecfc5babe62d66f00b12bafd85036c65cdcc7dc33c2e5759e1144acece59fed"
+    },
+    {
+      "rag_path": "backend/main.py",
+      "rag_sha256": "6a5c2dd792d807580f27c41facb2d67f80fcbf4bb6d331373454504537006253",
+      "coair_path": "api/backend/main.py",
+      "coair_sha256": "8ad728653832c4d8bb7ee955e5f11f1768ee69671a88395113f5b21d26d0794c"
     }
   ],
   "protected_files": [

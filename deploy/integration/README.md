@@ -2,8 +2,8 @@
 
 Branch: `integration/rag-agent-parity`, based on Coair main `ca5302b`.
 
-This first stage hosts the existing Coair interface and backend without porting
-agent behavior or changing payment logic. The current AWS RAG service remains
+This stack hosts the existing Coair interface with incremental, tested RAG agent
+ports. Coair management and payment rules are preserved. The current AWS RAG service remains
 the reference implementation. The integration stack uses its own SQLite stores,
 DuckDB, Qdrant and uploads under `/opt/coair-integration`.
 
@@ -86,3 +86,20 @@ They completed indexing and produced eight vectors in the isolated collection.
 One real chat answer returned three source citations in 14.43 seconds. This
 qualifies the deployment connections; it is not full RAG-agent parity or a
 chronology/forensic acceptance benchmark.
+
+
+## Four-stage acceptance and matched timing
+
+See `docs/integration/FOUR_STAGE_ACCEPTANCE.md` and
+`docs/integration/performance-check.json`. CI additionally exercises the existing
+PostgreSQL adapter against a disposable PostgreSQL 16 database; it does not attach
+to hosted Supabase or migrate staging away from SQLite.
+
+`benchmark_queries.py` is an operator benchmark for disposable containers only.
+It refuses storage without a `.matched-qualification` marker. Give each engine
+its own cloned storage/data, native user schema and staging-only provider key;
+use the same PDF bytes, canonical document IDs, vector collection and model policy.
+It measures six actual orchestrator requests and an optional narrative Word report,
+records durable run usage and source selection, and disables provider response
+caching in both processes. Native routing/retrieval caches remain enabled.
+Do not mount production writable storage or copy Coair's user schema into RAG.

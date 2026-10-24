@@ -269,10 +269,12 @@ def create_app() -> FastAPI:
         # Validation used to run inside this handler. During a large PDF batch
         # that import blocked the only API worker, so admin and company
         # requests sat behind a health check. The result is warmed at startup.
-        if _health_error and not _health_ready:
+        if not _health_ready:
             return JSONResponse(
                 status_code=503,
-                content={"status": "unhealthy", "component": "runtime", "error": _health_error},
+                content={"status": "unhealthy" if _health_error else "initializing",
+                         "component": "runtime",
+                         "error": _health_error or "runtime_initializing"},
             )
         return {"status": "ok", "chronology": "ready", "vector_runtime": "ready"}
 

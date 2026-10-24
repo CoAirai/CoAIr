@@ -4,7 +4,7 @@ Updated: 24 October 2026 (Europe/Istanbul).
 
 ## Current result
 
-The first agent migration packages are deployed to https://coair-test.duckdns.org
+The agent migration packages are deployed to https://coair-test.duckdns.org
 on branch `integration/rag-agent-parity`. Production RAG remains the reference.
 Coair main, live RAG and dental services were preserved.
 
@@ -25,11 +25,14 @@ paths. We ported those changes selectively instead of replacing the backend.
 | Isolated deployment | Dedicated TLS hostname; separate SQLite, DuckDB, Qdrant, uploads and credentials; matched immutable API/web images |
 | DuckDB concurrency | Independent reader cursors prevent shared-result races; synchronized eight-worker regression |
 | Lexical retrieval | Durable dirty state, migration rebuild and persisted FTS reuse; native scoring query fixed after a real DuckDB Binder error |
-| Research workers | Duplicate questions removed; user/project/run/progress context copied into each worker |
+| Research workers | Duplicate questions removed; user/project/run/progress context copied into each worker; bounded three-worker chronology synthesis with durable accounting and resumable-step tests |
+| Conversation memory | RAG selective follow-up policy: two preceding messages, 3,000-character limit; standalone questions omit history; identical contract tested against both source implementations |
+| Database contracts | SQLite ownership/concurrency/recovery suite and disposable PostgreSQL 16 execution of all nine existing migrations; reapplication and transaction contracts are CI gates |
 | Agent metadata | Project-local topics/summaries, scoped SQL inventory and selected-document filtering; global graph-party hint omitted |
 | Selected documents | Raw document text reaches synthesis without glossary/classification/retrieval expansion; context restored after success and failure |
 | Glossary | Original text is processed once; generated definitions cannot recursively grow; repeated-query OOM did not recur |
-| Source references | Metadata respects selected IDs; page evidence keeps its citations; canonical document IDs resolve within the active project |
+| Source references | Metadata respects selected IDs; page evidence keeps its citations; canonical document IDs resolve within the active project; canonical Qdrant `file_id` selection and filename hints intersect, including deep agent reads |
+| Runtime readiness | Deployment waits for actual background dependency validation; initializing and failed runtimes return HTTP 503 |
 | Chronology V2 | Supported numeric punctuation accepted; proven day precision normalized; invalid claims pruned before independent verification; RAG's five overview / four event claims and evidence-led writing profile ported |
 | Word delivery | Stored narrative is the default download; explicit `format=table` remains available; Coair XML safety retained |
 | Progress UI | Existing report status line displays English backend stage labels and percentages; real browser observed live updates |
@@ -125,11 +128,11 @@ the existing answer's progress was checked without repeating its provider call.
 |---|---|---|
 | Critical | Normalized date proof | Prove normalized year/month/day against the cited wording at the claimed precision; add ambiguous, relative and OCR date cases |
 | High | Full content-quality parity | Same corpus/topic/model/settings on RAG and Coair; compare grounded claims, dates, coverage, source anchors and professional narrative |
-| High | Large-corpus speed and bounded parallel synthesis | Port RAG's three-worker synthesis only with verified user/project/run attribution, atomic CA accounting and useful aggregate timing |
+| High | Full-corpus speed | Bounded parallel synthesis is ported and tested; repeat matched-corpus measurements on representative large projects and concurrent workloads |
 | High | Full tenant/tool coverage | Extend beyond tested prompt paths to all graph/tools, cache keys, structured SQL and cross-company source handling |
-| High | Account/payment/external-store qualification | Invite, activation, reset and session lifecycle; Stripe test-mode checkout/duplicate webhooks; Supabase/Postgres/object-storage dry runs with separate credentials |
+| High | Account/payment/external-store qualification | Invite, activation, reset and session lifecycle; Stripe test-mode checkout/duplicate webhooks; Hosted Supabase/auth and object-storage dry runs with separate credentials (native PostgreSQL adapter contracts now pass) |
 | High | Forensic and structured-tool parity | Representative source-grounded forensic narratives and spreadsheet/calculation cases; preserve Coair sheet/TXT/XML improvements |
-| Medium | Remaining routing/history/timing ports | Compare RAG selective history and routing changes while retaining Coair follow-up behavior; show useful retry/elapsed details for long stages |
+| Medium | Remaining routing/timing differences | Selective memory is aligned; retain intentional Coair accounting and source-scope fixes, and assess additional routing paths by behavior rather than file identity |
 | Medium | Legacy ownership and deployment continuity | Assign project ownership to legacy records; restore graph-party hints only through scoped APIs; qualify active-job restart/drain/resume before wider use |
 | Medium | Dependency maintenance | Separate tested upgrade for the deprecated Gemini adapter/SDK import |
 
@@ -145,8 +148,8 @@ are separate from that human verification. Some same-page source chips repeat
 because distinct evidence excerpts share an anchor; presentation deduplication
 can be assessed without losing evidence identity.
 
-The two successful reports use different topics and source-selection paths, so
-49 versus 100 seconds is not a fair speed comparison. Three PDFs cannot qualify
+The earlier browser/recovery reports use different topics and source-selection paths, so
+49 versus 100 seconds is not a fair speed comparison. The new same-data benchmark is documented in `FOUR_STAGE_ACCEPTANCE.md` and `performance-check.json`. Three PDFs cannot qualify
 the full Edinburgh corpus. The existing RAG reference has 29 paragraphs and 53
 footnote references on different source coverage; matching its quality requires
 the controlled same-data comparison, not matching a paragraph count.
@@ -156,6 +159,28 @@ Only the configured Gemini/BGE/V2 policy was exercised. Coair CA micros differ
 from legacy RAG model-token/demo-credit units: do not copy balances or replace
 Coair billing with legacy methods. Source-level tenant defects used fake fixtures;
 no live customer-data access or exfiltration was demonstrated.
+
+## Four-stage follow-up
+
+See `FOUR_STAGE_ACCEPTANCE.md` for each stage's acceptance, and
+`performance-check.json` for matched runtime measurements. No production user,
+organization or billing database was migrated. An excluded reference probe proved
+why: legacy RAG's positional ledger insert expected 23 columns while Coair has 24.
+The valid reference run creates its user through RAG's native schema. DuckDB
+1.5.5 in the reference cannot open the target's DuckDB 2.0.0 file format; the old
+ChunkStore then silently falls back to an empty in-memory store. The new
+`src.corpus_snapshot` command exports project-scoped chunks and document search
+metadata as integrity-checked JSON and imports into a new native-version database.
+It preserves canonical IDs and evidence text, excludes account/payment tables,
+and refuses to overwrite an existing destination. PDF bytes and eight vector
+records remain the same. No production database was replaced.
+
+A real deep-search escalation also exposed document-selection widening inside the
+project. The target now selects canonical vector `file_id` with a legacy `doc_id`
+alias and intersects filename hints. A real local Qdrant/LlamaIndex integration
+test verifies retrieval, conflicting filename reads and project isolation. The
+matched target run additionally checks every returned citation against the
+explicitly selected document IDs. Legacy reference behavior is recorded separately.
 
 ## Working location
 

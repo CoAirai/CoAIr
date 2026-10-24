@@ -1489,24 +1489,25 @@ class DocumentRAG:
                                 file_names: Optional[List[str]],
                                 payload_filters: Optional[Dict[str, Any]] = None,
                                 *, project_id: str):
-        """Compose a LlamaIndex MetadataFilters from (doc_ids OR file_names) AND
-        scope (doc_type / project / …). The document selector stays OR (either an
-        explicit doc_id or a filename-resolved file matches), but scope is AND-ed
-        on top so 'only delay notices' genuinely narrows the pool. Returns None
-        when nothing constrains (today's behaviour). Scope values that are empty
-        are dropped so a blank scope never over-filters."""
+        """Intersect explicit file selection, filename hints and project scope.
+
+        LlamaIndex owns the top-level Qdrant ``doc_id`` (a node/document UUID).
+        Canonical uploaded-document IDs live in ``file_id``. Retain ``doc_id``
+        as a legacy alias, but never let a filename hint widen a user selection.
+        """
         from llama_index.core.vector_stores.types import (
             MetadataFilter, MetadataFilters, FilterOperator, FilterCondition,
         )
-        doc_file_specs = []
-        if doc_ids:
-            doc_file_specs.append(
-                MetadataFilter(key="doc_id", value=doc_ids, operator=FilterOperator.IN))
-        if file_names:
-            doc_file_specs.append(
-                MetadataFilter(key="file_name", value=file_names, operator=FilterOperator.IN))
-
         scope_specs = []
+        if doc_ids:
+            scope_specs.append(MetadataFilters(filters=[
+                MetadataFilter(key="file_id", value=doc_ids, operator=FilterOperator.IN),
+                MetadataFilter(key="doc_id", value=doc_ids, operator=FilterOperator.IN),
+            ], condition=FilterCondition.OR))
+        if file_names:
+            scope_specs.append(MetadataFilter(
+                key="file_name", value=file_names, operator=FilterOperator.IN))
+
         allowed_filter_keys = {"doc_type", "project", "reference", "date", "corpus"}
         unknown = set((payload_filters or {}).keys()) - allowed_filter_keys - {
             "project_id", "file_id", "embedding_profile",
@@ -1536,23 +1537,7 @@ class DocumentRAG:
         scope_specs.append(MetadataFilter(key="project_id", value=project_id,
                                           operator=FilterOperator.EQ))
 
-        if not doc_file_specs and not scope_specs:
-            return None
-        if doc_file_specs and not scope_specs:
-            # Pure document selector — preserve the original OR semantics.
-            return MetadataFilters(
-                filters=doc_file_specs,
-                condition=FilterCondition.OR if len(doc_file_specs) > 1 else None,
-            )
-        if scope_specs and not doc_file_specs:
-            return MetadataFilters(filters=scope_specs, condition=FilterCondition.AND)
-        # Both present: (doc_id OR file_name) AND scope1 AND scope2 …
-        doc_group = MetadataFilters(
-            filters=doc_file_specs,
-            condition=FilterCondition.OR if len(doc_file_specs) > 1 else None,
-        )
-        return MetadataFilters(filters=[doc_group] + scope_specs,
-                               condition=FilterCondition.AND)
+        return MetadataFilters(filters=scope_specs, condition=FilterCondition.AND)
 
     def _dense_candidates(self, question: str, candidate_k: int,
                           doc_ids: Optional[List[str]],
