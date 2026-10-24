@@ -215,8 +215,9 @@ def _build_from_single(raw: Dict[str, Any]) -> ChatResponse:
     # were found (timeline/hybrid/doc_list) replace it with a chronological
     # lead-in; otherwise a graceful no-result message.
     answer_text = _normalize_empty_answer(answer_text, related_docs, citations)
-    sql_artifact = _build_sql_artifact(
-        sql, result_data, sources, raw.get("result_columns"),
+    sql_artifact = (
+        SQLArtifact.model_validate(raw["sql_artifact"]) if raw.get("sql_artifact")
+        else _build_sql_artifact(sql, result_data, sources, raw.get("result_columns"))
     )
     cta = _extract_cta(result_data)
 

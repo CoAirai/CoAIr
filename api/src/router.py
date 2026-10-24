@@ -242,6 +242,8 @@ class QueryRouter:
         "DATA TABLES (SQL queryable):\n{table_inventory}\n\n"
         "SCHEMA & JARGON CONTEXT (matched to this query):\n{schema_context}\n\n"
         "CATEGORIES — pick exactly ONE:\n"
+        "- OFFTOPIC: Questions unrelated to the loaded project documents or data, such as "
+        "weather, general trivia, recipes, entertainment, or unrelated arithmetic.\n\n"
         "- FILE_LIST: Questions about what files/documents exist, file counts, listing, deletion.\n"
         "  Examples: \"how many documents\", \"list all files\", \"show uploaded files\"\n\n"
         "- DATA: ANY question answerable from the DATA TABLES above. This is the PRIMARY category.\n"
@@ -312,7 +314,7 @@ class QueryRouter:
         "{learned_examples}"
         "{mode_hint}"
         "User query: {user_query}\n\n"
-        "Respond with exactly ONE word: FILE_LIST, DATA, DOCUMENT, or HYBRID."
+        "Respond with exactly ONE word: OFFTOPIC, FILE_LIST, DATA, DOCUMENT, or HYBRID."
     )
 
     HYBRID_SYNTHESIS_PROMPT = (
@@ -675,6 +677,9 @@ class QueryRouter:
         # question: X"), and phrases in prior turns otherwise hijack the
         # thread/draft and listing shortcuts below.
         current_q = self._current_question(query)
+        offtopic = self._classify_obvious_offtopic(current_q)
+        if offtopic is not None:
+            return offtopic
 
         expanded_query = self.jargon.expand_query(current_q)
         if expanded_query != current_q:
@@ -1225,7 +1230,9 @@ class QueryRouter:
             # The document path returns a graceful "no matching documents" answer;
             # the SQL path will fabricate aggregates over irrelevant tables.
             qtype = QueryType.DOCUMENT
-            if "FILE_LIST" in result:
+            if "OFFTOPIC" in result:
+                qtype = QueryType.OFFTOPIC
+            elif "FILE_LIST" in result:
                 qtype = QueryType.FILE_LIST
             elif "HYBRID" in result:
                 qtype = QueryType.HYBRID
@@ -1332,6 +1339,43 @@ class QueryRouter:
         if not prior or prior.casefold() in topic.casefold():
             return topic
         return f"{prior} {topic}"
+
+    _OBVIOUS_OFFTOPIC_RE = re.compile(
+        r"(?:^(?:how is|what is|what's) (?:the )?weather"
+        r"(?: (?:in|for) .+| (?!affect|impact).+)?\??$|"
+        r"\bweather (?:today|tomorrow|forecast)\b|\b(?:recipe for|horoscope|"
+        r"football score|hava durumu|yemek tarifi|burç yorumu)\b)",
+        re.IGNORECASE,
+    )
+
+    _ARITHMETIC_RE = re.compile(
+        r"^\s*(?:what\s+is\s+|calculate\s+)?\d+(?:\.\d+)?\s*"
+        r"(?:[+*/x×-]|multiplied\s+by|divided\s+by)\s*\d+(?:\.\d+)?\s*\??\s*$",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _classify_obvious_offtopic(cls, query: str) -> Optional[RouterDecision]:
+        q = cls._current_question(query)
+        if cls._OBVIOUS_OFFTOPIC_RE.search(q) or cls._ARITHMETIC_RE.match(q):
+            return RouterDecision(
+                query_type=QueryType.OFFTOPIC,
+                confidence=1.0,
+                reasons=["Question is outside the loaded project corpus"],
+                used_llm=False,
+            )
+        return None
+
+    @staticmethod
+    def _build_offtopic_response() -> Dict[str, Any]:
+        return {
+            "query_type": QueryType.OFFTOPIC.value,
+            "answer": (
+                "I can help with questions about this project's uploaded "
+                "documents and data. Please ask a project-related question."
+            ),
+            "sources": [],
+        }
 
     def _is_greeting(self, query: str) -> bool:
         """Detect simple greetings that don't need routing.
@@ -3454,6 +3498,8 @@ class QueryRouter:
         doc_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Dispatch query to appropriate handler by type."""
+        if query_type == QueryType.OFFTOPIC:
+            return self._build_offtopic_response()
         if query_type == QueryType.FILE_LIST:
             return self._handle_file_list_query(query, doc_ids)
         elif query_type == QueryType.THREAD:
@@ -3473,6 +3519,9 @@ class QueryRouter:
     ) -> Dict[str, Dict[str, Any]]:
         """Dispatch query to dual-provider handlers by type."""
         from .config import LLM_PROVIDERS
+
+        if query_type == QueryType.OFFTOPIC:
+            return {p: self._build_offtopic_response() for p in LLM_PROVIDERS}
 
         allowed_tables = self.data_analyzer.get_tables_for_doc_ids(doc_ids) if doc_ids else None
 
@@ -3670,6 +3719,9 @@ class QueryRouter:
                 report_step("thinking", "thinking…")
             except Exception:
                 pass
+
+            if self._classify_obvious_offtopic(query):
+                return self._build_offtopic_response()
 
             # Expand jargon
             expanded = self.jargon.expand_query(query)
@@ -3906,6 +3958,11 @@ class QueryRouter:
                 logger.info("   Detected greeting -> returning welcome message")
                 trace.route = "GREETING"
                 return self._build_greeting_response()
+
+            if self._classify_obvious_offtopic(query):
+                from .config import LLM_PROVIDERS
+                return {"query": query, "query_type": QueryType.OFFTOPIC.value,
+                        "answers": {p: self._build_offtopic_response() for p in LLM_PROVIDERS}}
 
             expanded = self.jargon.expand_query(query)
             if expanded != query:

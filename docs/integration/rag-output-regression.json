@@ -1,0 +1,47 @@
+{
+  "accepted": true,
+  "kind": "cached-output regression, not fresh generation",
+  "reports": [
+    {
+      "reference_job_id": "60d1589006f24e279785",
+      "entries": 26,
+      "evidence_passages": 129,
+      "source_documents": 36,
+      "paragraphs": 29,
+      "footnotes": 53,
+      "visible_word_equal": true,
+      "entries_equal": true,
+      "provider_calls": 0,
+      "reference_sha256": "e5a54c94a294aa85cdc9530e965f876ffa4cdac7a8fbe069974ac99ad5fc69d8",
+      "checkpoint_keys": [
+        "extract:1",
+        "extract:2",
+        "synthesis:event:1",
+        "synthesis:event:2",
+        "synthesis:event:3",
+        "synthesis:overview",
+        "verification"
+      ]
+    },
+    {
+      "reference_job_id": "cd7dfcc069f54b1b9a41",
+      "entries": 14,
+      "evidence_passages": 114,
+      "source_documents": 25,
+      "paragraphs": 17,
+      "footnotes": 27,
+      "visible_word_equal": true,
+      "entries_equal": true,
+      "provider_calls": 0,
+      "reference_sha256": "894a7020840953477df4b513e6b9f20f447babd425b3af59801d252021edbcd4",
+      "checkpoint_keys": [
+        "extract:1",
+        "extract:2",
+        "synthesis:event:1",
+        "synthesis:event:2",
+        "synthesis:overview",
+        "verification"
+      ]
+    }
+  ]
+}

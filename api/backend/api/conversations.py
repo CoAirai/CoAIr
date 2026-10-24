@@ -82,6 +82,7 @@ async def get_conversation(conv_id: str, store=Depends(get_conversation_store)):
                 "sources": m.sources or [],
                 "sql": m.sql,
                 "result_data": m.result_data,
+                "sql_artifact": getattr(m, "sql_artifact", None),
             }
             response = build_chat_response(raw)
 

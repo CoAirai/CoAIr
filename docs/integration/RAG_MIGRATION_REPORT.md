@@ -190,3 +190,41 @@ Desktop path is a symlink. Mac disk pressure caused write failures, so the small
 integration checkout moved to Adata after all pending changes were hash-verified.
 Original dirty RAG and Coair worktrees were preserved. No local dependency
 installation or large corpus copy was required.
+
+## Feature-parity clarification — 24 October 2026
+
+Follow-up: see `PROMPT_AND_OUTPUT_PARITY.md` for the subsequent structured-table
+implementation and accepted-output regression evidence; the findings below
+describe the state before that correction.
+
+Engineering-stage acceptance is not full product-feature parity. The deployed
+integration has verified orchestration, selective conversation context, canonical
+citations, project isolation and Word/progress delivery, but these remaining
+items prevent a blanket claim of RAG-equivalent behavior:
+
+- **Structured SQL/table UI:** `api/backend/models/responses.py` returns
+  `sql_artifact` with ordered columns, preview rows, generated SQL and chart
+  metadata. The current product frontend's `lib/coair/types.ts:CoairChatResponse`
+  models text/citations, and `context/ChatContext.tsx` consumes those two fields.
+  It does not map `sql_artifact`, `related_docs` or provider comparison results
+  into chat message state. `templates/HomePage/MessageBubble.tsx` supports tables
+  parsed from answer text and CSV export; that is not the structured SQL result
+  renderer. Complete that contract and verify actual spreadsheet questions,
+  ordered/empty columns, numeric/date values, charts and persisted chat reload.
+- **Prompts:** `config/prompts/chronology_v2.yaml` is byte-identical between the
+  current RAG source and integration. `chronology_v3.yaml` differs; V2 is the
+  configured staging pipeline. These files alone do not certify all inline
+  agent prompts or their behavioral equivalence.
+- **Report content:** prior matched runs produced four target records versus
+  fourteen reference records; both were partial and the target was marked
+  `thin_record`. Valid Word output and source footnotes do not prove matching
+  event coverage. Normalized-date proof remains unresolved in both implementations.
+- **Forensic and calculation breadth:** representative full-corpus forensic,
+  spreadsheet and calculation workflows still require side-by-side end-to-end
+  acceptance. Three sample PDFs are insufficient for this qualification.
+
+Required next acceptance: wire structured result payloads into the existing Coair
+UI without changing its design; use identical PDFs plus Excel/CSV fixtures on both
+engines; compare answers, numeric results, table/chart rendering, report coverage,
+dates and source anchors. Record each behavior independently instead of using the
+number of passing backend tests as a proxy for product parity.

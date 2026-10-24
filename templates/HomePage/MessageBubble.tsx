@@ -1,4 +1,6 @@
 import Image from "@/components/Image";
+import SqlResult from "./SqlResult";
+import { repeatsSqlTable } from "@/lib/chat/sqlArtifact";
 import { useChat } from "@/context/ChatContext";
 import {
     citationForReference,
@@ -152,8 +154,11 @@ const MessageBubble = ({ message }: Props) => {
     const isUser = message.role === "user";
     const blocks = isUser
         ? []
-        : parseAnswer(message.content, sourceNames(message.citations));
-    const hasTable = blocks.some((block) => block.type === "table");
+        : parseAnswer(message.content, sourceNames(message.citations)).filter((block) =>
+            !(message.sqlArtifact && block.type === "table" &&
+                repeatsSqlTable(block.headers, block.rows, message.sqlArtifact))
+        );
+    const hasTable = Boolean(message.sqlArtifact) || blocks.some((block) => block.type === "table");
 
     return (
         <div
@@ -222,6 +227,12 @@ const MessageBubble = ({ message }: Props) => {
                         )}
                     </div>
                 )}
+                {!isUser && message.sqlArtifact ? (
+                    <SqlResult artifact={message.sqlArtifact} onOpen={openDocumentPreview}>
+                        {(headers, rows) => <AnswerTable headers={headers} rows={rows}
+                            citations={message.citations} onOpen={openDocumentPreview} />}
+                    </SqlResult>
+                ) : null}
                 {!isUser && message.libraryNote ? (
                     <p className="mt-2 text-label-xs leading-5 text-sub-600">
                         {message.libraryNote}

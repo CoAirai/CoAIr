@@ -325,6 +325,7 @@ class ChatOrchestrator:
             ),
             sql=response.sql_artifact.generated_sql if response.sql_artifact else None,
             result_data=response.sql_artifact.preview_rows if response.sql_artifact else None,
+            sql_artifact=response.sql_artifact.model_dump() if response.sql_artifact else None,
         )
         store.add_message(conversation_id, assistant_msg)
 

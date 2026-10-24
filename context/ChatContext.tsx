@@ -619,8 +619,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                                         : ("user" as const),
                                 content:
                                     m.role === "assistant"
-                                        ? m.response?.answer || m.content
+                                        ? m.response?.assistant_text ?? m.response?.answer ?? m.content
                                         : m.content,
+                                sqlArtifact: m.role === "assistant"
+                                    ? m.response?.sql_artifact ?? undefined : undefined,
                                 createdAt:
                                     m.timestamp || new Date().toISOString(),
                                 threadUserId: activeWorkspaceUserId,
@@ -780,6 +782,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             try {
                 let assistantText: string;
                 let citations: Citation[] | undefined;
+                let sqlArtifact: Message["sqlArtifact"];
 
                 if (isLiveChat) {
                     if (!session.projectId) {
@@ -858,6 +861,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     }
                     assistantText = response.assistant_text;
                     citations = mapLiveCitations(response.citations);
+                    sqlArtifact = response.sql_artifact ?? undefined;
                 } else {
                     await new Promise((resolve) => setTimeout(resolve, 600));
                     const company = companies.find(
@@ -886,6 +890,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     createdAt: new Date().toISOString(),
                     threadUserId: activeWorkspaceUserId,
                     citations,
+                    sqlArtifact,
                     libraryNote:
                         stillIndexing > 0
                             ? `Answered from ${indexed.toLocaleString()} indexed files. ${stillIndexing.toLocaleString()} were still indexing.`

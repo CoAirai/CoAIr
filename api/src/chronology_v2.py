@@ -751,8 +751,6 @@ def synthesize(
         f"TOPIC: {prepared.english_query}\n"
         f"PARTIES: {', '.join(prepared.parties) or 'not specified'}\n"
         f"CONTRACTS: {', '.join(prepared.contracts) or 'not established'}\n"
-        f"Use at most {MAX_OVERVIEW_CLAIMS} overview claims and "
-        f"at most {MAX_EVENT_CLAIMS} claims per event.\n"
         f"{prompts['synthesizer']}\n{prompts['style_profile']}"
     )
 
