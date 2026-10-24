@@ -15,3 +15,8 @@ Each stage records its tests and any unresolved limitation below before advancem
 ### Stage 1 — passed
 
 Bounded three-worker synthesis is ported. Isolated API-image execution passed 57 tests and 9 subtests, including simultaneous worker scope, three separate durable charges, run token totals, ordered results, cached-step reuse and provider-failure propagation. No payment-rule changes. Durable run/ledger rows remain the source of aggregate usage; deprecated thread-local call counters are not an authoritative total.
+
+
+### Stage 2 — passed
+
+Coair now uses the RAG selective follow-up policy: last two messages, at most 3,000 characters, only for referential questions. Standalone queries omit unrelated history. Coair passed 26 tests and 4 subtests (including source-context restoration and both provider modes). The same executable memory and document-follow-up contract passed 14 tests against the actual RAG orchestrator source in an isolated dependency image. Production files were not edited. End-to-end performance qualification follows in stage 4.

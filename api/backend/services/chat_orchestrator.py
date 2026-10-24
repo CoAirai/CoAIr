@@ -7,13 +7,45 @@ from typing import List, Optional
 
 from src.router import QueryRouter
 from src.conversation_store import ConversationStore, Message, format_chat_context
-from src.config import LLM_PROVIDERS, ENABLE_DUAL_PROVIDER, CHAT_MEMORY_MESSAGES, CHAT_MEMORY_MAX_CHARS
+from src.config import LLM_PROVIDERS, ENABLE_DUAL_PROVIDER, CHAT_MEMORY_MESSAGES
 
 from backend.services.response_builder import build_chat_response
 from backend.models.responses import ChatResponse, QuotaInfo
 
 
 class ChatOrchestrator:
+
+    _FOLLOWUP_PREFIX_RE = re.compile(
+        r"^(?:and|also|then|so|but|peki|ya|ayrıca|devam|what about|how about)\b",
+        re.IGNORECASE,
+    )
+    _FOLLOWUP_REFERENCE_RE = re.compile(
+        r"\b(?:it|its|this|that|these|those|they|them|their|former|latter|"
+        r"bunu|bunun|bundan|buna|onu|onun|onlar|bunlar)\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _needs_conversation_context(cls, query: str) -> bool:
+        """Keep history only for questions that explicitly depend on a prior turn."""
+        q = " ".join((query or "").split()).strip()
+        if not q:
+            return False
+        if re.search(r"\b(?:this project|the project|bu proje)\b", q, re.IGNORECASE):
+            return bool(cls._FOLLOWUP_PREFIX_RE.search(q))
+        return bool(
+            cls._FOLLOWUP_PREFIX_RE.search(q)
+            or cls._FOLLOWUP_REFERENCE_RE.search(q)
+        )
+
+    @classmethod
+    def _followup_context(cls, messages: list[Message], query: str) -> str:
+        if not cls._needs_conversation_context(query):
+            return ""
+        # One preceding user/assistant pair is enough to resolve references and
+        # prevents old, already-expanded answers from growing every new prompt.
+        return format_chat_context(messages[-2:], max_messages=2, max_chars=3000)
+
 
     @staticmethod
     def _serialize_response_sources(response: ChatResponse, query_type: str) -> list | None:
@@ -100,9 +132,7 @@ class ChatOrchestrator:
         # 2. Build context-augmented query from recent messages
         recent = store.get_recent_messages(conversation_id, CHAT_MEMORY_MESSAGES)
         context_msgs = recent[:-1] if recent else []
-        context = format_chat_context(
-            context_msgs, CHAT_MEMORY_MESSAGES, CHAT_MEMORY_MAX_CHARS
-        )
+        context = self._followup_context(context_msgs, query)
         augmented = f"{context}\n\nCurrent question: {query}" if context else query
 
         # Capture the user's EXPLICIT selection (before the conversation-scoped
