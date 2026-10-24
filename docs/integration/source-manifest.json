@@ -1,7 +1,7 @@
 {
   "date": "2026-10-24",
   "rag_head": "77c52954d2cdc07cafd348945843d84e0bd55b45",
-  "target_parent_commit": "f586b81624efe29d7b0fa2679325690bd4a01e84",
+  "target_parent_commit": "6501e022bc8f2b56633e9f99add819a08ec87430",
   "coair_base": "ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417",
   "note": "Current reviewed source snapshots after four-stage alignment. RAG includes deployed overlays. Protected billing, CA, user and authorization files remain identical to Coair main. Remaining differences are documented, not assumed to be defects.",
   "files": [
@@ -21,7 +21,7 @@
       "rag_path": "src/ai_reports.py",
       "rag_sha256": "1274fe144579851d89d2f3b50cd46f2dbff9e4153d693ca313c7cb3a0e1387e3",
       "coair_path": "api/src/ai_reports.py",
-      "coair_sha256": "065e1be03140c884d708a93f0f89e6bc828916603399fc9d1b31794be68791ea"
+      "coair_sha256": "1bc5dd575d7b3fc01c6fd10f17c0edde144101f4e6a2cc7c3a7f4996abc110ed"
     },
     {
       "rag_path": "src/chronology_v2.py",

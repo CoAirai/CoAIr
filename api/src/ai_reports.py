@@ -10,6 +10,7 @@ from contextvars import copy_context
 from dataclasses import asdict
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .llm_client import _model_for_task
 from .evidence_model import ChronologyEntry, EvidenceItem, VerifiedClaim
 from .evidence_pack import CANDIDATE_PASSAGES, assess_pack, select_pack
 from .report_docx import FORENSIC_SECTIONS, build_ai_chronology_docx, build_forensic_report_docx
@@ -396,6 +397,7 @@ def _generate_chronology_v2(
     verification_hash = hashlib.sha256(json.dumps(
         response, sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
+    stage("verification", .82)
     verification_step = load_step("verification", verification_hash) if load_step else None
     if verification_step and verification_step.get("status") == "ready":
         verification = dict((verification_step.get("output") or {}).get("decisions", {}))
@@ -424,7 +426,6 @@ def _generate_chronology_v2(
     entries: List[ChronologyEntry] = []
     removed = 0
     overview_claims = []
-    stage("verification", .82)
     for claim_index, item in enumerate(response.get("overview_claims", [])):
         claim = VerifiedClaim(
             text=str(item.get("text") or "").strip(),
@@ -491,6 +492,7 @@ def _generate_chronology_v2(
         ))
     if len(entries) < 2:
         raise ValueError("insufficient_evidence")
+    stage("word", .9)
     blob, audit = build_ai_chronology_docx(
         project_name=project_name, issue_number=issue_number, title=topic,
         entries=entries, evidence=evidence, audit_metadata=None,
@@ -523,7 +525,7 @@ def _generate_chronology_v2(
             "verifier_removed_events": len(response.get("entries", [])) - (len(entries) - 1),
             "issued_events": len(entries) - 1,
         }, "docx": blob, "research_audit": {"event_discovery": event_discovery_audit},
-        "model": "gemini-3.6-flash", "pipeline_version": PIPELINE_VERSION,
+        "model": _model_for_task("report_structured"), "pipeline_version": PIPELINE_VERSION,
         "prompt_version": PROMPT_VERSION,
         "coverage": pack_coverage,
         "coverage_status": "partial" if final_reasons else "complete",

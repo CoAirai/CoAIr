@@ -103,3 +103,16 @@ It measures six actual orchestrator requests and an optional narrative Word repo
 records durable run usage and source selection, and disables provider response
 caching in both processes. Native routing/retrieval caches remain enabled.
 Do not mount production writable storage or copy Coair's user schema into RAG.
+
+For different DuckDB runtime versions, export the source corpus with its native
+image and import with the destination image; never copy the binary DB backward:
+
+```sh
+python -m src.corpus_snapshot export --database source.db --project PROJECT_ID --output corpus.json
+python -m src.corpus_snapshot import --snapshot corpus.json --database NEW_DESTINATION.db
+```
+
+The destination must not exist. The snapshot contains project-scoped evidence
+and document search metadata, excludes users/payment tables, and verifies a
+canonical SHA-256 before creating the database. PDF/upload and vector migration
+are separate operations; this command does not grant project membership.

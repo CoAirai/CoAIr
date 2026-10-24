@@ -10,8 +10,8 @@ Coair main, live RAG and dental services were preserved.
 
 The integration now has gated deployment, focused agent regressions and real
 API/browser qualification. A real chronology was generated from the Edinburgh
-sample and downloaded as narrative Word with resolving footnotes. Full agent,
-content-quality, large-corpus and external-service parity remains incomplete.
+sample and downloaded as narrative Word with resolving footnotes. The four requested engineering stages are complete on the sample corpus; full
+content-quality, large-corpus and external-service qualification remains incomplete.
 
 The comparison covered 177 relevant files: 80 identical, 61 different, 36 Coair-only.
 ReAct, query planner and document agent were identical. Important RAG improvements
@@ -33,6 +33,7 @@ paths. We ported those changes selectively instead of replacing the backend.
 | Glossary | Original text is processed once; generated definitions cannot recursively grow; repeated-query OOM did not recur |
 | Source references | Metadata respects selected IDs; page evidence keeps its citations; canonical document IDs resolve within the active project; canonical Qdrant `file_id` selection and filename hints intersect, including deep agent reads |
 | Runtime readiness | Deployment waits for actual background dependency validation; initializing and failed runtimes return HTTP 503 |
+| Report stages | Verification and Word stages are emitted before their work; exported model metadata uses the active model policy |
 | Chronology V2 | Supported numeric punctuation accepted; proven day precision normalized; invalid claims pruned before independent verification; RAG's five overview / four event claims and evidence-led writing profile ported |
 | Word delivery | Stored narrative is the default download; explicit `format=table` remains available; Coair XML safety retained |
 | Progress UI | Existing report status line displays English backend stage labels and percentages; real browser observed live updates |
@@ -162,7 +163,7 @@ no live customer-data access or exfiltration was demonstrated.
 
 ## Four-stage follow-up
 
-See `FOUR_STAGE_ACCEPTANCE.md` for each stage's acceptance, and
+See `FOUR_STAGE_ACCEPTANCE.md` for each stage's acceptance and remaining quality limits, and
 `performance-check.json` for matched runtime measurements. No production user,
 organization or billing database was migrated. An excluded reference probe proved
 why: legacy RAG's positional ledger insert expected 23 columns while Coair has 24.
