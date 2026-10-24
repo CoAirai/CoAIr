@@ -98,18 +98,18 @@ class LexicalIndex:
 
         if self._ensure_fts():
             try:
-                where = "score IS NOT NULL"
-                params = [query]
-                where += " AND project_id = ?"
-                params.append(project_id)
+                where = "project_id = ?"
+                params = [query, project_id]
                 if doc_ids:
                     where += f" AND doc_id IN ({','.join('?' for _ in doc_ids)})"
                     params.extend(list(doc_ids))
                 params.append(top_k)
                 rows = con.execute(
+                    "WITH scored AS MATERIALIZED ("
                     "SELECT chunk_id, doc_id, file_name, page_number, text, "
                     "fts_main_chunks.match_bm25(chunk_id, ?) AS score "
-                    f"FROM chunks WHERE {where} ORDER BY score DESC LIMIT ?",
+                    f"FROM chunks WHERE {where}) "
+                    "SELECT * FROM scored WHERE score IS NOT NULL ORDER BY score DESC LIMIT ?",
                     params,
                 ).fetchall()
                 return [

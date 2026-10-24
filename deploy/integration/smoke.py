@@ -23,6 +23,7 @@ def main():
                         help="Also run one real, billable staging AI query")
     parser.add_argument("--chronology", action="store_true",
                         help="Also generate and inspect one real, billable staging Word report")
+    parser.add_argument("--retry-report", default="", help="Retry this existing staging report during qualification")
     args = parser.parse_args()
     credentials = json.loads((ROOT / ".access.json").read_text())
     workspace = json.loads((ROOT / "workspace.json").read_text())
@@ -77,6 +78,8 @@ def main():
     library = api("/library", token=token, project=workspace["project_id"])
     expected = {"CEC01546478.pdf", "CEC01123743.pdf", "CEC01630357.pdf"}
     assert expected.issubset({item["file_name"] for item in library}), "Baseline documents were lost"
+    reports = api("/reports?module=chronology", token=token, project=workspace["project_id"])
+    assert all(job["status"] != "failed" for job in reports["reports"]), "Failed jobs leaked into the normal list"
     preview = api("/docs/161298c26281926a/content?anchor=page_1&file_name=CEC01546478.pdf",
                   token=token, project=workspace["project_id"])
     assert preview.get("type") == "pdf" and preview.get("image_base64"), "Source preview failed"
@@ -92,7 +95,7 @@ def main():
               "api_gate": "passed", "password_mfa": "passed", "project_scope": "passed",
               "project_id": workspace["project_id"], "library_records": len(library),
               "source_preview": "passed", "reference_containers": "unchanged",
-              "production_health": "passed"}
+              "production_health": "passed", "failed_reports_hidden": "passed"}
     if args.chat:
         conversation = api("/conversations", {"title": "Migration qualification " + args.commit[:7]},
                            token=token, project=workspace["project_id"])
@@ -112,7 +115,7 @@ def main():
         assert citations and all(citation["doc_id"] == "161298c26281926a" for citation in citations), \
             "Selected-document citations did not resolve to the source"
         assert "utilit" in answer.get("assistant_text", "").lower(), "Expected source-grounded subject"
-        progress = api("/chat/progress/" + request_id, token=token)
+        progress = api("/chat/progress/" + request_id, token=token, project=workspace["project_id"])
         assert progress["steps"] and progress["done"], "Real query progress did not complete"
         chat_check.update(accepted=True, progress=progress)
         (ROOT / "chat-check.json").write_text(json.dumps(chat_check, indent=2) + "\n")
@@ -120,7 +123,8 @@ def main():
                                "progress_steps": len(progress["steps"]), "selected_source": "passed"}
     if args.chronology:
         started = time.monotonic()
-        job = api("/chronology/generate", {
+        job = api("/reports/" + args.retry_report + "/retry", {}, token=token,
+                  project=workspace["project_id"]) if args.retry_report else api("/chronology/generate", {
             "topic": "Utilities diversion obligations and programme changes in the supplied Edinburgh documents",
             "source_doc_ids": ["161298c26281926a", "0235aed85faa16ec", "8a04f0812c996d8b"],
         }, token=token, project=workspace["project_id"])

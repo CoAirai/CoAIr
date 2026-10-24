@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-24",
+  "rag_head": "77c52954d2cdc07cafd348945843d84e0bd55b45",
+  "target_parent_commit": "c3d1b8bc7af05a3c86b74ceb14082016bf156e85",
+  "coair_base": "ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417",
+  "note": "SHA256 snapshots of the reviewed RAG and candidate Coair worktrees before commit. RAG includes deployed overlays. Target changes are focused adaptations; billing logic is preserved.",
+  "files": [
+    {
+      "rag_path": "src/chunk_store.py",
+      "rag_sha256": "b564509b50b7855749a89151be57fc3133cadb4be4f0688923642910b2e964cd",
+      "coair_path": "api/src/chunk_store.py",
+      "coair_sha256": "885470af8dc17d4390a0a5aa0840e724f228a89e10cb3cad6164c4417942ce16"
+    },
+    {
+      "rag_path": "src/lexical_index.py",
+      "rag_sha256": "d2eb5430ea35a5a5b2b536262841e9a3497048e114ede890a8dd6512cc43204f",
+      "coair_path": "api/src/lexical_index.py",
+      "coair_sha256": "27482df5f6309ebe330243b9a20945d7a18f369a3444e0e65e968d7086d709e8"
+    },
+    {
+      "rag_path": "src/ai_reports.py",
+      "rag_sha256": "1274fe144579851d89d2f3b50cd46f2dbff9e4153d693ca313c7cb3a0e1387e3",
+      "coair_path": "api/src/ai_reports.py",
+      "coair_sha256": "065e1be03140c884d708a93f0f89e6bc828916603399fc9d1b31794be68791ea"
+    },
+    {
+      "rag_path": "src/chronology_v2.py",
+      "rag_sha256": "b5b81ee24f2843577a2faa43389d97ce9078c90d33b50fd10f3fef9bd08d848c",
+      "coair_path": "api/src/chronology_v2.py",
+      "coair_sha256": "b6d78365f81ade9e33a4ab84c60012a9a4d7f4c425932ebfff004e6ae80cb658"
+    },
+    {
+      "rag_path": "src/router.py",
+      "rag_sha256": "9da47d55b0241af355363b829b5f65683bc23207475acc09880a7ec0c4f93e48",
+      "coair_path": "api/src/router.py",
+      "coair_sha256": "37fa35b0bf206cda3666dc4f1fdb3b2647b2fb281f002f19dc649c3d792e7a36"
+    },
+    {
+      "rag_path": "src/react_agent.py",
+      "rag_sha256": "c517c087669875a51d30c20afbd9cfca53cbcb62a631bff36d6b9884c48fd56c",
+      "coair_path": "api/src/react_agent.py",
+      "coair_sha256": "1bed1f334db99460872128924acec9dbe621b3d650ce05c3a080a5183018436e"
+    },
+    {
+      "rag_path": "src/jargon_manager.py",
+      "rag_sha256": "fa9ec0231e0e1f995447db07245245ea68e666d922c1691e0fcd9e077785c0cb",
+      "coair_path": "api/src/jargon_manager.py",
+      "coair_sha256": "c78221c9661ed5d2e2b5b194ad747fbc8d5263bc8e3412fc00d1528c0163e84c"
+    },
+    {
+      "rag_path": "src/document_rag.py",
+      "rag_sha256": "dddf18a65829019c481c7a6f6d64207b167faba621563e591e0d7c03109b793c",
+      "coair_path": "api/src/document_rag.py",
+      "coair_sha256": "8a37b238188c107c40a26fd2f5393aae1170504cc78db7a887d5e4fe294393a8"
+    },
+    {
+      "rag_path": "src/llm_client.py",
+      "rag_sha256": "c1818e49ec04ec509f4fafbc45f2910ad390b48b9066319bcda95e7f1f00f314",
+      "coair_path": "api/src/llm_client.py",
+      "coair_sha256": "492ce4c271d7342298f31484e14ace07cb9ac6f02ef858c63612c017c61c96c0"
+    },
+    {
+      "rag_path": "config/prompts/chronology_v2.yaml",
+      "rag_sha256": "02edf702dcb54e69c5d377b50b31e3362204ac730087513b7a7f796237d4103e",
+      "coair_path": "api/config/prompts/chronology_v2.yaml",
+      "coair_sha256": "02edf702dcb54e69c5d377b50b31e3362204ac730087513b7a7f796237d4103e"
+    },
+    {
+      "rag_path": "backend/services/chat_orchestrator.py",
+      "rag_sha256": "9cf741c43c56be15f6836e266bded5ee6fef5678b29f2a69d45bba473aa7a4bd",
+      "coair_path": "api/backend/services/chat_orchestrator.py",
+      "coair_sha256": "8c6756729bfb3b6c28ad53cde5c3f44d7b832e8feef6f0cef82e7782736afc23"
+    },
+    {
+      "rag_path": "backend/services/response_builder.py",
+      "rag_sha256": "d9adae471169dc3b937cf0455caa9833b773a38c138657e3766379ece70489a9",
+      "coair_path": "api/backend/services/response_builder.py",
+      "coair_sha256": "bd02e7d93fec21c51a8ff94f9a7fcd7766c73fb03795f94544124c8d5977306f"
+    },
+    {
+      "rag_path": "backend/api/reports.py",
+      "rag_sha256": "af14e1ef62ca0b629a8ef79c3ed11c82356ff7fbf59147bebc4898f94aeccaa8",
+      "coair_path": "api/backend/api/reports.py",
+      "coair_sha256": "5ffb98ec0462e0b2dd7a3eaf005e52e0a039f20d27df417d1f541ab25ebe70e2"
+    }
+  ],
+  "protected_files": [
+    {
+      "path": "api/src/billing_store.py",
+      "sha256": "ba2be66d8e2f16179edad46b2cbcfb869060f8ccd4d6f32f5db834e0c0c4a98b",
+      "unchanged_from_coair_base": true
+    },
+    {
+      "path": "api/src/user_store.py",
+      "sha256": "9dad44b94202eeaeae12f357a02a17b1496ee5a3af981edfa6a498179fbe5b81",
+      "unchanged_from_coair_base": true
+    },
+    {
+      "path": "api/src/ca_tokens.py",
+      "sha256": "26e7e9c53439aa18a9b341c57a1a146d57b3a49c341899219a57dea0473f7d2b",
+      "unchanged_from_coair_base": true
+    },
+    {
+      "path": "api/backend/core/security.py",
+      "sha256": "c0c4cc7d2e0e3ed5375e0efad079fef2a0800a8126e51fe3b0fbb467d3b0e91f",
+      "unchanged_from_coair_base": true
+    },
+    {
+      "path": "api/backend/core/orgs.py",
+      "sha256": "8a3523a975d5cebcad86432a83b713ad2e7dcb819a8d9cead3967f6fbd78c069",
+      "unchanged_from_coair_base": true
+    },
+    {
+      "path": "api/backend/core/projects.py",
+      "sha256": "f9520579a2ee848abad4be74a967f96cdfa408f0a3ef291d876a2664d254cb86",
+      "unchanged_from_coair_base": true
+    }
+  ]
+}

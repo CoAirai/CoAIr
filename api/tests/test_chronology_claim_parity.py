@@ -12,6 +12,28 @@ from src.evidence_model import EvidenceItem, VerifiedClaim
 
 
 class ChronologyClaimParityTests(unittest.TestCase):
+    def test_rag_claim_capacity_preserves_atomic_sourced_paragraphs(self):
+        from pydantic import ValidationError
+        from src.chronology_v2 import OverviewModel, EventModel
+        claim = {'text': 'A sourced fact.', 'source_ids': ['s1']}
+        OverviewModel.model_validate({'overview_claims': [claim] * 5})
+        EventModel.model_validate({'claims': [claim] * 4})
+        with self.assertRaises(ValidationError):
+            OverviewModel.model_validate({'overview_claims': [claim] * 6})
+        with self.assertRaises(ValidationError):
+            EventModel.model_validate({'claims': [claim] * 5})
+
+    def test_rejection_diagnostics_identify_schema_without_logging_source_text(self):
+        from src.chronology_v2 import OverviewModel
+        from src.llm_client import _structured_text_validator
+        text = json.dumps({'overview_claims': [dict(text='PRIVATE SOURCE TEXT', source_ids=['s1'])] * 6})
+        with patch('src.llm_client.logger.warning') as warning:
+            self.assertFalse(_structured_text_validator(text, OverviewModel.model_json_schema(), OverviewModel))
+        message = str(warning.call_args)
+        self.assertIn('overview_claims', message)
+        self.assertIn('too_long', message)
+        self.assertNotIn('PRIVATE SOURCE TEXT', message)
+
     def test_punctuation_does_not_invent_numbers_or_reject_supported_year(self):
         evidence = [EvidenceItem('s1', 'd1', 'notice.pdf',
                                 excerpt='October 2006: Notice 17 was issued')]

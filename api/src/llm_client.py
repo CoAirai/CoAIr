@@ -1343,8 +1343,20 @@ def _structured_text_validator(
             validation_model.model_validate(value)
         elif not _schema_accepts(value, schema):
             return False
-        return semantic_validator(value) if semantic_validator is not None else True
-    except Exception:
+        valid = semantic_validator(value) if semantic_validator is not None else True
+        if not valid:
+            logger.warning(f"[StructuredOutput] semantic rejection model={getattr(validation_model, '__name__', 'schema')}")
+        return valid
+    except Exception as exc:
+        # Log field paths and error types only; source text and provider output
+        # may contain private project data and must not be copied into logs.
+        from pydantic import ValidationError
+        fields = [{"location": error["loc"], "type": error["type"]}
+                  for error in exc.errors(include_input=False)[:8]] if isinstance(exc, ValidationError) else []
+        logger.warning(
+            f"[StructuredOutput] schema rejection model={getattr(validation_model, '__name__', 'schema')} "
+            f"error={type(exc).__name__} fields={fields}"
+        )
         return False
 
 

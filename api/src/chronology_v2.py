@@ -31,6 +31,8 @@ VERIFICATION_BATCH_CLAIMS = 30
 ALLOWED_DATE_SOURCES = {
     "content_header", "content_body", "table_period", "unresolved",
 }
+MAX_EVENT_CLAIMS = 4
+MAX_OVERVIEW_CLAIMS = 5
 
 COVERAGE_FACETS: Dict[str, Tuple[str, ...]] = {
     "contractual_framework": ("contract", "agreement", "obligation", "clause", "scope"),
@@ -68,7 +70,7 @@ class EventModel(BaseModel):
     date_precision: str = "unknown"
     date_source: str = "unresolved"
     date_evidence: str = ""
-    claims: List[ClaimModel] = Field(min_length=1, max_length=2)
+    claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_EVENT_CLAIMS)
     parties: List[str] = Field(default_factory=list, max_length=20)
     event_type: str = "event"
     conflicting_positions: List[str] = Field(default_factory=list, max_length=10)
@@ -79,18 +81,18 @@ class ExtractionModel(BaseModel):
 
 
 class ChronologyModel(BaseModel):
-    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
     entries: List[EventModel] = Field(default_factory=list)
 
 
 class DraftChronologyModel(BaseModel):
     """Compatibility name for callers that inspect the synthesis model."""
-    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
     entries: List[EventModel] = Field(default_factory=list)
 
 
 class OverviewModel(BaseModel):
-    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
 
 
 class EventSynthesisModel(BaseModel):
@@ -747,6 +749,8 @@ def synthesize(
         f"TOPIC: {prepared.english_query}\n"
         f"PARTIES: {', '.join(prepared.parties) or 'not specified'}\n"
         f"CONTRACTS: {', '.join(prepared.contracts) or 'not established'}\n"
+        f"Use at most {MAX_OVERVIEW_CLAIMS} overview claims and "
+        f"at most {MAX_EVENT_CLAIMS} claims per event.\n"
         f"{prompts['synthesizer']}\n{prompts['style_profile']}"
     )
 

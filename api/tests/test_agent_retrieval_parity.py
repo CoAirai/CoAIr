@@ -27,6 +27,26 @@ def store_at(path):
 
 
 class RetrievalParityTests(unittest.TestCase):
+    def test_bm25_side_effecting_score_is_materialized_before_filtering(self):
+        with TemporaryDirectory() as directory:
+            store = store_at(Path(directory) / 'chunks.db')
+            try:
+                with patch.object(store, '_persist'):
+                    store.add_chunks([dict(doc_id=doc, file_name=doc + '.pdf', page_number=1,
+                        text='source text without query token', project_id=project)
+                        for doc, project in [('a1', 'a'), ('a2', 'a'), ('b1', 'b')]])
+                store._con.create_function('test_rank', lambda cid, query: 9.0,
+                                           [str, str], float, side_effects=True)
+                store._con.execute('CREATE SCHEMA fts_main_chunks')
+                store._con.execute('CREATE MACRO fts_main_chunks.match_bm25(cid, q) AS test_rank(cid, q)')
+                index = object.__new__(LexicalIndex)
+                with patch('src.chunk_store.get_chunk_store', return_value=store), \
+                     patch.object(index, '_ensure_fts', return_value=True):
+                    rows = index.search_chunks('unmatchedtoken', project_id='a', doc_ids=['a1'])
+                self.assertEqual([(row['doc_id'], row['lex_score']) for row in rows], [('a1', 9.0)])
+            finally:
+                store._con.close()
+
     def test_parallel_readers_do_not_steal_results(self):
         with TemporaryDirectory() as directory:
             store = store_at(Path(directory) / 'chunks.db')

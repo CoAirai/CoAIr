@@ -56,11 +56,11 @@ and `report-check.json`.
 | Research retrieval | Deduplicated questions and independently copied request context per worker | Context/correlation regressions; deployed in 533e84f |
 | Planner / ReAct metadata | Project-local document topics and summaries; project/explicit SQL allow-list applied before ranking; global graph-party hint omitted | Eight project/empty-scope/selected-document/failure/legacy-table regressions; deployed in aa234b1 |
 | Glossary | Single-pass expansion and replacement over original matches | Four regressions; deployed in aa234b1; the repeated-query OOM did not recur |
-| Selected evidence | Keep raw source text out of glossary/classification/retrieval and supply it only to synthesis; preserve Coair follow-up history | Five focused tests including single/dual paths and cleanup; next deployment |
-| Source references | Respect selected IDs during metadata enrichment, retain actual page evidence, resolve canonical IDs within active project | Focused tests passed; public selected-source acceptance pending |
-| Chronology validation | Ignore sentence punctuation around supported numbers; normalize proven day precision; prune invalid claims before independent verification | Three regressions including rejection of fabricated facts/missing clusters; next deployment |
-| Word download | Serve stored narrative by default; table remains available through explicit `format=table`; retain Coair XML safety | Default/explicit-format/project-boundary regression passed; actual generated Word download pending |
-| Failed reports | Hide failed jobs from normal project list; keep active jobs and direct diagnostics | Regression passed; next deployment |
+| Selected evidence | Keep raw source text out of glossary/classification/retrieval and supply it only to synthesis; preserve Coair follow-up history | Five focused tests; deployed in c3d1b8b; selected-PDF chat passed in 13.74 seconds with completed progress |
+| Source references | Respect selected IDs during metadata enrichment, retain actual page evidence, resolve canonical IDs within active project | Deployed in c3d1b8b; actual selected-PDF answer returned only its page citation |
+| Chronology validation | Ignore sentence punctuation around supported numbers; normalize proven day precision; prune invalid claims before independent verification | Deployed in c3d1b8b; full report qualification failed at overview synthesis; capacity alignment is the next patch |
+| Word download | Serve stored narrative by default; table remains available through explicit `format=table`; retain Coair XML safety | Deployed in c3d1b8b; default/explicit-format/project-boundary regression passed; successful real report still required |
+| Failed reports | Hide failed jobs from normal project list; keep active jobs and direct diagnostics | Deployed in c3d1b8b; list/diagnostic regression passed |
 
 ## Verified releases and observed failures
 
@@ -130,3 +130,29 @@ Do not copy balances or replace the Coair ledger with legacy billing methods.
 The source-level tenant defects were reproduced with fake fixtures; no live
 customer-data access or exfiltration was demonstrated. Keep production untouched
 until the remaining source/date, quality, accounting and migration gates pass.
+
+## Latest qualification and corrective work
+
+Release c3d1b8b passed 118 API tests and 13 subtests, frontend/build and public
+deploy checks: https://github.com/CoAirai/CoAIr/actions/runs/40050472261.
+The real selected-PDF answer took 13.74 seconds, cited only CEC01546478 page 1
+and produced completed progress events. A missing project header in the operator
+progress check was corrected; progress was verified against the existing answer,
+without repeating the provider call.
+
+Real chronology job 0d1f37b56e4c4effb4b7 failed after 83.81 seconds. Stages reached:
+research_plan → evidence_extraction → synthesis. Extraction produced 12 candidates;
+overview synthesis exhausted retries with model_output_invalid. The old rejection
+path did not retain a field-level cause, so claim capacity is a discovered schema
+difference, not yet a proven diagnosis of this specific response.
+
+The corrective patch ports RAG's five overview / four event claims and evidence-led
+style profile, adds matching prompt limits, and logs only rejection field paths and
+error types (never source text). Source-ID limits and independent verification remain.
+The same failed job will be retried through the existing API, preserving diagnostics.
+
+The real run also exposed a DuckDB BM25 alias/side-effect Binder error and LIKE
+fallback. A materialized-score query fixes it. A real DuckDB regression with a
+side-effecting scoring UDF fails on the old query and passes on the new query,
+including project and document-ID filtering. Native FTS query and warm-index
+reuse still need runtime confirmation after this deploy.
