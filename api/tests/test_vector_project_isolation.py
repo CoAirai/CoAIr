@@ -129,7 +129,7 @@ class _StubGraph:
         return SimpleNamespace(fetchall=lambda: self._rows)
 
     @staticmethod
-    def _project_file_names_factory(scope):
+    def _project_doc_ids_factory(scope):
         return staticmethod(lambda project_id: scope.get(project_id))
 
 
@@ -137,7 +137,7 @@ def _make_graph(rows, scope):
     from src.light_graph import LightGraph
 
     graph = _StubGraph(rows, scope)
-    graph._project_file_names = lambda project_id: scope.get(project_id)
+    graph._project_doc_ids = lambda project_id: scope.get(project_id)
     graph.search_by_topic = LightGraph.search_by_topic.__get__(graph, _StubGraph)
     return graph
 
@@ -147,7 +147,7 @@ _THEIRS = ("d2", "theirs.pdf", "2023-01-02", "s", "r", "subject", "letter", "top
 
 
 def test_notice_search_returns_only_the_active_projects_documents():
-    graph = _make_graph([_MINE, _THEIRS], {"p1": {"mine.pdf"}})
+    graph = _make_graph([_MINE, _THEIRS], {"p1": {"d1"}})
     names = [row["file_name"] for row in graph.search_by_topic("subject", project_id="p1")]
     assert names == ["mine.pdf"], "another project's document leaked into related_docs"
 
@@ -160,12 +160,12 @@ def test_notice_search_returns_nothing_without_a_project_scope():
 
 def test_notice_search_fails_closed_when_the_scope_lookup_breaks():
     graph = _make_graph([_MINE, _THEIRS], {})
-    graph._project_file_names = lambda project_id: None  # lookup failure
+    graph._project_doc_ids = lambda project_id: None  # lookup failure
     assert graph.search_by_topic("subject", project_id="p1") == []
 
 
 def test_notice_search_uses_the_request_scoped_project_by_default():
-    graph = _make_graph([_MINE, _THEIRS], {"p1": {"mine.pdf"}})
+    graph = _make_graph([_MINE, _THEIRS], {"p1": {"d1"}})
     set_current_project("p1")
     try:
         names = [row["file_name"] for row in graph.search_by_topic("subject")]

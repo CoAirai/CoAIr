@@ -168,17 +168,6 @@ async def list_library(
             project_chunks.extend(_edinburgh_data_library_docs(project.project_id))
         return project_chunks
 
-    if _corpus_of(user) == "edinburgh":
-        # Legacy account only: its documents were ingested before projects
-        # existed and carry no project_id, so the corpus tag is the only
-        # boundary they have. Nobody else reaches this branch.
-        try:
-            reg_names = {r.file_name for r in registry.get_completed()}
-            docs = _vectors_only_library_docs(reg_names)
-            docs.extend(_edinburgh_data_library_docs())  # Excel/CSV data tables
-            return docs
-        except Exception:
-            return []
     # An empty project is empty. This used to fall back to every completed
     # registry document on the platform, so creating a project was enough to
     # list another tenant's library.
@@ -216,48 +205,6 @@ async def library_summary(
                 "by_file_type": dict(by_file_type),
                 "by_doc_type": {"data_file": len(data_docs)} if data_docs else {},
                 "total_tables": sum(len(d.table_names) for d in data_docs)}
-
-    # 'edinburgh' users: stats from the bulk vectors-only corpus (chunk store),
-    # so the home PROJECT LIBRARY widget reflects their own documents, not the demo.
-    if _corpus_of(user) == "edinburgh":
-        n = 0
-        try:
-            from src.chunk_store import get_chunk_store
-            reg_names = {r.file_name for r in registry.get_completed()}
-            con = get_chunk_store().connection()
-            rows = con.execute(
-                "SELECT DISTINCT file_name FROM chunks "
-                "WHERE file_name IS NOT NULL AND file_name <> ''"
-            ).fetchall()
-            n = sum(1 for (fn,) in rows if fn not in reg_names)
-        except Exception:
-            n = 0
-
-        # The spreadsheets live in the catalog, not the chunk store, so the
-        # vectors-only count above misses them entirely. /library already
-        # solves this with _edinburgh_data_library_docs(); reuse it rather
-        # than reporting zero. This used to be hardcoded to 0 with the note
-        # "bulk corpus has no spreadsheets" — true when written, false since
-        # the Excel ingest, which left the home PROJECT LIBRARY widget
-        # claiming 0 tables next to a sidebar listing 122 spreadsheets.
-        data_docs = _edinburgh_data_library_docs()
-
-        by_file_type: dict[str, int] = {}
-        if n:
-            by_file_type["document"] = n
-        if data_docs:
-            by_file_type["data"] = len(data_docs)
-
-        return {
-            "total_files": n + len(data_docs),
-            "by_file_type": by_file_type,
-            # Same label the registry branch uses for spreadsheets, so the
-            # doc-type chips read consistently across corpora. The bulk
-            # documents carry no notice metadata, so they stay unclassified
-            # and roll into OTHER as before.
-            "by_doc_type": {"data_file": len(data_docs)} if data_docs else {},
-            "total_tables": sum(len(d.table_names) for d in data_docs),
-        }
 
     # An empty project reports zero. The previous fallback counted every
     # completed registry document on the platform, which is another tenant's

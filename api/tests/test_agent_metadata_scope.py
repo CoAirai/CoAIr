@@ -105,7 +105,7 @@ class MetadataScopeTests(unittest.TestCase):
             set_current_project('empty-project')
             self.assertEqual(self.hybrid._build_table_context('cost'), 'No reliable data tables loaded.')
 
-    def test_legacy_corpus_table_policy_is_preserved(self):
+    def test_legacy_corpus_tag_cannot_expand_project_table_context(self):
         da = MagicMock()
         da.get_tables_for_project.return_value = []
         da.get_tables_for_corpus.return_value = ['legacy-edinburgh']
@@ -115,7 +115,8 @@ class MetadataScopeTests(unittest.TestCase):
         self.hybrid._jargon = SimpleNamespace(build_column_context=lambda columns: '')
         with patch('src.document_rag._current_user_corpus', return_value='edinburgh'):
             text = self.hybrid._build_table_context('cost')
-            self.assertIn('legacy-edinburgh', text)
+            self.assertEqual(text, 'No reliable data tables loaded.')
+            da.get_tables_for_corpus.assert_not_called()
             self.assertNotIn('costs-b', text)
 
 

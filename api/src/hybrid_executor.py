@@ -85,7 +85,7 @@ class HybridExecutor:
         project_id = get_current_project_id()
         scope = da.get_tables_for_project(project_id) if project_id else None
         corpus = _current_user_corpus()
-        if not scope and corpus:
+        if not project_id and corpus:
             scope = da.get_tables_for_corpus(corpus)
         if project_id and scope is None:
             scope = []

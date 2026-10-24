@@ -18,6 +18,7 @@ from .config import (
 )
 from .types import QueryType, RouterDecision, LLMUsage
 from .logger import logger, log_separator
+from .project_context import get_current_project_id
 
 
 # ── Keyword sets (English only) ───────────────────────────────
@@ -429,7 +430,7 @@ class QueryRouter:
 
         project_id = get_current_project_id()
         registry = get_document_registry()
-        completed = registry.get_completed(project_id=project_id or None)
+        completed = registry.get_completed(project_id=project_id)
 
         # ── File inventory (grouped by type) ──
         emails = [r for r in completed if r.file_type == "email"]
@@ -1643,7 +1644,7 @@ class QueryRouter:
             logger.debug(f"[FilenameResolve] registry unavailable: {e}")
             return []
 
-        all_completed = reg.get_completed()
+        all_completed = reg.get_completed(project_id=get_current_project_id())
         if not all_completed:
             return []
 
@@ -1673,7 +1674,7 @@ class QueryRouter:
 
         # 1) Substring hit on filename — strongest signal (within candidate set)
         for tok in tokens:
-            for rec in reg.search_by_name(tok):
+            for rec in reg.search_by_name(tok, project_id=get_current_project_id()):
                 if rec.file_name in candidate_names:
                     hits[rec.file_name] = hits.get(rec.file_name, 0) + 100
 
@@ -2017,22 +2018,16 @@ class QueryRouter:
         }
 
     def _allowed_data_tables(self) -> Optional[List[str]]:
-        """The DuckDB tables this request may touch.
+        """Keep request data access within the active project, including empty ones.
 
-        Project is the boundary: the analyzer's table registry is process-wide,
-        so scoping decides whose spreadsheets answer the question. The legacy
-        corpus tag is consulted only for the one pre-project account whose
-        catalog entries carry no project_id — otherwise a fail-closed empty
-        list. ``None`` (unrestricted) is reachable only by an unscoped script.
+        Legacy corpus tags are used only by unscoped maintenance scripts.
         """
         from .document_rag import _current_user_corpus
         from .project_context import get_current_project_id
 
         project_id = get_current_project_id()
         if project_id:
-            tables = self.data_analyzer.get_tables_for_project(project_id)
-            if tables:
-                return tables
+            return self.data_analyzer.get_tables_for_project(project_id)
         corpus = _current_user_corpus()
         if corpus:
             # Legacy account (e.g. 'edinburgh'): its tables predate projects.
@@ -2051,19 +2046,16 @@ class QueryRouter:
             allowed_tables = self.data_analyzer.get_tables_for_doc_ids(doc_ids)
         else:
             allowed_tables = self._allowed_data_tables()
-            # Empty list = nothing registered for this scope. Short out cleanly;
-            # the SQL path treats an empty allow-list as falsy and would
-            # otherwise fall through to every table in the process-wide DuckDB.
-            if allowed_tables == []:
-                logger.info("   No data tables registered for this scope → clean no-data.")
-                return {
-                    "query": query,
-                    "query_type": QueryType.DATA.value,
-                    "answer": "No data tables are available for your document set yet.",
-                    "sources": [],
-                    "sql": None,
-                    "confidence": 0.5,
-                }
+        project_tables = self._allowed_data_tables()
+        if project_tables is not None:
+            allowed_tables = [name for name in (allowed_tables or []) if name in project_tables]
+        if allowed_tables == []:
+            return {
+                "query": query,
+                "query_type": QueryType.DATA.value,
+                "answer": "No data tables are available for your document set yet.",
+                "sources": [], "sql": None, "confidence": 0.5,
+            }
 
         sheet_result = self._try_sheet_reader(query, allowed_tables)
         if sheet_result is not None:
@@ -2502,13 +2494,13 @@ class QueryRouter:
             graph = get_light_graph()
 
             # Hydrate registry from existing sources if empty
-            all_docs = registry.get_all()
-            if not all_docs:
+            all_docs = registry.get_all(project_id=get_current_project_id())
+            if not all_docs and not get_current_project_id():
                 self._hydrate_registry(registry)
-                all_docs = registry.get_all()
+                all_docs = registry.get_all(project_id=get_current_project_id())
 
             completed = [r for r in all_docs if r.status == "completed"]
-            graph_stats = graph.get_document_stats()
+            graph_stats = graph.get_document_stats() if not get_current_project_id() else {}
 
             lines = [f"**Document Library Overview:**\n"]
             lines.append(f"- **Total files:** {len(completed)}")
@@ -2559,10 +2551,10 @@ class QueryRouter:
         registry = get_document_registry()
 
         # Hydrate registry from existing sources if empty
-        all_docs = registry.get_all()
-        if not all_docs:
+        all_docs = registry.get_all(project_id=get_current_project_id())
+        if not all_docs and not get_current_project_id():
             self._hydrate_registry(registry)
-            all_docs = registry.get_all()
+            all_docs = registry.get_all(project_id=get_current_project_id())
 
         completed = [r for r in all_docs if r.status == "completed"]
 
@@ -2726,10 +2718,10 @@ class QueryRouter:
         registry = get_document_registry()
 
         # Hydrate if needed
-        all_docs = registry.get_all()
-        if not all_docs:
+        all_docs = registry.get_all(project_id=get_current_project_id())
+        if not all_docs and not get_current_project_id():
             self._hydrate_registry(registry)
-            all_docs = registry.get_all()
+            all_docs = registry.get_all(project_id=get_current_project_id())
 
         completed = [r for r in all_docs if r.status == "completed"]
         if not completed:
@@ -2795,6 +2787,10 @@ class QueryRouter:
         results: List[Dict[str, Any]] = []
         seen_doc_ids: set = set()
         registry = get_document_registry()
+
+        project_id = get_current_project_id()
+        if not project_id:
+            return []
 
         # 1. Light graph: notices (richest metadata)
         try:
@@ -2862,7 +2858,7 @@ class QueryRouter:
 
         # 3. Registry fallback: filename match
         try:
-            name_matches = registry.search_by_name(topic)
+            name_matches = registry.search_by_name(topic, project_id=project_id)
             for rec in name_matches:
                 if rec.doc_id in seen_doc_ids:
                     continue
@@ -2907,10 +2903,10 @@ class QueryRouter:
                     "MAX(CASE WHEN lower(file_name) LIKE ? THEN 1 ELSE 0 END) AS name_hit, "
                     "COUNT(*) AS hits "
                     "FROM chunks "
-                    "WHERE lower(file_name) LIKE ? OR lower(text) LIKE ? "
+                    "WHERE project_id = ? AND (lower(file_name) LIKE ? OR lower(text) LIKE ?) "
                     "GROUP BY doc_id, file_name "
                     "ORDER BY name_hit DESC, hits DESC LIMIT ?",
-                    [kw, kw, kw, limit],
+                    [kw, project_id, kw, kw, limit],
                 ).fetchall()
                 for doc_id, file_name, _name_hit, _hits in rows:
                     if not doc_id or doc_id in seen_doc_ids:
@@ -2955,7 +2951,7 @@ class QueryRouter:
                 except Exception:
                     notice_extractor = None
 
-                rag_result = self.document_rag.query(topic, top_k=10)
+                rag_result = self.document_rag.query(topic, top_k=10, project_id=project_id, synthesize=False)
                 for src in rag_result.get("sources", []):
                     file_name = src.get("file_name", "")
                     doc_id = src.get("doc_id", "")

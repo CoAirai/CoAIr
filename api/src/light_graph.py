@@ -1410,8 +1410,8 @@ class LightGraph:
         return "\n".join(lines)
 
     @staticmethod
-    def _project_file_names(project_id: str) -> Optional[Set[str]]:
-        """Every file_name the given project owns, from the chunk store.
+    def _project_doc_ids(project_id: str) -> Optional[Set[str]]:
+        """Every document ID the given project owns, from the chunk store.
 
         The notices index is global — it is built from graph nodes, which carry
         no project at all — so it cannot scope itself. The chunk store can: its
@@ -1423,7 +1423,7 @@ class LightGraph:
             from .chunk_store import get_chunk_store
             con = get_chunk_store().connection()
             rows = con.execute(
-                "SELECT DISTINCT file_name FROM chunks WHERE project_id = ?",
+                "SELECT DISTINCT doc_id FROM chunks WHERE project_id = ?",
                 [project_id],
             ).fetchall()
             return {str(row[0]) for row in rows if row and row[0]}
@@ -1452,7 +1452,7 @@ class LightGraph:
                 project_id = get_current_project_id()
             except Exception:  # noqa: BLE001 - absent context means no scope
                 project_id = ""
-        scope = self._project_file_names(project_id) if project_id else None
+        scope = self._project_doc_ids(project_id) if project_id else None
         if scope is None:
             logger.warning(
                 "[LightGraph] search_by_topic refused: no project scope "
@@ -1495,21 +1495,20 @@ class LightGraph:
                 SELECT doc_id, file_name, date, sender, recipient, subject, doc_type, topics,
                        ({score_expr}) AS match_score
                 FROM notices
-                WHERE {where_clause}
+                WHERE doc_id IN ({",".join("?" for _ in scope)}) AND ({where_clause})
                 ORDER BY match_score DESC, date DESC
                 LIMIT ?
             """
-            # Over-fetch: the project filter below removes rows, and dropping
-            # them after LIMIT would silently shrink an in-project result set.
+            # Membership is applied in SQL before ranking and limiting.
             rows = self._db.execute(
-                sql, params + where_params + [max(limit * 20, 200)]
+                sql, params + sorted(scope) + where_params + [limit]
             ).fetchall()
             cols = ["doc_id", "file_name", "date", "sender", "recipient",
                     "subject", "doc_type", "topics", "match_score"]
             out = []
             for row in rows:
                 record = dict(zip(cols, row))
-                if str(record.get("file_name") or "") not in scope:
+                if str(record.get("doc_id") or "") not in scope:
                     continue          # another project's document — never leak it
                 out.append(record)
                 if len(out) >= limit:

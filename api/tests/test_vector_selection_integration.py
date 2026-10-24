@@ -16,7 +16,7 @@ def test_selected_file_retrieval_and_agent_read_cannot_widen_by_filename(monkeyp
              metadata={'doc_id': doc, 'file_id': doc, 'file_name': name,
                        'project_id': project, 'page_number': 1})
              for doc, name, project in [('d1', 'one.pdf', 'a'), ('d2', 'two.pdf', 'a'),
-                                       ('d3', 'foreign.pdf', 'b')]]
+                                       ('d3', 'foreign.pdf', 'b'), ('d4', 'one.pdf', 'b')]]
     store.add(nodes)
     rag = object.__new__(DocumentRAG)
     rag.index = VectorStoreIndex.from_vector_store(store, embed_model=MockEmbedding(embed_dim=2))
@@ -27,5 +27,14 @@ def test_selected_file_retrieval_and_agent_read_cannot_widen_by_filename(monkeyp
         assert rag._dense_candidates('utilities', 10, ['d2'], ['one.pdf'], project_id='a') == []
         assert rag._dense_candidates('utilities', 10, ['d3'], None, project_id='a') == []
         assert {row['doc_id'] for row in rag._dense_candidates('utilities', 10, None, None, project_id='a')} == {'d1', 'd2'}
+        # Optional metadata retry may broaden topics, never the project boundary.
+        monkeypatch.setattr('src.config.ENABLE_HYBRID_RETRIEVAL', False)
+        def unavailable_glossary():
+            raise RuntimeError('no glossary for this isolated test')
+        monkeypatch.setattr('src.jargon_manager.get_jargon_manager', unavailable_glossary)
+        result = rag.query('utilities', synthesize=False, rerank=False, project_id='a',
+                           payload_filters={'project_id': 'b', 'doc_type': 'absent'})
+        assert {row['doc_id'] for row in result['sources']} == {'d1', 'd2'}
+
     finally:
         client.close()

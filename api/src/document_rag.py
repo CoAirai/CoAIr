@@ -121,32 +121,21 @@ def _require_project_id(project_id: str = "") -> str:
     return resolved
 
 
-_EDIN_NAMES_CACHE = {"set": None, "ts": 0.0}
-
-
 def edinburgh_filenames():
-    """Cached set of file_names in the bulk (edinburgh) corpus — i.e. the distinct
-    file names mirrored in the chunk store. Used as a corpus allow-list to drop any
-    demo source (light_graph notices / SQL tables) that leaks into an edinburgh
-    user's citations or related docs. 5-min TTL; empty set on failure (= no filter)."""
-    import time
-    now = time.time()
-    c = _EDIN_NAMES_CACHE
-    if c["set"] is not None and (now - c["ts"]) < 300:
-        return c["set"]
-    s = set()
+    """File names in the active project only; legacy corpus tags grant no access."""
+    project_id = _current_project_id()
+    if not project_id:
+        return set()
     try:
         from .chunk_store import get_chunk_store
         con = get_chunk_store().connection()
         rows = con.execute(
-            "SELECT DISTINCT file_name FROM chunks WHERE file_name IS NOT NULL "
-            "AND file_name <> ''"
+            "SELECT DISTINCT file_name FROM chunks WHERE project_id = ?",
+            [project_id],
         ).fetchall()
-        s = {r[0] for r in rows if r[0]}
+        return {row[0] for row in rows if row[0]}
     except Exception:
-        pass
-    c["set"], c["ts"] = s, now
-    return s
+        return set()
 
 
 
@@ -1369,7 +1358,9 @@ class DocumentRAG:
                 highlight += '...'
 
             sources.append({
-                "doc_id": meta.get("doc_id", generate_doc_id(file_path)) if file_path else "",
+                "doc_id": meta.get("file_id") or meta.get("doc_id") or (
+                    generate_doc_id(file_path) if file_path else ""
+                ),
                 "file_name": file_name,
                 "file_path": file_path,
                 "page_number": page_num,
@@ -1571,7 +1562,7 @@ class DocumentRAG:
                 total = 1
             out.append({
                 "key": f"{fname}::{page}",
-                "doc_id": meta.get("doc_id", ""),
+                "doc_id": meta.get("file_id") or meta.get("doc_id", ""),
                 "file_name": fname,
                 "file_path": meta.get("file_path", ""),
                 "page_number": page,
@@ -1749,7 +1740,9 @@ class DocumentRAG:
                 highlight += '...'
 
             sources.append({
-                "doc_id": meta.get("doc_id", generate_doc_id(file_path)) if file_path else "",
+                "doc_id": meta.get("file_id") or meta.get("doc_id") or (
+                    generate_doc_id(file_path) if file_path else ""
+                ),
                 "file_name": file_name,
                 "file_path": file_path,
                 "page_number": page_num,
@@ -1857,7 +1850,7 @@ class DocumentRAG:
             if len(sentences) > 3:
                 highlight += '...'
             sources.append({
-                "doc_id": meta.get("doc_id", ""),
+                "doc_id": meta.get("file_id") or meta.get("doc_id", ""),
                 "file_name": file_name,
                 "file_path": meta.get("file_path", ""),
                 "page_number": page_num,

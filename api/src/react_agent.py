@@ -363,9 +363,12 @@ class ReActAgent:
                     rec = reg.get(s.get("doc_id"))
                 except Exception:
                     rec = None
+            from .project_context import get_current_project_id
+            if rec and getattr(rec, "project_id", "") != get_current_project_id():
+                rec = None
             summary = getattr(rec, "llm_summary", "") if rec else ""
             topics = getattr(rec, "llm_topics", None) if rec else None
-            cluster = getattr(rec, "cluster_label", "") if rec else ""
+            cluster = ""  # Global cluster labels may include other projects.
             doc_type = (getattr(rec, "file_type", "") if rec else "") or s.get("doc_type", "")
             gist = (summary or s.get("highlight_text") or (s.get("text_snippet") or "")[:160]).strip()
             if topics:
