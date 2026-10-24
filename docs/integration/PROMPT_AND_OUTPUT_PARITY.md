@@ -9,7 +9,7 @@ roles, billing and UI design. This release does not replace main or production.
 The review inventories named prompt expressions across ten agent/report modules
 and both chronology prompt files. **32 contracts match the RAG reference**, with
 no missing inventoried prompt. They are pinned in
-`api/config/prompts/rag_accepted_contract.json` and tested in the API gate.
+`api/tests/fixtures/rag_accepted_contract.json` and tested in the API gate.
 The canonical expression fingerprint works across Python 3.11 and 3.14.
 Text/AST parity protects reviewed instructions; it is not proof of every model
 response being equally correct.

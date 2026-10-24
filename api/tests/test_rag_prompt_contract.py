@@ -11,7 +11,7 @@ import pytest
 from src.prompt_contract import signature
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE = json.loads((ROOT/'config/prompts/rag_accepted_contract.json').read_text())
+BASELINE = json.loads((Path(__file__).parent/'fixtures/rag_accepted_contract.json').read_text())
 
 
 @pytest.mark.parametrize('contract', BASELINE['contracts'], ids=lambda x: x['module']+':'+x['prompt'])
