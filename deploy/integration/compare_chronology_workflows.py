@@ -95,7 +95,7 @@ def main():
         known = {e['source_id']:e for e in raw['evidence']}
         cited = [sid for e in raw['entries'] for c in e['claims'] for sid in c['source_ids']]
         result.update(status='completed', entries=len(raw['entries']),
-            dated_entries=sum(e.get('event_type')!='overview' for e in raw['entries']),
+            event_rows=sum(e.get('event_type')!='overview' for e in raw['entries']),
             claims=sum(len(e['claims']) for e in raw['entries']),
             evidence_passages=len(known), evidence_files=len({e['file_name'] for e in raw['evidence']}),
             invalid_source_ids=sorted(set(cited)-set(known)), word=word,

@@ -95,7 +95,6 @@
       "run_id": "2b69b56e6da3431a9455",
       "status": "completed",
       "entries": 32,
-      "dated_entries": 31,
       "claims": 40,
       "evidence_passages": 124,
       "evidence_files": 33,
@@ -389,7 +388,8 @@
         "date_flags": [],
         "all_sources_resolve": true,
         "word_footnotes_resolve": true
-      }
+      },
+      "event_rows": 31
     },
     {
       "engine": "coair",
@@ -408,7 +408,6 @@
       "run_id": "2f0db8c4d9624dfba81f",
       "status": "completed",
       "entries": 31,
-      "dated_entries": 30,
       "claims": 41,
       "evidence_passages": 121,
       "evidence_files": 34,
@@ -694,7 +693,8 @@
         "date_flags": [],
         "all_sources_resolve": true,
         "word_footnotes_resolve": true
-      }
+      },
+      "event_rows": 30
     },
     {
       "engine": "rag",
@@ -713,7 +713,6 @@
       "run_id": "3d04282e49cd4ca48ad7",
       "status": "completed",
       "entries": 5,
-      "dated_entries": 4,
       "claims": 8,
       "evidence_passages": 65,
       "evidence_files": 16,
@@ -942,7 +941,8 @@
         "date_flags": [],
         "all_sources_resolve": true,
         "word_footnotes_resolve": true
-      }
+      },
+      "event_rows": 4
     },
     {
       "engine": "coair",
@@ -1023,7 +1023,6 @@
       "attempt": 2,
       "status": "completed",
       "entries": 10,
-      "dated_entries": 9,
       "claims": 16,
       "evidence_passages": 83,
       "evidence_files": 21,
@@ -1257,7 +1256,8 @@
         "date_flags": [],
         "all_sources_resolve": true,
         "word_footnotes_resolve": true
-      }
+      },
+      "event_rows": 9
     },
     {
       "engine": "rag",
@@ -1276,7 +1276,6 @@
       "run_id": "b30f1849049c4667ae7a",
       "status": "completed",
       "entries": 7,
-      "dated_entries": 6,
       "claims": 13,
       "evidence_passages": 50,
       "evidence_files": 22,
@@ -1507,7 +1506,8 @@
         "date_flags": [],
         "all_sources_resolve": true,
         "word_footnotes_resolve": true
-      }
+      },
+      "event_rows": 6
     },
     {
       "engine": "coair",
@@ -1527,7 +1527,6 @@
       "attempt": 1,
       "status": "completed",
       "entries": 6,
-      "dated_entries": 5,
       "claims": 15,
       "evidence_passages": 51,
       "evidence_files": 21,
@@ -1755,7 +1754,8 @@
         "date_flags": [],
         "all_sources_resolve": true,
         "word_footnotes_resolve": true
-      }
+      },
+      "event_rows": 5
     }
   ],
   "manual_review": [
