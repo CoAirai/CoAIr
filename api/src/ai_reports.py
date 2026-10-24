@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from dataclasses import asdict
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -164,14 +165,17 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
             doc_ids=list(doc_ids) or None,
         )
 
-    from .jargon_manager import prepare_query
+    # Planning and rag.query already expand terminology. Avoid duplicate work
+    # and carry user, project, billing and progress context into each worker.
+    questions = list(dict.fromkeys(q.strip() for q in questions if q.strip()))
     collected: List[Dict] = []
     with ThreadPoolExecutor(max_workers=min(6, max(2, len(questions) * 2))) as pool:
         futures = []
         for question in questions:
-            prepared = prepare_query(question)
-            for variant in prepared.retrieval_queries[:2]:
-                futures.extend((pool.submit(dense, variant), pool.submit(bm25, variant)))
+            futures.extend((
+                pool.submit(copy_context().run, dense, question),
+                pool.submit(copy_context().run, bm25, question),
+            ))
         for future in futures:
             try:
                 collected.extend(_rank_normalised(future.result()))

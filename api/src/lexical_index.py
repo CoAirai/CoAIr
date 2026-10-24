@@ -48,19 +48,34 @@ class LexicalIndex:
                 return True
             con = cs.connection()
             try:
-                con.execute("INSTALL fts; LOAD fts;")
+                try:
+                    con.execute("LOAD fts")
+                except Exception:
+                    con.execute("INSTALL fts; LOAD fts")
+                existing = con.execute(
+                    "SELECT 1 FROM information_schema.schemata "
+                    "WHERE schema_name='fts_main_chunks' LIMIT 1"
+                ).fetchone()
+                if existing and not cs.is_dirty():
+                    self._fts_ready = True
+                    self._fts_available = True
+                    logger.info("[Lexical] Reusing persisted FTS index")
+                    return True
                 con.execute(
                     "PRAGMA create_fts_index('chunks', 'chunk_id', 'text', overwrite=1)"
                 )
                 self._fts_ready = True
                 self._fts_available = True
                 cs.mark_clean()
+                cs.checkpoint()
                 logger.info("[Lexical] FTS index built over chunks")
                 return True
             except Exception as e:
                 self._fts_available = False
                 logger.warning(f"[Lexical] FTS unavailable, using LIKE fallback: {e}")
                 return False
+            finally:
+                con.close()
 
     def search_chunks(self, query: str, top_k: int = 30,
                       project_id: Optional[str] = None,
