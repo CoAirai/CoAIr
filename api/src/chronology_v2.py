@@ -6,6 +6,8 @@ import hashlib
 import json
 import re
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
@@ -805,13 +807,7 @@ def synthesize(
         f"EVENT CLUSTERS:\n{json.dumps(ordered, ensure_ascii=False)}\n\n"
         f"EVIDENCE BEGIN\n{evidence_markdown(selected)}\nEVIDENCE END"
     )
-    overview = call_step(
-        "synthesis:overview", overview_hash, overview_prompt,
-        schema_name="chronology_v2_overview", validation_model=OverviewModel,
-    )
-
-    entries: List[Dict] = []
-    for batch_number, batch in enumerate(_synthesis_batches(ordered, evidence), 1):
+    def synthesize_batch(batch_number: int, batch: List[Dict]) -> List[Dict]:
         expected_ids = {str(item["cluster_id"]) for item in batch}
         batch_ids = {source_id for event in batch for source_id in _candidate_source_ids(event)}
         batch_evidence = [item for item in evidence if item.source_id in batch_ids]
@@ -839,7 +835,22 @@ def synthesize(
             input_hash, prompt, schema_name="chronology_v2_event_batch",
             validation_model=EventSynthesisModel, semantic_validator=batch_valid,
         )
-        entries.extend(output.get("entries", []))
+        return list(output.get("entries", []))
+
+    # These drafts use independent evidence batches. Keep provider concurrency
+    # bounded and collect in batch order; every claim is still verified below.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        overview_future = pool.submit(
+            copy_context().run, call_step,
+            "synthesis:overview", overview_hash, overview_prompt,
+            schema_name="chronology_v2_overview", validation_model=OverviewModel,
+        )
+        event_futures = [
+            pool.submit(copy_context().run, synthesize_batch, number, batch)
+            for number, batch in enumerate(_synthesis_batches(ordered, evidence), 1)
+        ]
+        overview = overview_future.result()
+        entries = [entry for future in event_futures for entry in future.result()]
 
     draft = {
         "overview_claims": overview.get("overview_claims", []),
