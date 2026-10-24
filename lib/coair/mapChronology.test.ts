@@ -16,6 +16,7 @@ describe("mapChronologyJob", () => {
             stage: "synthesis", progress: 0.68}, "org-1");
         expect(report.status).toBe("generating");
         expect(chronologyProgressLabel(report.stage, report.progress)).toBe("Writing chronology · 68%");
+        expect(chronologyProgressLabel("word", 0.9)).toBe("Preparing Word document · 90%");
         expect(chronologyProgressLabel("unknown")).toBe("Generating");
     });
     it("turns API entries and evidence into the report UI shape", () => {

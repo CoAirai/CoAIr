@@ -51,6 +51,7 @@ export function chronologyProgressLabel(stage?: string, progress?: number): stri
         aggregation: "Combining events",
         synthesis: "Writing chronology",
         verification: "Verifying sources",
+        word: "Preparing Word document",
     };
     const label = labels[stage ?? ""] ?? "Generating";
     return typeof progress === "number" && Number.isFinite(progress)
