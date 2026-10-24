@@ -96,14 +96,16 @@ The existing backend SQL artifact now reaches live chat and persisted history.
 The UI displays ordered columns, exact database values, empty-result headings,
 row counts, CSV export, optional provider-independent chart metadata, source
 opening and generated SQL. SQL source metadata resolves the original project-owned
-Excel/CSV rather than an internal Parquet view. Chart code loads only when a chart is actually shown.
+Excel/CSV rather than an internal Parquet view. Chart code loads only when a
+chart is actually shown.
 The current backend preview remains bounded exactly as in RAG, and the UI labels
 how many rows are shown rather than implying that a preview is the full result.
 
 The full structured artifact is stored with each new assistant message so reload
 preserves chart, column order, original total count and source provenance. Older
-messages still reconstruct through the existing response builder. A duplicate with equivalent typed values (including harmless decimal/boolean
-formatting) is suppressed; different analytical tables stay visible.
+messages still reconstruct through the existing response builder. A duplicate
+with equivalent typed values (including harmless decimal/boolean formatting) is
+suppressed; different analytical tables stay visible.
 
 Source tables share one renderer across the side panel, enlarged reader and
 report source viewer. The extra frontend-only 40-row slice is removed; all rows
@@ -115,3 +117,32 @@ conversation reload checks preserve the full artifact and retain project isolati
 Live spreadsheet/browser qualification is recorded in `table-ui-check.json`
 after the immutable integration release. No real email, Stripe or customer
 account-management flow is modified by this work.
+
+
+## Qualified integration release
+
+Commit `d5b321773a71147e2e277bd468df66ffaaa1e4e1` is deployed to
+`https://coair-test.duckdns.org`. The protected deployment passed 352 API tests
+and 13 subtests, three PostgreSQL tests, 159 frontend tests across 39 files,
+TypeScript validation, the production frontend build and the public smoke.
+The original RAG and other reference containers remained unchanged. Main stays
+at `ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417`.
+
+A real uploaded Excel workbook was indexed in an isolated QA project, queried
+through the live API and through the browser chat composer. Exact zero, false,
+negative and decimal values survived table display and CSV export. The chart
+rendered; history reload retained it. Empty results retained their headings.
+The source control opened the original Excel in both the side panel and expanded
+reader. Only one equivalent result table appeared. The browser recorded no page
+errors. See `table-ui-check.json` and `table-live.png`.
+
+The QA file was deleted and its project archived after validation; the original
+three-document staging project was checked unchanged. Disposable dependency,
+benchmark-store and build directories are removed after saving qualification
+artifacts. Private evidence and actual Word reports remain in protected server
+qualification storage, outside the application and repository.
+
+This is an accepted prompt/output-preservation and structured-result release.
+Full-corpus coverage, normalized-date proof and the earlier hosted account,
+email/payment and database-cutover gates remain separate work before main or
+production promotion. No main/production parity sign-off is implied.

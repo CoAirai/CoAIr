@@ -1,0 +1,101 @@
+{
+  "accepted": true,
+  "commit": "d5b321773a71147e2e277bd468df66ffaaa1e4e1",
+  "origin": "https://coair-test.duckdns.org",
+  "ci_url": "https://github.com/CoAirai/CoAIr/actions/runs/40137967170",
+  "tests": {
+    "api": 352,
+    "api_subtests": 13,
+    "postgresql": 3,
+    "frontend": 159,
+    "frontend_files": 39
+  },
+  "live_api": {
+    "commit": "d5b321773a71147e2e277bd468df66ffaaa1e4e1",
+    "project_id": "5cd02b9e01d24b5b",
+    "accepted": true,
+    "original_file_ids": [
+      "0235aed85faa16ec",
+      "161298c26281926a",
+      "8a04f0812c996d8b"
+    ],
+    "file_id": "1aa9ad1b8f7600b7",
+    "conversation_id": "conv_de5e1dff",
+    "empty_conversation_id": "conv_e2320a0f",
+    "columns": [
+      "month",
+      "amount",
+      "approved"
+    ],
+    "rows": [
+      {
+        "month": "2026-01",
+        "amount": 0.0,
+        "approved": false
+      },
+      {
+        "month": "2026-02",
+        "amount": -12.5,
+        "approved": true
+      },
+      {
+        "month": "2026-03",
+        "amount": 1250.75,
+        "approved": true
+      }
+    ],
+    "chart": {
+      "type": "line",
+      "x": "month",
+      "y": [
+        "amount"
+      ]
+    },
+    "source_file_id": "1aa9ad1b8f7600b7",
+    "history": "exact structured artifact retained",
+    "empty_result": "zero rows and original column headings retained",
+    "source_table": "passed",
+    "cleanup": "own file deleted and QA project archived",
+    "original_project_unchanged": true
+  },
+  "browser": {
+    "password_mfa": "passed",
+    "live_chat_post": "passed",
+    "ordered_columns": [
+      "month",
+      "amount",
+      "approved"
+    ],
+    "exact_values": [
+      [
+        "2026-01",
+        0,
+        false
+      ],
+      [
+        "2026-02",
+        -12.5,
+        true
+      ],
+      [
+        "2026-03",
+        1250.75,
+        true
+      ]
+    ],
+    "equivalent_duplicate_table_removed": true,
+    "line_chart_visible": true,
+    "csv_header_order_and_values": "exact; valid quoted CSV",
+    "source_button": "quality-costs.xlsx; original uploaded registry ID",
+    "source_side_panel": "3 original rows",
+    "source_expanded_dialog": "3 original rows",
+    "history_after_reload": "table, source metadata and chart retained",
+    "empty_result": "zero rows, original month/amount headings and English notice",
+    "page_errors": [],
+    "screenshot": "table-live.png"
+  },
+  "scope": "Disposable isolated staging workbook; not full Edinburgh corpus or hosted billing/account qualification",
+  "cleanup": "own file deleted and QA project archived",
+  "original_project_unchanged": true,
+  "production_and_other_reference_containers": "unchanged; public smoke passed"
+}
