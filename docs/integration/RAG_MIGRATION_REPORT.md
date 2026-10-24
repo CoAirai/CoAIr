@@ -52,15 +52,15 @@ and `report-check.json`.
 |---|---|---|
 | Deployment | Dedicated TLS hostname, isolated SQLite/DuckDB/Qdrant/uploads, automatic branch deployment and rollback guard | Baseline browser, upload, source preview and persistence passed |
 | DuckDB | Independent query cursors; reader results no longer share state | Eight-worker regression; deployed in 533e84f |
-| Lexical index | Durable dirty state, one-time old-DB rebuild, clean persisted-index reuse; Coair async sync retained | Restart/mutation and reuse-decision regressions passed; actual warm FTS reuse still needs runtime proof |
+| Lexical index | Durable dirty state, one-time old-DB rebuild, clean persisted-index reuse; Coair async sync retained | Restart/mutation and reuse-decision regressions passed; native runtime reused the persisted FTS index on release 3b98054 |
 | Research retrieval | Deduplicated questions and independently copied request context per worker | Context/correlation regressions; deployed in 533e84f |
 | Planner / ReAct metadata | Project-local document topics and summaries; project/explicit SQL allow-list applied before ranking; global graph-party hint omitted | Eight project/empty-scope/selected-document/failure/legacy-table regressions; deployed in aa234b1 |
 | Glossary | Single-pass expansion and replacement over original matches | Four regressions; deployed in aa234b1; the repeated-query OOM did not recur |
 | Selected evidence | Keep raw source text out of glossary/classification/retrieval and supply it only to synthesis; preserve Coair follow-up history | Five focused tests; deployed in c3d1b8b; selected-PDF chat passed in 13.74 seconds with completed progress |
 | Source references | Respect selected IDs during metadata enrichment, retain actual page evidence, resolve canonical IDs within active project | Deployed in c3d1b8b; actual selected-PDF answer returned only its page citation |
-| Chronology validation | Ignore sentence punctuation around supported numbers; normalize proven day precision; prune invalid claims before independent verification | Deployed in c3d1b8b; full report qualification failed at overview synthesis; capacity alignment is the next patch |
-| Word download | Serve stored narrative by default; table remains available through explicit `format=table`; retain Coair XML safety | Deployed in c3d1b8b; default/explicit-format/project-boundary regression passed; successful real report still required |
-| Failed reports | Hide failed jobs from normal project list; keep active jobs and direct diagnostics | Deployed in c3d1b8b; list/diagnostic regression passed |
+| Chronology validation | Ignore sentence punctuation around supported numbers; normalize proven day precision; prune invalid claims before independent verification | Deployed in c3d1b8b; first overview failed; RAG capacity/style alignment in 3b98054 produced a ready report |
+| Word download | Serve stored narrative by default; table remains available through explicit `format=table`; retain Coair XML safety | Deployed in c3d1b8b; default/explicit-format/project-boundary regression passed; real narrative DOCX passed: 11 resolving footnotes, no tables |
+| Failed reports | Hide failed jobs from normal project list; keep active jobs and direct diagnostics | Deployed in c3d1b8b; list/diagnostic regression and actual failed-list exclusion passed |
 
 ## Verified releases and observed failures
 
@@ -156,3 +156,32 @@ fallback. A materialized-score query fixes it. A real DuckDB regression with a
 side-effecting scoring UDF fails on the old query and passes on the new query,
 including project and document-ID filtering. Native FTS query and warm-index
 reuse still need runtime confirmation after this deploy.
+
+## Successful retry and current boundaries
+
+Release 3b98054 passed 121 API tests and 13 subtests, then deployed:
+https://github.com/CoAirai/CoAIr/actions/runs/40051411916.
+The same failed job was retried through the API and became ready in 48.97 seconds:
+8 entries (including the overview), 11 resolving Word footnotes, a 38,543-byte
+narrative DOCX and no Word tables. Every retained claim source ID resolved to
+the eight evidence items. The actual artifact is
+/opt/coair-integration/qualification-chronology.docx; it is also accessible
+through the authenticated report download in the test application.
+
+A real selected-PDF answer took 13.5 seconds, returned one correct page citation
+and five completed progress steps. Runtime logs confirmed persisted FTS reuse;
+the BM25 Binder/LIKE fallback error did not recur during these checks.
+
+This is structural/source-link and small-sample qualification, not complete
+content-quality parity. The Word sample has 11 paragraphs; the existing RAG
+reference has 29 paragraphs and 53 footnote references on a different corpus.
+Those counts cannot establish a fair quality or speed comparison. The date
+gap remains material: the sample contains short date_evidence anchors such as
+"3rd" and "29th April". Correct-looking normalized dates still need strict
+proof of the full claimed precision.
+
+The public Next.js mapping was also dropping backend stage/progress and showed
+only Generating. A small UI patch preserves these fields and displays English
+stage labels and the actual percentage in the existing status line. Its
+frontend build/test and browser checks are the next gate; layout, payment and
+management flows remain outside that change.

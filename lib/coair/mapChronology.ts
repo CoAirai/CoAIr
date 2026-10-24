@@ -42,6 +42,22 @@ export function mapReportStatus(status?: string): ChronologyStatus {
     return "generating";
 }
 
+export function chronologyProgressLabel(stage?: string, progress?: number): string {
+    const labels: Record<string, string> = {
+        research_plan: "Planning research",
+        source_selection: "Selecting sources",
+        evidence_pack: "Preparing evidence",
+        evidence_extraction: "Extracting evidence",
+        aggregation: "Combining events",
+        synthesis: "Writing chronology",
+        verification: "Verifying sources",
+    };
+    const label = labels[stage ?? ""] ?? "Generating";
+    return typeof progress === "number" && Number.isFinite(progress)
+        ? `${label} · ${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`
+        : label;
+}
+
 function mapSources(evidence: CoairReportEvidence[] | undefined): ChronologySource[] {
     return (evidence ?? []).map((item, index) => ({
         id: item.source_id || item.doc_id || `src-${index}`,
@@ -110,6 +126,8 @@ export function mapChronologyJob(
         topic: job.title || "",
         createdAt: job.created_at || new Date().toISOString(),
         status: mapReportStatus(job.status),
+        stage: job.stage,
+        progress: job.progress,
         error: job.error || undefined,
         sections,
         sources,

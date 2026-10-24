@@ -10,7 +10,7 @@ import { useChat } from "@/context/ChatContext";
 import { companyForSession } from "@/lib/workspace/companyForSession";
 import type { ChronologyEvent, ChronologyEventSource } from "@/lib/chronology/events";
 import type { ChronologyCitation, ChronologyReport } from "@/lib/chronology/types";
-import { mapChronologyJob } from "@/lib/coair/mapChronology";
+import { chronologyProgressLabel, mapChronologyJob } from "@/lib/coair/mapChronology";
 import {
     downloadReportDocument,
     getReport,
@@ -337,9 +337,9 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                                         <h1 className="mt-2 max-w-3xl text-3xl font-medium text-strong-950">
                                             {report.title}
                                         </h1>
-                                        <p className="mt-2 text-label-xs text-sub-600">
+                                        <p className="mt-2 text-label-xs text-sub-600" aria-live="polite">
                                             {report.status === "generating"
-                                                ? "Generating. You can close this page; the chronology continues on the server."
+                                                ? `${chronologyProgressLabel(report.stage, report.progress)}. You can close this page; the chronology continues on the server.`
                                                 : report.status === "failed"
                                                   ? "Failed. Retry to run it again."
                                                   : "Read-only record"}

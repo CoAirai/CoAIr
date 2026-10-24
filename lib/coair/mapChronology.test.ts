@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapChronologyJob, mapReportStatus } from "./mapChronology";
+import { chronologyProgressLabel, mapChronologyJob, mapReportStatus } from "./mapChronology";
 
 describe("mapReportStatus", () => {
     it("maps job states onto chronology statuses", () => {
@@ -11,6 +11,13 @@ describe("mapReportStatus", () => {
 });
 
 describe("mapChronologyJob", () => {
+    it("preserves live progress so the report can show the current backend stage", () => {
+        const report = mapChronologyJob({job_id: "job-live", status: "processing",
+            stage: "synthesis", progress: 0.68}, "org-1");
+        expect(report.status).toBe("generating");
+        expect(chronologyProgressLabel(report.stage, report.progress)).toBe("Writing chronology · 68%");
+        expect(chronologyProgressLabel("unknown")).toBe("Generating");
+    });
     it("turns API entries and evidence into the report UI shape", () => {
         const report = mapChronologyJob(
             {
