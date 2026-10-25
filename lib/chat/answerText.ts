@@ -6,6 +6,7 @@ export type AnswerPart =
     | { type: "cite"; name: string; page?: number };
 
 export type AnswerBlock =
+    | { type: "code"; text: string }
     | { type: "heading"; parts: AnswerPart[] }
     | { type: "paragraph"; parts: AnswerPart[] }
     | { type: "table"; headers: string[]; rows: string[][] };
@@ -123,7 +124,7 @@ function lineKind(line: string): "blank" | "rule" | "heading" | "bullet" | "text
     const trimmed = line.trim();
     if (!trimmed) return "blank";
     if (/^[-*_]{3,}$/.test(trimmed)) return "rule";
-    if (/^#{1,6}\s+/.test(trimmed)) return "heading";
+    if (/^(?:#{1,6}\s+|#{2,6}(?=[^#\s]))/.test(trimmed)) return "heading";
     if (
         /^\d+[.)]\s+\S/.test(trimmed) &&
         trimmed.length <= 80 &&
@@ -138,7 +139,7 @@ function lineKind(line: string): "blank" | "rule" | "heading" | "bullet" | "text
 function lineText(line: string, kind: "heading" | "bullet" | "text") {
     const trimmed = line.trim();
     if (kind === "heading") {
-        return trimmed.replace(/^#{1,6}\s+/, "").replace(/\*\*/g, "");
+        return trimmed.replace(/^(?:#{1,6}\s+|#{2,6}(?=[^#\s]))/, "").replace(/\*\*/g, "");
     }
     if (kind === "bullet") {
         return trimmed.replace(/^(?:[-*]|\d+[.)])\s+/, "");
@@ -166,7 +167,11 @@ function isTableSeparator(line: string): boolean {
 }
 
 export function tableCsv(headers: string[], rows: string[][]): string {
-    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const escape = (value: string) => {
+        const numeric = /^[-+]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value.trim());
+        const safe = !numeric && /^[\s\u0000-\u001f]*[=+@-]/.test(value) ? `'${value}` : value;
+        return `"${safe.replace(/"/g, '""')}"`;
+    };
     return [headers, ...rows]
         .map((row) => row.map((cell) => escape(cell)).join(","))
         .join("\n");
@@ -189,6 +194,18 @@ export function parseAnswer(content: string, sources: string[] = []): AnswerBloc
     for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
         const next = lines[index + 1] ?? "";
+        const fence = line.trim().match(/^(`{3,}|~{3,})/);
+        if (fence) {
+            flush();
+            const code: string[] = [];
+            index += 1;
+            while (index < lines.length && !lines[index].trim().startsWith(fence[1])) {
+                code.push(lines[index]);
+                index += 1;
+            }
+            blocks.push({ type: "code", text: code.join("\n") });
+            continue;
+        }
         if (isTableRow(line) && isTableSeparator(next)) {
             flush();
             const headers = tableCells(line);

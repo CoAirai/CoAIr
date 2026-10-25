@@ -1,3 +1,9 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { answerDocumentPayload, downloadAnswerExport, saveAnswerFile } from "@/lib/coair/answerExports";
+import { filterSortRows } from "@/lib/chat/tableRows";
 import Image from "@/components/Image";
 import SqlResult from "./SqlResult";
 import { repeatsSqlTable } from "@/lib/chat/sqlArtifact";
@@ -74,15 +80,39 @@ function AnswerTable({
     rows,
     citations,
     onOpen,
+    values,
 }: {
     headers: string[];
     rows: string[][];
+    values?: unknown[][];
     citations?: Citation[];
     onOpen: (citation: Citation) => void;
 }) {
+    const { session } = useAuth();
+    const [search, setSearch] = useState("");
+    const [sort, setSort] = useState<{ column: number; descending: boolean } | null>(null);
+    const [exporting, setExporting] = useState(false);
+    const [exportError, setExportError] = useState("");
+    const visibleRows = useMemo(() => filterSortRows(rows, search, sort), [rows, search, sort]);
+    async function exportExcel() {
+        if (!session?.accessToken || !session.projectId) return;
+        setExporting(true);
+        setExportError("");
+        try {
+            const blob = await downloadAnswerExport("spreadsheet", session.accessToken, session.projectId, {
+                table_columns: headers, table_rows: values ?? rows,
+            });
+            saveAnswerFile(blob, "coair-table.xlsx");
+        } catch (error) {
+            setExportError(error instanceof Error ? error.message : "Unable to download Excel workbook.");
+        } finally { setExporting(false); }
+    }
     return (
         <div className="my-1 overflow-hidden rounded-xl border border-stroke-soft-200">
-            <div className="flex items-center justify-end border-b border-stroke-soft-200 bg-weak-50 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stroke-soft-200 bg-weak-50 px-3 py-2">
+                <input aria-label="Filter table rows" placeholder="Filter rows" value={search} onChange={event => setSearch(event.target.value)} className="min-w-0 rounded-lg border border-stroke-soft-200 bg-white-0 px-2 py-1 text-label-xs" />
+                <span className="text-label-xs text-sub-600">{visibleRows.length} of {rows.length} retained rows</span>
+                {session?.accessToken && session.projectId ? <button type="button" disabled={exporting} onClick={() => void exportExcel()} className="rounded-lg border border-stroke-soft-200 bg-white-0 px-2.5 py-1 text-label-xs disabled:opacity-50">{exporting ? "Exporting…" : "Download Excel"}</button> : null}
                 <button
                     type="button"
                     className="rounded-lg border border-stroke-soft-200 bg-white-0 px-2.5 py-1 text-label-xs text-strong-950 hover:border-stroke-sub-300"
@@ -91,6 +121,7 @@ function AnswerTable({
                     Download CSV
                 </button>
             </div>
+            {exportError ? <p role="alert" className="px-3 py-2 text-label-xs text-red-600">{exportError}</p> : null}
             <div className="overflow-x-auto">
                 <table className="w-full min-w-[36rem] border-collapse text-left">
                     <thead>
@@ -98,19 +129,22 @@ function AnswerTable({
                             {headers.map((header, column) => (
                                 <th
                                     key={`${header}-${column}`}
+                                    aria-sort={sort?.column === column ? (sort.descending ? "descending" : "ascending") : "none"}
                                     className={`px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-sub-600 ${
                                         /value|amount|cost|£/i.test(header)
                                             ? "text-right"
                                             : ""
                                     }`}
                                 >
-                                    {header}
+                                    <button type="button" className="font-semibold" onClick={() => setSort(previous => ({ column, descending: previous?.column === column ? !previous.descending : false }))}>
+                                        {header}{sort?.column === column ? (sort.descending ? " ↓" : " ↑") : ""}
+                                    </button>
                                 </th>
                             ))}
                         </tr>
                     </thead>
                     <tbody>
-                        {rows.map((row, rowIndex) => (
+                        {visibleRows.map((row, rowIndex) => (
                             <tr
                                 key={rowIndex}
                                 className="border-b border-stroke-soft-200 last:border-b-0"
@@ -136,6 +170,7 @@ function AnswerTable({
                                 ))}
                             </tr>
                         ))}
+                        {visibleRows.length === 0 ? <tr><td colSpan={headers.length} className="px-3 py-3 text-sub-600">No matching rows.</td></tr> : null}
                     </tbody>
                 </table>
             </div>
@@ -150,8 +185,22 @@ function sourceNames(citations?: Citation[]) {
 type Props = { message: Message };
 
 const MessageBubble = ({ message }: Props) => {
-    const { openCitation, openDocumentPreview } = useChat();
+    const { openCitation, openDocumentPreview, messages } = useChat();
     const isUser = message.role === "user";
+    const { session } = useAuth();
+    const [exporting, setExporting] = useState(false);
+    const [exportError, setExportError] = useState("");
+    async function exportWord() {
+        if (!session?.accessToken || !session.projectId) return;
+        setExporting(true);
+        setExportError("");
+        try {
+            const blob = await downloadAnswerExport("document", session.accessToken, session.projectId, { ...answerDocumentPayload(message), question: messages.slice(0, messages.findIndex(item => item.id === message.id)).reverse().find(item => item.role === "user")?.content ?? "" });
+            saveAnswerFile(blob, "coair-answer.docx");
+        } catch (error) {
+            setExportError(error instanceof Error ? error.message : "Unable to download Word document.");
+        } finally { setExporting(false); }
+    }
     const blocks = isUser
         ? []
         : parseAnswer(message.content, sourceNames(message.citations)).filter((block) =>
@@ -204,6 +253,8 @@ const MessageBubble = ({ message }: Props) => {
                                     citations={message.citations}
                                     onOpen={openDocumentPreview}
                                 />
+                            ) : block.type === "code" ? (
+                                <pre key={index} className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-weak-50 p-3 font-mono text-label-sm">{block.text}</pre>
                             ) : block.type === "heading" ? (
                                 <div
                                     key={index}
@@ -230,8 +281,15 @@ const MessageBubble = ({ message }: Props) => {
                 {!isUser && message.sqlArtifact ? (
                     <SqlResult artifact={message.sqlArtifact} onOpen={openDocumentPreview}>
                         {(headers, rows) => <AnswerTable headers={headers} rows={rows}
-                            citations={message.citations} onOpen={openDocumentPreview} />}
+                            citations={message.citations} onOpen={openDocumentPreview}
+                            values={message.sqlArtifact?.preview_rows.map(row => headers.map(column => row[column] ?? null))} />}
                     </SqlResult>
+                ) : null}
+                {!isUser && session?.accessToken && session.projectId ? (
+                    <div className="mt-3">
+                        <button type="button" disabled={exporting} onClick={() => void exportWord()} className="rounded-lg border border-stroke-soft-200 px-2.5 py-1 text-label-xs disabled:opacity-50">{exporting ? "Exporting…" : "Download Word"}</button>
+                        {exportError ? <p role="alert" className="mt-1 text-label-xs text-red-600">{exportError}</p> : null}
+                    </div>
                 ) : null}
                 {!isUser && message.libraryNote ? (
                     <p className="mt-2 text-label-xs leading-5 text-sub-600">
