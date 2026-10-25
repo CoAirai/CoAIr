@@ -1480,10 +1480,28 @@ class DocumentRAG:
         )
         scope_specs = []
         if doc_ids:
-            scope_specs.append(MetadataFilters(filters=[
+            selection = [
                 MetadataFilter(key="file_id", value=doc_ids, operator=FilterOperator.IN),
                 MetadataFilter(key="doc_id", value=doc_ids, operator=FilterOperator.IN),
-            ], condition=FilterCondition.OR))
+            ]
+            # Original RAG vectors may predate canonical file_id metadata. Resolve
+            # only unambiguous, project-owned selected files; never substitute an
+            # arbitrary filename hint or another modern file's identity.
+            try:
+                from .document_registry import get_document_registry
+                registry = get_document_registry()
+                records = registry.get_all(project_id=_require_project_id(project_id))
+                selected = [r for r in records if r.doc_id in doc_ids]
+                names = [r.file_name for r in selected if r.file_name and sum(
+                    other.file_name == r.file_name for other in records) == 1]
+            except Exception:
+                names = []
+            if names:
+                selection.append(MetadataFilters(filters=[
+                    MetadataFilter(key="file_id", value=None, operator=FilterOperator.IS_EMPTY),
+                    MetadataFilter(key="file_name", value=names, operator=FilterOperator.IN),
+                ], condition=FilterCondition.AND))
+            scope_specs.append(MetadataFilters(filters=selection, condition=FilterCondition.OR))
         if file_names:
             scope_specs.append(MetadataFilter(
                 key="file_name", value=file_names, operator=FilterOperator.IN))

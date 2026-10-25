@@ -38,3 +38,31 @@ def test_selected_file_retrieval_and_agent_read_cannot_widen_by_filename(monkeyp
 
     finally:
         client.close()
+
+
+def test_legacy_vectors_require_unambiguous_project_owned_selection(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr('src.document_rag._current_user_corpus', lambda: '')
+    records = [SimpleNamespace(doc_id='canonical',file_name='selected.pdf',project_id='a')]
+    registry = SimpleNamespace(get_all=lambda project_id: [r for r in records if r.project_id==project_id])
+    monkeypatch.setattr('src.document_registry.get_document_registry', lambda: registry)
+    client = QdrantClient(location=':memory:')
+    store = QdrantVectorStore(client=client,collection_name='legacy-qualification')
+    nodes = [TextNode(text='selected utilities evidence',embedding=[.1,.2],metadata={
+        'file_name':'selected.pdf','project_id':'a','page_number':1}),
+        TextNode(text='foreign project',embedding=[.1,.2],metadata={
+        'file_name':'selected.pdf','project_id':'b','page_number':1}),
+        TextNode(text='other modern file',embedding=[.1,.2],metadata={
+        'file_name':'selected.pdf','file_id':'other-file','project_id':'a','page_number':1})]
+    store.add(nodes)
+    rag=object.__new__(DocumentRAG)
+    rag.index=VectorStoreIndex.from_vector_store(store,embed_model=MockEmbedding(embed_dim=2))
+    try:
+        rows=rag._dense_candidates('utilities',10,['canonical'],None,project_id='a')
+        assert [r['text'] for r in rows] == ['selected utilities evidence']
+        assert rag._dense_candidates('utilities',10,['canonical'],['other.pdf'],project_id='a') == []
+        assert rag._dense_candidates('utilities',10,['canonical'],None,project_id='b') == []
+        records.append(SimpleNamespace(doc_id='collision',file_name='selected.pdf',project_id='a'))
+        assert rag._dense_candidates('utilities',10,['canonical'],None,project_id='a') == []
+    finally:
+        client.close()
