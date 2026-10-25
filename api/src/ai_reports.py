@@ -295,7 +295,7 @@ def _generate_chronology_v2(
     from .chronology_v2 import (
         COVERAGE_FACETS, PIPELINE_VERSION, PreparedChronologyQuery, coverage_matrix,
         aggregate_candidates, evidence_from_documents, extract_batches,
-        prepare_chronology_query, source_preview, synthesize, verify_claims,
+        prepare_chronology_query, source_preview, synthesize, verify_claims, _enforce_event_date,
     )
     from .jargon_manager import jargon_dictionary_version
 
@@ -395,7 +395,7 @@ def _generate_chronology_v2(
         load_step=load_step, save_step=save_step,
     )
     verification_hash = hashlib.sha256(json.dumps(
-        response, sort_keys=True, ensure_ascii=False,
+        {"chronology": response, "policy": "claim-and-event-date-v1"}, sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     stage("verification", .82)
     verification_step = load_step("verification", verification_hash) if load_step else None
@@ -475,12 +475,17 @@ def _generate_chronology_v2(
                 claims.append(claim)
             else:
                 removed += 1
-        if str(raw.get("date_precision") or "unknown") != "exact" and claims:
+        if raw.get("event_date") and not verification.get(f"date:{event_index}", False):
+            raw = {**raw, "event_date": "", "date_precision": "unknown",
+                   "date_source": "unresolved", "date_evidence": ""}
+        if raw.get("date_precision") == "inferred" and claims:
             claims[0].is_inference = True
             if not claims[0].inference_basis:
-                claims[0].inference_basis = "The event date is inferred from the cited record"
+                claims[0].inference_basis = ("The event date is not established by the cited record"
+                    if not raw.get("event_date") else "The cited record establishes only an approximate event date")
         if not claims:
             continue
+        raw = _enforce_event_date({**raw, "claims": [asdict(c) for c in claims]}, evidence)
         entries.append(ChronologyEntry(
             entry_ref=f"6.{issue_number}.{index}", event_date=str(raw.get("event_date") or ""),
             date_precision=str(raw.get("date_precision") or "unknown"), claims=claims,
@@ -492,6 +497,9 @@ def _generate_chronology_v2(
         ))
     if len(entries) < 2:
         raise ValueError("insufficient_evidence")
+    entries[1:] = sorted(entries[1:], key=lambda entry: entry.event_date or "9999-99-99")
+    for index, entry in enumerate(entries, 1):
+        entry.entry_ref = f"6.{issue_number}.{index}"
     stage("word", .9)
     blob, audit = build_ai_chronology_docx(
         project_name=project_name, issue_number=issue_number, title=topic,

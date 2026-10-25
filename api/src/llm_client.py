@@ -883,6 +883,7 @@ def generate_text(
     last_error = None
     thinking_degraded = False
     retry_count = max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
+    original_prompt = prompt
     for attempt in range(1 + retry_count):
         try:
             if chronology_budget_active_var.get():
@@ -1080,6 +1081,15 @@ def generate_text(
                 break
 
             if attempt < retry_count:
+                if isinstance(e, LLMInvalidStructuredOutputError) and response_schema:
+                    # Reuse the existing retry budget, with the exact cardinality
+                    # constraints omitted by some providers' schema dialects.
+                    prompt = original_prompt + (
+                        "\n\nThe previous output failed validation. Regenerate valid JSON using the "
+                        "same supplied evidence. Follow every required field and minItems/maxItems "
+                        "constraint below. Preserve source-supported substance; do not invent facts "
+                        "or silently discard evidence to fit.\n" + json.dumps(response_schema, ensure_ascii=False)
+                    )
                 # Longer backoff for rate limit errors
                 _is_rate_limit = False
                 try:

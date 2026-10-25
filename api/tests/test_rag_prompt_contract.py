@@ -26,4 +26,7 @@ def test_accepted_rag_prompt_has_not_changed(contract):
         assignment = next(n for n in ast.walk(node) if isinstance(n,ast.Assign)
             and any(isinstance(t,ast.Name) and t.id==path[-1] for t in n.targets))
         actual = signature(assignment.value)
-    assert actual == contract['rag_sha256'], 'Accepted prompt changed: review output regressions first'
+    key = contract['module'] + ':' + contract['prompt']
+    approved = key in BASELINE['approved_differences']
+    expected = contract['coair_sha256'] if approved else contract['rag_sha256']
+    assert actual == expected, 'Accepted prompt changed: review output regressions first'

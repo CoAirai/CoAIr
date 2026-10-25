@@ -193,9 +193,9 @@
     {
       "module": "chronology_v2",
       "prompt": "verify_claims.prompt",
-      "status": "same",
+      "status": "reviewed-date-validation",
       "rag_sha256": "eb21e7dac0b6ff587e747f6f54aec35f64dbc7e2a5634fd563459d191abc6876",
-      "coair_sha256": "eb21e7dac0b6ff587e747f6f54aec35f64dbc7e2a5634fd563459d191abc6876"
+      "coair_sha256": "e9d7d5dcc0cd8ddcd17efa86e1ca985e44102447b488b65a09a96f924b61f0ed"
     },
     {
       "module": "chronology_v3",
@@ -230,6 +230,7 @@
     "document_rag:DocumentRAG._synthesize_from_nodes.prompt": "Selected, project-scoped source context injection",
     "document_rag:DocumentRAG._query_with_direct_synthesis.prompt": "Selected, project-scoped source context injection",
     "document_rag:DocumentRAG.query_named_docs_with_provider.prompt": "Selected, project-scoped source context injection",
-    "prompt_files:chronology_v3.yaml": "Inactive V3 counter-evidence/provenance improvements; V2 remains the qualified runtime"
+    "prompt_files:chronology_v3.yaml": "Inactive V3 counter-evidence/provenance improvements; V2 remains the qualified runtime",
+    "chronology_v2:verify_claims.prompt": "Independent event-date decisions prevent retrospective quantities from inheriting document dates; factual claims remain separately verified. Evidence: FOUR_AREA_REVIEW.md."
   }
 }
