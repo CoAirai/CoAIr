@@ -122,6 +122,41 @@ excludes all customer data, secrets and Qwen LLM weights.
 
 ## Operation
 
+### Active Spark model profile (1 October 2026)
+
+The existing `/home/coair/llm` service can run the pinned
+`nvidia/Qwen3.6-35B-A3B-NVFP4` snapshot using `vllm-qwen36-start.py`.
+Copy that launcher into the service's existing `scripts` directory and copy
+`compose.vllm-qwen36.yaml` to `compose.qwen36.yaml` in its root. The profile
+uses the existing vLLM image, credentials and Hugging Face cache. It serves
+`qwen3.6-35b-a3b` with a 131,072-token context, FP8 KV cache and no speculative
+decoding. vLLM 0.29's MTP initialization inherited the incompatible Marlin
+backend for an unquantized layer, so this profile disables MTP.
+
+On the existing DGX installation:
+
+```sh
+cd /home/coair/llm
+docker compose -f docker-compose.yml -f compose.qwen36.yaml up -d --no-deps vllm
+cd /home/coair/coair-local
+docker compose -f deploy/dgx/compose.yaml -f deploy/dgx/compose.protected.yaml \
+  -f deploy/dgx/compose.llm-qwen36.yaml up -d --no-deps --no-build api
+```
+
+The application keeps its 4,096-token output budget. Its model name and context
+budget change through the API override; protected application code is unchanged.
+Comparison questions, raw answers and timings are in `diagnostics/dgx`.
+The original 8B launcher, environment and cached weights remain available.
+To restore that profile without touching application data:
+
+```sh
+cd /home/coair/llm
+docker compose -f docker-compose.yml up -d --no-deps vllm
+cd /home/coair/coair-local
+docker compose -f deploy/dgx/compose.yaml -f deploy/dgx/compose.protected.yaml \
+  up -d --no-deps --no-build api
+```
+
 Run Compose commands with `-f deploy/dgx/compose.yaml` from the repo root.
 Use `ps` for status and `logs --tail=100 api` for processing errors. `down`
 preserves data; **never use `down -v` on a customer installation**.

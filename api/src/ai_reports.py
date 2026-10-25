@@ -505,6 +505,9 @@ def _generate_chronology_v2(
                 claims.append(claim)
             else:
                 removed += 1
+        if raw.get("event_date") and not verification.get(f"date:{event_index}", False):
+            raw = {**raw, "event_date": "", "date_precision": "unknown",
+                   "date_source": "unresolved", "date_evidence": ""}
         if raw.get("date_precision") == "inferred" and claims:
             claims[0].is_inference = True
             if not claims[0].inference_basis:

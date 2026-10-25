@@ -6,6 +6,7 @@ export type CoairOrgUser = {
     display_name?: string;
     org_role?: string;
     is_active?: boolean;
+    account_status?: string;
     used_tokens?: number;
     token_limit?: number;
     credits_remaining?: number;
@@ -13,6 +14,10 @@ export type CoairOrgUser = {
     percent_remaining?: number;
     storage_used_bytes?: number;
     storage_limit_bytes?: number;
+    expires_at?: string | null;
+    access_plan?: "demo" | "office" | "";
+    must_change_password?: boolean;
+    reserved_tokens?: number;
     project_count?: number;
     features?: Record<string, boolean>;
 };

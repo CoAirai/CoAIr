@@ -298,6 +298,9 @@ class DocumentRegistry:
         return self._records.get(doc_id)
 
     def get_all(self, project_id: Optional[str] = None) -> List[DocumentRecord]:
+        if project_id is None:
+            from .project_context import get_current_project_id
+            project_id = get_current_project_id() or None
         rows = list(self._records.values())
         if project_id is not None:
             rows = [r for r in rows if (getattr(r, "project_id", "") or "") == project_id]

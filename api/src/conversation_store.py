@@ -37,6 +37,7 @@ class Message:
     sources: Optional[List[Dict]] = None
     sql: Optional[str] = None
     result_data: Optional[List[Any]] = None
+    sql_artifact: Optional[Dict] = None
     dual_answers: Optional[Dict] = None
     # Stable id so user feedback (👍/👎) can reference a specific assistant answer.
     message_id: str = field(default_factory=lambda: uuid.uuid4().hex)

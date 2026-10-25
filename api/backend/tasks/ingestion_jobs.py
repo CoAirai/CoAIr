@@ -276,10 +276,17 @@ def _worker() -> None:
             _stop.wait(0.5)
             continue
         try:
-            from backend.core.security import set_current_user_context
+            from backend.core.security import set_current_user_context, authorize_worker
             # Worker threads are reused; clear stale attribution as well as
             # setting it for newly-created jobs.
-            set_current_user_context(job.get("requested_by") or "")
+            requester = job.get("requested_by") or ""
+            if requester:
+                authorize_worker(requester, job['project_id'])
+            else:
+                set_current_user_context('')
+                import os
+                if os.getenv('COAIR_ACCESS_PLAN') in ('demo', 'office'):
+                    raise PermissionError('requester_required')
             from backend.tasks.indexing import index_file_background
             index_file_background(
                 job["file_id"], job["file_path"], project_id=job["project_id"],

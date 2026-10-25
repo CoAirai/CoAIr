@@ -188,7 +188,10 @@ def _enforce_user_quota() -> None:
 
         store = get_user_store()
         account = store.billing.get_account(username)
-        if account and account.get("plan_type") == "demo":
+        record = store.get_user(username) or {}
+        if record.get("access_plan"):
+            store.enforce_quota(username)
+        elif account and account.get("plan_type") == "demo":
             store.billing.enforce_credits(username)
         else:
             store.enforce_quota(username)
@@ -759,8 +762,14 @@ def generate_text(
     if model not in LLM_PRICING and not (LOCAL_LLM and model == LLM_MODEL):
         raise ValueError(f"No pricing configured for model: {model}")
 
-    max_tokens = clamp_output_tokens(model, max_tokens or profile.max_output_tokens, profile)
+    # Legacy call sites still pass 2048/4096 explicitly. Local task profiles
+    # define the minimum initial answer/report budget as well as the ceiling.
+    requested_tokens = max_tokens or profile.max_output_tokens
+    if LOCAL_LLM:
+        requested_tokens = max(requested_tokens, profile.max_output_tokens)
+    max_tokens = clamp_output_tokens(model, requested_tokens, profile)
     timeout_seconds = int(timeout_seconds or profile.timeout_seconds)
+    local_output_retried = False
 
     thinking = int(thinking) if thinking else 0
     if not thinking_level:
@@ -784,6 +793,8 @@ def generate_text(
 
     # ── Build cache key (includes provider + thinking budget) ──
     namespace = (cache_key or f"llm:{task_type}").split(":", 1)[0]
+    from .project_context import get_current_project_id
+    from backend.core.security import get_current_username
     key_data = json.dumps({
         "cache_version": 2,
         "provider": provider, "model": model, "thinking": thinking,
@@ -791,6 +802,8 @@ def generate_text(
         "max_tokens": max_tokens, "prompt_version": prompt_version,
         "system": system, "prompt": prompt, "schema": response_schema,
         "context": cache_context,
+        "project_scope": get_current_project_id(),
+        "user_scope": get_current_username(),
         # Do not share cached provider responses across a dedicated-key user
         # and the global account. This contains only an alias, never the key.
         "credential_scope": google_credential_scope(),
@@ -845,7 +858,7 @@ def generate_text(
         if task_type.startswith("chronology_") or estimated_input >= profile.max_input_tokens * .8
         else estimated_input
     )
-    if exact_input > profile.max_input_tokens:
+    if provider != 'vllm' and exact_input > profile.max_input_tokens:
         raise LLMInputBudgetExceededError(
             f"input_budget_exceeded:{task_type}:{exact_input}>{profile.max_input_tokens}"
         )
@@ -893,7 +906,8 @@ def generate_text(
 
     last_error = None
     thinking_degraded = False
-    retry_count = max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
+    retry_count = 1 if provider == 'vllm' else max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
+    original_prompt = prompt
     for attempt in range(1 + retry_count):
         try:
             if chronology_budget_active_var.get():
@@ -913,7 +927,7 @@ def generate_text(
                 response = generate(
                     base_url=LLM_BASE_URL, api_key=LLM_API_KEY, model=LLM_MODEL,
                     prompt=prompt, system=system, max_tokens=max_tokens,
-                    max_input_tokens=profile.max_input_tokens,
+                    max_input_tokens=min(profile.max_input_tokens, LLM_CONTEXT_TOKENS - max_tokens - 1024),
                     context_tokens=LLM_CONTEXT_TOKENS, temperature=temperature,
                     timeout_seconds=timeout_seconds, thinking=False,
                     json_mode=json_mode, response_schema=response_schema,
@@ -1022,9 +1036,6 @@ def generate_text(
                 cacheable = False
 
             # ── Cache result ──
-            if cacheable and cache_enabled:
-                _cache_set(cache_key, text, ttl_s)
-
             # ── Record into global + per-user usage trackers ──
             try:
                 record_usage(prompt_tok, comp_tok, cost)
@@ -1037,6 +1048,15 @@ def generate_text(
                 task_type=task_type,
             )
             _record_run_usage(usage)
+
+            if provider == "vllm" and (not text or finish_reason == "MAX_TOKENS"):
+                if not local_output_retried and attempt < retry_count:
+                    local_output_retried = True
+                    max_tokens = max(max_tokens, profile.retry_output_tokens or max_tokens)
+                    continue
+                raise LLMIncompleteResponseError(
+                    "model_output_incomplete" if text else "model_output_empty"
+                )
 
             # ── Thinking burned the whole output budget ──
             # Gemini 3 draws reasoning tokens from max_output_tokens, so a tight
@@ -1069,6 +1089,9 @@ def generate_text(
             if not cacheable:
                 raise LLMInvalidStructuredOutputError("model_output_invalid")
 
+            if cache_enabled:
+                _cache_set(cache_key, text, ttl_s)
+
             return LLMResponse(
                 text=text, usage=usage, raw=response, finish_reason=finish_reason or "STOP",
             )
@@ -1078,7 +1101,8 @@ def generate_text(
             # Check for non-retryable errors (content policy, auth)
             _non_retryable = False
             from .openai_compatible import ContextLimitError
-            if isinstance(e, (BillingRecordingError, ContextLimitError)):
+            from .user_store import UserQuotaExceededError
+            if isinstance(e, (BillingRecordingError, ContextLimitError, UserQuotaExceededError, PermissionError)):
                 _non_retryable = True
             if isinstance(e, LLMIncompleteResponseError):
                 _non_retryable = True
@@ -1109,6 +1133,15 @@ def generate_text(
                 break
 
             if attempt < retry_count:
+                if isinstance(e, LLMInvalidStructuredOutputError) and response_schema:
+                    # Reuse the existing retry budget, with the exact cardinality
+                    # constraints omitted by some providers' schema dialects.
+                    prompt = original_prompt + (
+                        "\n\nThe previous output failed validation. Regenerate valid JSON using the "
+                        "same supplied evidence. Follow every required field and minItems/maxItems "
+                        "constraint below. Preserve source-supported substance; do not invent facts "
+                        "or silently discard evidence to fit.\n" + json.dumps(response_schema, ensure_ascii=False)
+                    )
                 # Longer backoff for rate limit errors
                 _is_rate_limit = False
                 try:
@@ -1123,6 +1156,8 @@ def generate_text(
             else:
                 logger.error(f"[LLMClient] {provider} failed after {1 + retry_count} attempts: {e}")
 
+    if provider == 'vllm' and last_error is not None:
+        raise last_error
     if isinstance(last_error, (
         LLMIncompleteResponseError, LLMInvalidStructuredOutputError,
         LLMResearchBudgetExceededError,

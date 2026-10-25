@@ -1,5 +1,16 @@
 export type MessageRole = "user" | "assistant";
 
+export type SqlArtifact = {
+    generated_sql: string;
+    tables_used: string[];
+    row_count: number;
+    preview_rows: Record<string, unknown>[];
+    columns: string[];
+    source_file_id: string;
+    source_file_name: string;
+    chart?: { type: "bar" | "line"; x: string; y: string[] } | null;
+};
+
 export type Citation = {
     documentId: string;
     name: string;
@@ -16,6 +27,8 @@ export type Message = {
     authorName?: string;
     threadUserId?: string;
     citations?: Citation[];
+    sqlArtifact?: SqlArtifact;
+    libraryNote?: string;
 };
 
 export type KnowledgeBaseItem = {

@@ -205,7 +205,8 @@ def generate_chronology_report(
     _assert_ready(project.project_id)
     from src.user_store import get_user_store
     account = get_user_store().billing.get_account(user.username)
-    if account and account.get("plan_type") == "demo":
+    record = get_user_store().get_user(user.username) or {}
+    if account and account.get("plan_type") == "demo" and not record.get('access_plan'):
         get_user_store().billing.enforce_credits(user.username)
     preparation = None
     if body.preparation_id:
@@ -321,7 +322,9 @@ def retry_report(
     if current["status"] == "credit_balance_exhausted":
         from src.user_store import get_user_store
         try:
-            get_user_store().billing.enforce_credits(user.username)
+            record = get_user_store().get_user(user.username) or {}
+            if not record.get('access_plan'):
+                get_user_store().billing.enforce_credits(user.username)
         except Exception as exc:
             raise HTTPException(402, "credit_balance_exhausted") from exc
     retried = store.retry(job_id, project.project_id)

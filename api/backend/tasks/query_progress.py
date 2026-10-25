@@ -39,6 +39,7 @@ class QueryActivity:
     updated_at: float
     steps: List[QueryStep] = field(default_factory=list)
     done: bool = False
+    username: str = ""
 
 
 class QueryProgress:
@@ -51,14 +52,20 @@ class QueryProgress:
         for rid in stale:
             self._store.pop(rid, None)
 
-    def start(self, request_id: str) -> None:
+    def start(self, request_id: str, username: str = "", *, resume: bool = False) -> None:
         if not request_id:
             return
         now = time.time()
         with self._lock:
             self._purge_locked(now)
+            existing = self._store.get(request_id)
+            if existing:
+                if resume and existing.username == username and not existing.done:
+                    return
+                if existing.username != username or not existing.done:
+                    raise ValueError("request_id_already_used")
             self._store[request_id] = QueryActivity(
-                request_id=request_id, created_at=now, updated_at=now,
+                request_id=request_id, created_at=now, updated_at=now, username=username,
             )
 
     def add(self, request_id: str, kind: str, label: str, detail: str = "") -> None:

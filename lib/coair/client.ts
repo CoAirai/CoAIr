@@ -92,6 +92,8 @@ async function once<T>(
                 const parsed = JSON.parse(text) as { detail?: unknown };
                 if (typeof parsed?.detail === "string") {
                     clean = parsed.detail;
+                } else if (parsed?.detail && typeof parsed.detail === "object" && "message" in parsed.detail) {
+                    clean = String((parsed.detail as { message: unknown }).message);
                 } else if (Array.isArray(parsed?.detail)) {
                     clean = parsed.detail
                         .map((d) =>

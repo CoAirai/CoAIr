@@ -38,6 +38,9 @@ def record_for(file_id, project):
 
 
 def require_inbox_owner(user, project):
+    import os
+    if os.getenv("COAIR_SHARED_INBOX_ENABLED", "1") != "1":
+        raise HTTPException(403, "shared_inbox_disabled")
     # The machine inbox is shared; only company/project owners may import it.
     if project.role != 'owner' and user.role not in ('admin', 'superadmin'):
         raise HTTPException(403, 'inbox_requires_project_owner')

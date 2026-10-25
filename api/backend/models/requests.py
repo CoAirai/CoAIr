@@ -1,7 +1,7 @@
 """Request models for API endpoints."""
 
 from typing import Any, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
@@ -44,6 +44,11 @@ class AnswerDocumentRequest(BaseModel):
     # answer — the document then says how many rows it is showing and makes no
     # claim about the query.
     total_rows: Optional[int] = None
+
+
+class AnswerSpreadsheetRequest(BaseModel):
+    table_columns: List[str] = Field(min_length=1, max_length=60)
+    table_rows: List[List[Any]] = Field(default_factory=list, max_length=2000)
 
 
 class ConversationCreate(BaseModel):

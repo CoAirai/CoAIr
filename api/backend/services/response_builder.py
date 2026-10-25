@@ -215,9 +215,17 @@ def _build_from_single(raw: Dict[str, Any]) -> ChatResponse:
     # were found (timeline/hybrid/doc_list) replace it with a chronological
     # lead-in; otherwise a graceful no-result message.
     answer_text = _normalize_empty_answer(answer_text, related_docs, citations)
-    sql_artifact = _build_sql_artifact(
-        sql, result_data, sources, raw.get("result_columns"),
+    sql_artifact = (
+        SQLArtifact.model_validate(raw["sql_artifact"]) if raw.get("sql_artifact")
+        else _build_sql_artifact(sql, result_data, sources, raw.get("result_columns"))
     )
+    if sql_artifact and sql_artifact.tables_used:
+        original = _structured_source_document({
+            "type": "structured_data", "table_name": sql_artifact.tables_used[0],
+            "file_name": sql_artifact.source_file_name, "doc_id": sql_artifact.source_file_id,
+        }, str(raw.get("project_id") or ""))
+        sql_artifact.source_file_name = original.get("file_name", "")
+        sql_artifact.source_file_id = original.get("doc_id", "")
     cta = _extract_cta(result_data)
 
     # Extract routing confidence + route for frontend display / observability.
@@ -308,7 +316,7 @@ def _build_from_dual(raw: Dict[str, Any]) -> ChatResponse:
     )
 
 
-def _resolve_canonical_doc_id(file_name: str, fallback: str) -> str:
+def _resolve_canonical_doc_id(file_name: str, fallback: str, project_id: str = "") -> str:
     """Return the DocumentRegistry's canonical doc_id for ``file_name``.
 
     Pinecone often holds two ingestions of the same source file (e.g. one
@@ -325,13 +333,43 @@ def _resolve_canonical_doc_id(file_name: str, fallback: str) -> str:
         return fallback
     try:
         from src.document_registry import get_document_registry
+        from src.project_context import get_current_project_id
+        project_id = project_id or get_current_project_id()
+        if not project_id:
+            return fallback
         registry = get_document_registry()
-        for rec in registry.get_all():
+        for rec in registry.get_all(project_id=project_id):
             if rec.file_name == file_name:
                 return rec.doc_id
     except Exception:
         pass
     return fallback
+
+
+def _structured_source_document(source: Dict[str, Any], project_id: str = "") -> Dict[str, Any]:
+    """Point structured results at the project-owned original, not a Parquet view."""
+    if source.get("type") != "structured_data":
+        return source
+    original = source.get("source_file") or ""
+    if not original:
+        try:
+            from src.catalog import get_catalog
+            from src.project_context import get_current_project_id
+            project_id = project_id or get_current_project_id()
+            if project_id:
+                for entry in get_catalog().entries.values():
+                    if entry.project_id != project_id:
+                        continue
+                    if any(table.table_name == source.get("table_name") for table in entry.tables):
+                        original = entry.source_file
+                        break
+        except Exception:
+            pass
+    if not original:
+        return source
+    name = str(original).replace("\\", "/").rsplit("/", 1)[-1]
+    return {**source, "file_name": name, "file_path": original,
+            "doc_id": _resolve_canonical_doc_id(name, source.get("doc_id", ""), project_id)}
 
 
 def _extract_citations_and_related(
@@ -434,6 +472,7 @@ def _build_sql_artifact(
     source_file_id = ""
     source_file_name = ""
     if data_source:
+        data_source = _structured_source_document(data_source)
         if "table_name" in data_source and data_source["table_name"] not in tables_used:
             tables_used.append(data_source["table_name"])
         source_file_id = data_source.get("doc_id", "")

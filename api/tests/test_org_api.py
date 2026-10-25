@@ -24,6 +24,8 @@ os.environ.setdefault("JWT_SECRET", "test-secret-please-replace-in-prod")
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
+    from backend.core import platform_guard
+    monkeypatch.setattr(platform_guard, '_rate_limiter', platform_guard.RateLimiter())
     for key in (
         "DATABASE_URL",
         "SUPABASE_DB_URL",
@@ -144,7 +146,7 @@ def test_owner_creates_a_user_on_the_company_plan(client, acme, stores):
     assert body["org_role"] == "member"
     # Plan, credits and quota come from the company policy, not the request.
     assert body["credits_total"] == 250
-    assert body["token_limit"] == 500_000
+    assert body["token_limit"] == 166_667  # Remaining company pool split among three members.
     # Always a plain account, and inside the caller's company.
     assert users.get_user("surveyor")["role"] == "user"
     assert orgs.membership_for("surveyor")["org_id"] == acme["org"]["org_id"]
@@ -213,7 +215,7 @@ def test_owner_cannot_mint_credits_or_quota(client, acme):
 
     assert resp.status_code == 201
     assert resp.json()["credits_total"] == 250
-    assert resp.json()["token_limit"] == 500_000
+    assert resp.json()["token_limit"] == 166_667
 
 
 def test_owner_cannot_assign_the_legacy_corpus_feature(client, acme, stores):
@@ -335,6 +337,8 @@ def test_last_owner_is_protected(client, acme):
 
 
 def test_owner_can_grant_module_rights_without_dropping_correspondence(client, acme, stores):
+    from src.ops_store import get_ops_store
+    get_ops_store().set_org_module_grant(acme["org"]["org_id"], "forensic", True)
     users, _projects, _orgs = stores
     created = client.post("/api/org/users", headers=_auth(client, "acme-admin"), json={
         "username": "rights-user", "password": "pw123456",

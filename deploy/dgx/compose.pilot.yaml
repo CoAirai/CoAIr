@@ -1,0 +1,38 @@
+# Independent volumes/network/project. Never attach the development inbox/data.
+name: coair-demo
+services:
+  api:
+    image: ${PILOT_API_IMAGE:?Build and validate a protected release first}
+    env_file: !override
+      - demo.env
+    environment:
+      COAIR_ACCESS_PLAN: ${COAIR_ACCESS_PLAN:-demo}
+      COAIR_SHARED_INBOX_ENABLED: '0'
+      COAIR_ADMISSION_DATABASE: /app/admission/chat.db
+      UPLOAD_MAX_BYTES: '100000000'
+      INGEST_MAX_CONCURRENCY: '1'
+      LOCAL_METADATA_CONCURRENCY: '1'
+      OCR_MAX_WORKERS: '1'
+      REPORT_MAX_CONCURRENCY: '1'
+      LLM_MODEL: qwen3.6-35b-a3b
+      LLM_CONTEXT_TOKENS: '131072'
+      LLM_LOCAL_OUTPUT_TOKENS: '32768'
+    volumes: !override
+      - storage:/app/storage
+      - documents:/app/data
+      - cache:/app/cache
+      - logs:/app/logs
+      - admission:/app/admission
+      - ./protection-secrets/device.key:/run/secrets/coair-protection.key:ro
+      - ./protection-secrets/license.json:/run/secrets/coair-license.json:ro
+      - /etc/machine-id:/run/coair-machine-id:ro
+  web:
+    image: coair-web:demo-pilot
+  gateway:
+    ports: !override
+      - '127.0.0.1:18081:80'
+    volumes: !override
+      - ./nginx.pilot.conf:/etc/nginx/conf.d/default.conf:ro
+volumes:
+  admission:
+    name: coair-chat-admission

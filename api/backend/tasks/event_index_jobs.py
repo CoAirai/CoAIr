@@ -23,10 +23,8 @@ def _worker() -> None:
         doc_id = str(job["doc_id"])
         version_id = str(job["version_id"])
         try:
-            from backend.core.security import set_current_user_context
-            from src.project_context import set_current_project
-            set_current_user_context(str(job.get("requested_by") or ""))
-            set_current_project(project_id, "editor")
+            from backend.core.security import authorize_worker
+            authorize_worker(str(job.get('requested_by') or ''), project_id)
             from src.event_memory import index_document_events
             details = index_document_events(project_id, version_id, store=store)
             status = store.get_version(project_id, version_id) or {}

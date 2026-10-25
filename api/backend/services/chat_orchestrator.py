@@ -78,7 +78,8 @@ class ChatOrchestrator:
         if username:
             from src.user_store import get_user_store
             account = get_user_store().billing.get_account(username)
-            if account and account.get("plan_type") == "demo":
+            record = get_user_store().get_user(username) or {}
+            if account and account.get("plan_type") == "demo" and not record.get("access_plan"):
                 get_user_store().billing.enforce_credits(username)
 
         # Live activity feed: stamp the request_id on a contextvar (propagates
@@ -93,7 +94,7 @@ class ChatOrchestrator:
             module="chatbot", query=query, prompt_version="chat-v2",
         )
         query_request_var.set(request_id)
-        query_progress.start(request_id)
+        query_progress.start(request_id, username or "", resume=True)
 
         # 1. Save user message
         user_msg = Message(role="user", content=query, timestamp=now)
@@ -105,6 +106,8 @@ class ChatOrchestrator:
         context = format_chat_context(
             context_msgs, CHAT_MEMORY_MESSAGES, CHAT_MEMORY_MAX_CHARS
         )
+        if doc_ids or email_ids:
+            context = ""  # old answers must not become evidence for a new selection
         augmented = f"{context}\n\nCurrent question: {query}" if context else query
 
         # Capture the user's EXPLICIT selection (before the conversation-scoped
@@ -174,7 +177,7 @@ class ChatOrchestrator:
         # — corpus_var is set above, so no cross-corpus leak) so the draft can cite
         # contract terms / costs / prior decisions, not just the emails. Conversation
         # state is already in `augmented` (step 2).
-        if email_ids and self._is_draft_intent(query):
+        if not email_ids and not explicit_doc_ids and not doc_ids and self._is_draft_intent(query):
             support = self._build_draft_support_context(query, project_id=project_id)
             if support:
                 augmented = f"{augmented}\n\n{support}"
@@ -190,9 +193,34 @@ class ChatOrchestrator:
                     router.route_and_execute, augmented, doc_ids, mode, email_ids
                 )
         except Exception as e:
+            from src.run_store import get_run_store
+            get_run_store().finish(request_id, status='failed', error=type(e).__name__)
+            query_progress.finish(request_id)
             from src.billing_store import CreditBalanceExceededError
-            if isinstance(e, CreditBalanceExceededError):
+            from src.user_store import UserQuotaExceededError
+            if isinstance(e, (CreditBalanceExceededError, UserQuotaExceededError)):
                 raise
+            from fastapi import HTTPException
+            if isinstance(e, HTTPException):
+                raise
+            from src.llm_client import LLMIncompleteResponseError
+            if isinstance(e, LLMIncompleteResponseError):
+                raise HTTPException(502, {"error": "model_output_incomplete", "message": "The answer could not finish within the extended output budget. Please retry with a narrower question.", "retryable": True}) from e
+            from src.config import LOCAL_LLM
+            if LOCAL_LLM:
+                import httpx
+                from openai import APITimeoutError, APIConnectionError
+                from src.openai_compatible import ContextLimitError
+                from src.llm_client import LLMInputBudgetExceededError
+                if isinstance(e, (ContextLimitError, LLMInputBudgetExceededError)):
+                    code, status, message = 'input_budget_exceeded', 422, 'The selected evidence exceeds the context budget. Select fewer documents or narrow the question.'
+                elif isinstance(e, (TimeoutError, httpx.TimeoutException, APITimeoutError)):
+                    code, status, message = 'generation_timeout', 504, 'The model did not finish in time. Retry or request a shorter answer. Unconfirmed token usage remains reserved.'
+                elif isinstance(e, (httpx.HTTPError, APIConnectionError, ConnectionError)):
+                    code, status, message = 'model_connection_failed', 503, 'The local model service could not be reached. Please retry shortly.'
+                else:
+                    code, status, message = 'processing_failed', 502, 'The request could not be processed. Please retry; if it persists, contact the operator with the request ID.'
+                raise HTTPException(status, {'error': code, 'message': message, 'retryable': True, 'request_id': request_id}) from e
             import logging
             # Log the exception class too — the message alone ("model_output_incomplete")
             # does not say which layer failed, and this is the only trace prod leaves.
@@ -288,6 +316,7 @@ class ChatOrchestrator:
             ),
             sql=response.sql_artifact.generated_sql if response.sql_artifact else None,
             result_data=response.sql_artifact.preview_rows if response.sql_artifact else None,
+            sql_artifact=response.sql_artifact.model_dump() if response.sql_artifact else None,
         )
         store.add_message(conversation_id, assistant_msg)
 

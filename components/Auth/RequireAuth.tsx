@@ -26,12 +26,16 @@ export default function RequireAuth({ role, children }: Props) {
             redirectToSignIn(router);
             return;
         }
+        if (session.mustChangePassword) {
+            router.replace("/auth/change-password");
+            return;
+        }
         if (session.role !== role) {
             portalNavigate(router, homeUrlForRole(session.role));
         }
     }, [ready, session, role, router]);
 
-    if (!ready || !session || session.role !== role) {
+    if (!ready || !session || session.mustChangePassword || session.role !== role) {
         return role === "super_admin" ? (
             <AdminPortalSkeleton />
         ) : (

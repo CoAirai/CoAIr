@@ -24,7 +24,7 @@ import {
     resolveActiveWorkspaceUserId,
     type WorkspaceUser,
 } from "@/lib/chat/threads";
-import type { Citation, Message, RecentQuery } from "@/lib/chat/types";
+import type { Citation, Message, RecentQuery, SqlArtifact } from "@/lib/chat/types";
 
 type ChatContextValue = {
     messages: Message[];
@@ -311,6 +311,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             try {
                 let assistantText: string;
                 let citations: Citation[] | undefined;
+                let sqlArtifact: SqlArtifact | undefined;
 
                 if (live) {
                     if (!session.projectId) {
@@ -338,6 +339,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         requestId: makeId("req"),
                     });
                     assistantText = response.assistant_text;
+                    sqlArtifact = response.sql_artifact ?? undefined;
                     citations = mapLiveCitations(response.citations);
                 } else {
                     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -380,6 +382,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                             createdAt: new Date().toISOString(),
                             threadUserId: activeWorkspaceUserId,
                             citations,
+                            sqlArtifact,
                         },
                     ];
                     setRecentsByUserId((prevRecents) => ({

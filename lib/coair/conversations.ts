@@ -10,7 +10,7 @@ export type StoredConversation = {
         role: string;
         content: string;
         timestamp: string;
-        response?: { citations?: CoairCitation[] } | null;
+        response?: { assistant_text?: string; citations?: CoairCitation[]; sql_artifact?: import("@/lib/chat/types").SqlArtifact | null } | null;
     }>;
 };
 
@@ -32,7 +32,8 @@ export function conversationMessages(conversation: StoredConversation, userId: s
         .map((message, index) => ({
             id: `${conversation.conversation_id}-${index}`,
             role: message.role as "user" | "assistant",
-            content: message.content,
+            content: message.role === "assistant" ? message.response?.assistant_text ?? message.content : message.content,
+            sqlArtifact: message.role === "assistant" ? message.response?.sql_artifact ?? undefined : undefined,
             createdAt: message.timestamp,
             threadUserId: userId,
             authorUserId: message.role === "user" ? userId : undefined,

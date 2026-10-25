@@ -210,6 +210,8 @@ def _get_anchor_embeddings() -> Dict[str, list]:
         return _anchor_embeddings
 
     except Exception as e:
+        from .llm_errors import raise_local_generation_error
+        raise_local_generation_error(e)
         logger.warning(f"[Router] Anchor embedding failed: {e}")
         _anchor_embeddings = {}
         return _anchor_embeddings
@@ -618,6 +620,8 @@ class QueryRouter:
             if lines:
                 block = "\n".join(lines)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Topic inventory unavailable: {e}")
 
         self._topic_inventory_cache[project_id] = (block, now)
@@ -910,6 +914,8 @@ class QueryRouter:
             from .schema_context import analyze_schema_intent
             schema_signal = analyze_schema_intent(query, jargon=self.jargon)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Schema semantic routing skipped: {e}")
             return None
 
@@ -1105,6 +1111,8 @@ class QueryRouter:
                 )
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Embedding routing failed: {e}")
 
         return None
@@ -1264,6 +1272,8 @@ class QueryRouter:
             )
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   LLM rich classification error: {e}")
             # Signal failure to classify_query so it routes through the
             # deterministic safety net (single fallback path, one place).
@@ -1482,6 +1492,8 @@ class QueryRouter:
                 llm_call_budget=ESCALATION_LLM_BUDGET,
             )
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   Escalation agent failed → keeping first-pass answer: {e}")
             trace.record_error(f"escalation: {e}")
             trace.route = f"{base}_ESCALATION_FAILED"
@@ -1535,6 +1547,8 @@ class QueryRouter:
                 return None, verdict
             return self._escalate_to_agent(expanded, doc_ids, trace, result, verdict), verdict
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Escalation gate failed (keeping first pass): {e}")
             return None, verdict
 
@@ -1553,6 +1567,8 @@ class QueryRouter:
             logger.info(f"Query complete (agent) - {len(result.get('sources', []))} sources")
             return result
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   ReAct agent failed → fallback: {e}")
             trace.record_error(f"react_agent: {e}")
             trace.route = "AGENT_FAILED_FALLBACK"
@@ -1606,6 +1622,8 @@ class QueryRouter:
             from .document_registry import get_document_registry
             reg = get_document_registry()
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.debug(f"[FilenameResolve] registry unavailable: {e}")
             return []
 
@@ -1802,6 +1820,8 @@ class QueryRouter:
                 logger.info(f"[DocQuery] Jargon semantic query: {query} -> {semantic_query}")
                 query = semantic_query
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[DocQuery] Jargon replacement failed: {e}")
         logger.info("Routing to Document RAG...")
         search_topic = self._extract_document_search_topic(query)
@@ -1814,6 +1834,8 @@ class QueryRouter:
         try:
             filename_hints = self._resolve_filename_hints(search_topic)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[FilenameResolve] failed: {e}")
 
         # Per-user corpus: the light_graph (notices) and the SQL tables hold ONLY
@@ -1830,7 +1852,14 @@ class QueryRouter:
         try:
             from src.light_graph import get_light_graph
             graph = get_light_graph()
-            meta_results = graph.search_by_topic(search_topic, limit=20) if _demo_only_sources else []
+            meta_results = graph.search_by_topic(search_topic, limit=20) if _demo_only_sources and not doc_ids else []
+            from .document_registry import get_document_registry
+            from .project_context import get_current_project_id
+            registry = get_document_registry()
+            project_scope = get_current_project_id()
+            meta_results = [row for row in meta_results
+                            if (registry.get(row.get("doc_id", "")) is not None
+                                and registry.get(row["doc_id"]).project_id == project_scope)]
             if meta_results:
                 metadata_doc_ids = [r["doc_id"] for r in meta_results if r.get("doc_id")]
                 for r in meta_results:
@@ -1858,6 +1887,8 @@ class QueryRouter:
                     })
                 logger.info(f"Metadata pre-filter found {len(metadata_doc_ids)} docs")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"Metadata search failed: {e}")
 
         # 2. When filename resolves to PDFs, scope the vector search to those
@@ -1887,6 +1918,8 @@ class QueryRouter:
                 if payload_filters:
                     logger.info(f"[DocQuery] scope filter: {payload_filters}")
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.debug(f"[DocQuery] scope skipped: {e}")
 
         result = self.document_rag.query(
@@ -1950,6 +1983,8 @@ class QueryRouter:
                     })
                     seen_keys.add((fname, None))
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"Excel enrichment for doc query failed: {e}")
 
         # 4. If the RAG answer is empty or a bare denial but we have sources,
@@ -2058,7 +2093,13 @@ class QueryRouter:
         try:
             from src.light_graph import get_light_graph
             graph = get_light_graph()
-            meta_results = graph.search_by_topic(query, limit=5)
+            meta_results = graph.search_by_topic(query, limit=5) if not doc_ids else []
+            from .document_registry import get_document_registry
+            from .project_context import get_current_project_id
+            registry = get_document_registry()
+            scope = get_current_project_id()
+            meta_results = [row for row in meta_results if registry.get(row.get('doc_id', ''))
+                            and registry.get(row['doc_id']).project_id == scope]
             for r in meta_results:
                 file_name = r.get("file_name", "")
                 if not file_name or file_name in seen_files:
@@ -2090,6 +2131,8 @@ class QueryRouter:
             if meta_results:
                 logger.info(f"[DataQuery] Found {len(meta_results)} related notices")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[DataQuery] Related doc metadata search failed: {e}")
 
         # 2. RAG vector search (Pinecone, low top_k for speed)
@@ -2105,6 +2148,8 @@ class QueryRouter:
             if rag_count:
                 logger.info(f"[DataQuery] Found {rag_count} RAG citation(s)")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[DataQuery] Related doc RAG search failed: {e}")
 
         return related_sources
@@ -2139,6 +2184,8 @@ class QueryRouter:
             logger.info(f"   Hybrid decomposed → doc='{doc_q[:60]}' data='{data_q[:60]}'")
             return {"doc": doc_q, "data": data_q}
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Hybrid decomposition failed, using full query for both: {e}")
             return {"doc": query, "data": query}
 
@@ -2267,6 +2314,8 @@ class QueryRouter:
                 trace.record_llm_call(resp.usage)
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   Synthesis error: {e}")
             # Fall back to stitching the two sub-answers, but drop LlamaIndex's
             # "Empty Response" placeholder so it never reaches the UI verbatim.
@@ -2636,6 +2685,10 @@ class QueryRouter:
 
     def _handle_delete_query(self, file_hint: str, original_query: str) -> Dict[str, Any]:
         """Handle file deletion requests from chat."""
+        from .project_context import get_current_project_id, get_current_project_role
+        if get_current_project_id() and get_current_project_role() not in ('owner', 'editor'):
+            from fastapi import HTTPException
+            raise HTTPException(403, 'project_editor_required')
         from .document_registry import get_document_registry
         registry = get_document_registry()
 
@@ -2746,6 +2799,8 @@ class QueryRouter:
                     "source": "notice",
                 })
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[Search] Light graph search failed: {e}")
 
         # 2. Catalog: Excel/data files (semantic_tags, descriptions)
@@ -2772,6 +2827,8 @@ class QueryRouter:
                     "source": "catalog",
                 })
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[Search] Catalog search failed: {e}")
 
         # 3. Registry fallback: filename match
@@ -2795,6 +2852,8 @@ class QueryRouter:
                     "source": "registry",
                 })
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[Search] Registry search failed: {e}")
 
         # 3b. Bulk-corpus chunk mirror (e.g. 'edinburgh'). The sources above
@@ -2855,6 +2914,8 @@ class QueryRouter:
                     })
                 results.extend(chunk_results)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[Search] Chunk-store search failed: {e}")
 
         # 4. RAG semantic fallback for non-notice documents.
@@ -2906,6 +2967,8 @@ class QueryRouter:
                         "source": "rag_semantic",
                     })
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.warning(f"[Search] RAG semantic fallback failed: {e}")
 
         # Sort by date DESC (notice date first, then catalog date, then created_at)
@@ -2932,6 +2995,8 @@ class QueryRouter:
             from .catalog import get_catalog
             catalog_entries = get_catalog().entries
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[Router] Catalog load failed: {e}")
 
         if rag_reg or catalog_entries:
@@ -3047,6 +3112,8 @@ class QueryRouter:
                 "sources": [],
             }
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Thread query error: {e}")
             return {
                 "query": query,
@@ -3121,6 +3188,8 @@ class QueryRouter:
                 "sources": [],
             }
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Draft query error: {e}")
             return {
                 "query": query,
@@ -3192,6 +3261,8 @@ class QueryRouter:
             )
             data = resp.raw if isinstance(resp.raw, dict) else {}
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.debug(f"[Scope] compute_query_scope failed: {e}")
             return {}
 
@@ -3408,7 +3479,7 @@ class QueryRouter:
         elif query_type == QueryType.DOCUMENT:
             return self._handle_document_query_dual(expanded, doc_ids=doc_ids)
         else:  # HYBRID
-            return self._handle_hybrid_query_dual(expanded)
+            return self._handle_hybrid_query_dual(expanded, doc_ids=doc_ids)
 
     def _handle_document_query_dual(
         self, query: str, doc_ids: Optional[List[str]] = None,
@@ -3428,6 +3499,8 @@ class QueryRouter:
         try:
             filename_hints = self._resolve_filename_hints(search_topic)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[FilenameResolveDual] failed: {e}")
 
         # 1. Notices metadata search.
@@ -3436,7 +3509,13 @@ class QueryRouter:
         try:
             from src.light_graph import get_light_graph
             graph = get_light_graph()
-            meta_results = graph.search_by_topic(search_topic, limit=20)
+            meta_results = graph.search_by_topic(search_topic, limit=20) if not doc_ids else []
+            from .document_registry import get_document_registry
+            from .project_context import get_current_project_id
+            registry = get_document_registry()
+            scope = get_current_project_id()
+            meta_results = [row for row in meta_results if registry.get(row.get('doc_id', ''))
+                            and registry.get(row['doc_id']).project_id == scope]
             if meta_results:
                 metadata_doc_ids = [r["doc_id"] for r in meta_results if r.get("doc_id")]
                 for r in meta_results:
@@ -3464,6 +3543,8 @@ class QueryRouter:
                     })
                 logger.info(f"[DocQueryDual] notices found {len(metadata_doc_ids)} docs")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[DocQueryDual] notices search failed: {e}")
 
         # 2. When filename resolves to PDFs, scope the vector search to those
@@ -3946,7 +4027,7 @@ class QueryRouter:
         finally:
             finish_trace()
 
-    def _handle_hybrid_query_dual(self, query: str) -> Dict[str, Dict[str, Any]]:
+    def _handle_hybrid_query_dual(self, query: str, doc_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         """Handle hybrid query with both providers in parallel."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from .config import LLM_PROVIDERS
@@ -3955,8 +4036,9 @@ class QueryRouter:
         providers = effective_providers(LLM_PROVIDERS)
 
         def _run_hybrid(provider: str):
-            doc_result = self.document_rag.query_with_provider(query, provider)
-            data_result = self.data_analyzer.query_with_provider(query, provider)
+            doc_result = self.document_rag.query_with_provider(query, provider, doc_ids=doc_ids)
+            allowed = self.data_analyzer.get_tables_for_doc_ids(doc_ids) if doc_ids else self._allowed_data_tables()
+            data_result = self.data_analyzer.query_with_provider(query, provider, allowed_tables=allowed)
 
             from . import llm_client
             from .prompt_security import safe_render_prompt, build_system_prompt
@@ -3982,6 +4064,8 @@ class QueryRouter:
                                                 task_type="answer_synthesis")
                 combined_answer = resp.text
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.error(f"   [{provider}] Hybrid synthesis error: {e}")
                 combined_answer = (
                     f"**From Documents:**\n{doc_result['answer']}\n\n"
@@ -4006,6 +4090,8 @@ class QueryRouter:
                 try:
                     results[prov] = future.result()
                 except Exception as e:
+                    from .llm_errors import raise_local_generation_error
+                    raise_local_generation_error(e)
                     logger.error(f"   [{prov}] Hybrid dual failed: {e}")
                     results[prov] = {"answer": f"Error from {prov}: {e}", "sources": []}
 

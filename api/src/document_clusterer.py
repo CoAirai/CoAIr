@@ -22,6 +22,7 @@ import json
 import os
 import threading
 import uuid
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -89,29 +90,43 @@ class ClusterEntry:
 
 class DocumentClusterer:
     _instance: Optional["DocumentClusterer"] = None
+    _project_instances = {}
     _bootstrap_lock = threading.Lock()
 
-    def __new__(cls):
-        if cls._instance is None:
-            with cls._bootstrap_lock:
-                if cls._instance is None:
-                    inst = super().__new__(cls)
-                    inst._lock = threading.Lock()
-                    inst._clusters: Dict[str, ClusterEntry] = {}
-                    inst._assignments: Dict[str, str] = {}
-                    inst._centroid_cache: Dict[str, np.ndarray] = {}
-                    inst._computed_at: str = ""
-                    inst._load()
+    def __new__(cls, project_id=None):
+        from .project_context import get_current_project_id
+        project_id = get_current_project_id() if project_id is None else project_id
+        state_file = CLUSTERS_FILE.parent / 'projects' / project_id / CLUSTERS_FILE.name if project_id else CLUSTERS_FILE
+        key = str(state_file)
+        with cls._bootstrap_lock:
+            existing = cls._project_instances.get(key) if project_id else cls._instance
+            if existing is None:
+                inst = super().__new__(cls)
+                inst._project_id = project_id
+                inst._state_file = state_file
+                inst._lock = threading.Lock()
+                inst._clusters: Dict[str, ClusterEntry] = {}
+                inst._assignments: Dict[str, str] = {}
+                inst._centroid_cache: Dict[str, np.ndarray] = {}
+                inst._computed_at: str = ""
+                inst._load()
+                if project_id:
+                    cls._project_instances[key] = inst
+                else:
                     cls._instance = inst
-        return cls._instance
+                existing = inst
+        return existing
+
+    def __init__(self, project_id=None):
+        pass  # State initialization happens only once in __new__.
 
     # ── Persistence ────────────────────────────────────────────────
 
     def _load(self):
-        if not CLUSTERS_FILE.exists():
+        if not self._state_file.exists():
             return
         try:
-            data = json.loads(CLUSTERS_FILE.read_text(encoding="utf-8"))
+            data = json.loads(self._state_file.read_text(encoding="utf-8"))
             self._computed_at = data.get("computed_at", "")
             for cid, raw in (data.get("clusters") or {}).items():
                 self._clusters[cid] = ClusterEntry(
@@ -132,7 +147,7 @@ class DocumentClusterer:
 
     def _persist_locked(self):
         """Atomic write. Must be called while holding self._lock."""
-        CLUSTERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self._state_file.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "version": 1,
             "computed_at": self._computed_at or datetime.utcnow().isoformat(),
@@ -148,9 +163,9 @@ class DocumentClusterer:
             },
             "assignments": self._assignments,
         }
-        tmp = CLUSTERS_FILE.with_suffix(".json.tmp")
+        tmp = self._state_file.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, CLUSTERS_FILE)
+        os.replace(tmp, self._state_file)
 
         # Mirror denormalized cluster info into DocumentRegistry for fast reads.
         try:
@@ -260,6 +275,9 @@ class DocumentClusterer:
         """
         from .document_registry import get_document_registry
         registry = get_document_registry()
+        project_id = project_id or self._project_id
+        if project_id != self._project_id:
+            raise PermissionError('cluster_project_mismatch')
         if project_id:
             from .project_context import set_current_project
             set_current_project(project_id)
@@ -561,7 +579,8 @@ class DocumentClusterer:
                 # Re-cluster trigger
                 if self._should_recluster_locked():
                     threading.Thread(
-                        target=self.cluster_all,
+                        target=copy_context().run,
+                        args=(self.cluster_all,),
                         kwargs={"force": False},
                         daemon=True,
                     ).start()
@@ -593,8 +612,8 @@ class DocumentClusterer:
                 # Incremental relabel if drift threshold hit
                 if entry.doc_count_since_relabel >= RELABEL_AFTER_NEW_DOCS:
                     threading.Thread(
-                        target=self._relabel_one,
-                        args=(best_cid,),
+                        target=copy_context().run,
+                        args=(self._relabel_one, best_cid),
                         daemon=True,
                     ).start()
 
@@ -618,7 +637,8 @@ class DocumentClusterer:
 
             if self._should_recluster_locked():
                 threading.Thread(
-                    target=self.cluster_all,
+                    target=copy_context().run,
+                    args=(self.cluster_all,),
                     kwargs={"force": False},
                     daemon=True,
                 ).start()
@@ -669,6 +689,6 @@ class DocumentClusterer:
 # ── Module-level accessor ──────────────────────────────────────────
 
 
-def get_clusterer() -> DocumentClusterer:
+def get_clusterer(project_id=None) -> DocumentClusterer:
     """Get the singleton DocumentClusterer."""
-    return DocumentClusterer()
+    return DocumentClusterer(project_id)

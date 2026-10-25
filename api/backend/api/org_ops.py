@@ -420,6 +420,13 @@ async def invite_org_user(
     users: UserStore = Depends(get_user_store),
     ops: OpsStore = Depends(get_ops_store),
 ):
+    from src.demo_invites import enabled as demo_invites_enabled, require_delivery_configuration, check_capacity
+    from backend.core.platform_guard import rate_limit
+    public_demo = demo_invites_enabled()
+    if public_demo:
+        require_delivery_configuration()
+        rate_limit(f"demo:invite:{actor.username}", limit=20, window_seconds=3600)
+        check_capacity(orgs, org.org_id, req.email.strip().lower())
     email = req.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(400, "invalid_email")
@@ -429,12 +436,16 @@ async def invite_org_user(
 
     package_storage = int(org.policy.get("default_storage_bytes") or 0)
     existing = users.get_user(email)
+    if existing:
+        membership = orgs.membership_for(email)
+        if not membership or membership['org_id'] != org.org_id:
+            raise HTTPException(409, 'email_already_registered')
     password = secrets.token_urlsafe(12)
     if existing:
         status = existing.get("account_status") or (
             "active" if existing.get("is_active", True) else "invited"
         )
-        if status == "active" or existing.get("is_active", True):
+        if (public_demo and status != ACCOUNT_INVITED) or status == "active" or existing.get("is_active", True):
             raise HTTPException(409, "email_already_registered")
         users.update_user(
             email,
@@ -478,6 +489,21 @@ async def invite_org_user(
             raise HTTPException(409, str(exc)) from exc
     rebalance_equal_remaining(org.org_id, orgs=orgs, users=users)
     record = users.get_user(email) or record
+    from src.config import DEPLOYMENT_MODE
+    if DEPLOYMENT_MODE == 'local' and not public_demo:
+        from src.appliance_access import provision_personal_access
+        record = provision_personal_access(users, orgs, email)
+        users.bump_token_epoch(email)
+        ops.record_audit(actor=actor.username, action='user.invite', target_type='user',
+                         target_id=email, target_label=email, detail='Local account created; first password change required')
+        return {'username': email, 'display_name': record['display_name'],
+                'invited': False, 'temporary_password': password, 'activation_required': False}
+    if public_demo:
+        users.update_user(email, access_plan="demo", expires_at=None,
+                          token_limit=1_000_000, account_status=ACCOUNT_INVITED,
+                          is_active=False, must_change_password=False)
+        users.billing.update_account(email, storage_limit_bytes=5_000_000_000)
+        users.bump_token_epoch(email)
     invited = False
     if use_supabase_auth():
         try:
@@ -497,6 +523,7 @@ async def invite_org_user(
         ops=ops,
         org_id=org.org_id,
         created_by=actor.username,
+        return_invite_link=public_demo,
     )
     emailed = bool(activation.get("emailed"))
     ops.record_audit(
@@ -516,6 +543,8 @@ async def invite_org_user(
         "activation_required": True,
         "temporary_password": "",
         "debug_code": activation.get("debug_code"),
+        "invite_url": activation.get("invite_url"),
+        "invite_expires_at": activation.get("invite_expires_at"),
     }
 
 

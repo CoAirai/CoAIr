@@ -38,6 +38,8 @@ def _worker() -> None:
             continue
         traceback_id = f"ftb_{uuid.uuid4().hex[:16]}"
         try:
+            from backend.core.security import authorize_worker
+            authorize_worker(run['username'], run['project_id'])
             workspace = store.get_workspace(run["project_id"], run["workspace_id"])
             if not workspace:
                 raise ForensicEngineError("forensic_workspace_not_found")

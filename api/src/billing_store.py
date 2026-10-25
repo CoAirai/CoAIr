@@ -107,6 +107,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _appliance_storage_cap(conn, username):
+    if 'access_plan' not in table_columns(conn, 'users'):
+        return 0
+    row = conn.execute('SELECT access_plan FROM users WHERE username=?', [username]).fetchone()
+    return 5_000_000_000 if row and row['access_plan'] in ('demo', 'office') else 0
+
+
 def _to_microcredits(value: Decimal | int | float | str) -> int:
     return int(
         (Decimal(str(value)) * MICROCREDITS_PER_CREDIT).quantize(
@@ -276,6 +283,9 @@ class BillingStore:
             return self.summary(username)
         sets.append("updated_at=?"); params.extend([_now(), username])
         with self._lock, self._connect() as conn:
+            cap = _appliance_storage_cap(conn, username)
+            if cap and storage_limit_bytes is not None and int(storage_limit_bytes) > cap:
+                raise ValueError('appliance_storage_limit_exceeded')
             cur = conn.execute(
                 f"UPDATE billing_accounts SET {', '.join(sets)} WHERE username=?", params
             )
@@ -306,6 +316,9 @@ class BillingStore:
             "WHERE username=? AND event_type='charge'", [username]
         ).fetchone()[0])
         limit = int(row["storage_limit_bytes"])
+        cap = _appliance_storage_cap(conn, username)
+        if cap:
+            limit = min(limit or cap, cap)
         stored = int(row["storage_used_bytes"])
         return {
             "plan_type": row["plan_type"],
@@ -491,14 +504,18 @@ class BillingStore:
             if old and old["deleted_at"] is None:
                 return self.summary(username, conn=conn)
             account = conn.execute(
-                "SELECT * FROM billing_accounts WHERE username=?", [username]
+                "SELECT * FROM billing_accounts WHERE username=?" +
+                (" FOR UPDATE" if conn.backend == "postgres" else ""), [username]
             ).fetchone()
             if not account:
                 return self.summary(username, conn=conn)
             used = int(account["storage_used_bytes"]); limit = int(account["storage_limit_bytes"])
+            cap = _appliance_storage_cap(conn, username)
+            if cap:
+                limit = min(limit or cap, cap)
             from src.overage import should_block_quota
 
-            if should_block_quota(used=used, limit=limit, attempted=size):
+            if (cap and used + size > limit) or (not cap and should_block_quota(used=used, limit=limit, attempted=size)):
                 raise StorageQuotaExceededError(username, used, limit, size)
             if old:
                 conn.execute(

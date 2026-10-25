@@ -1,5 +1,7 @@
 "use client";
 
+import { parseAnswer, type AnswerPart } from "@/lib/chat/answerText";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -13,10 +15,16 @@ import { getModuleGate } from "@/lib/workspace/moduleAccess";
 import { ownedByUser } from "@/lib/workspace/ownedByUser";
 import { useChat } from "@/context/ChatContext";
 import ForensicShell from "./ForensicShell";
+import {
+    FORENSIC_MODULE_REQUIREMENTS,
+    forensicRequirementCopy,
+} from "@/lib/forensic/requirements";
 import { ModulePortalSkeleton } from "@/components/Skeleton/portals";
 import {
     createForensicRun,
-    defaultForensicRunParameters,
+    downloadForensicArtifact,
+    forensicRunParameters,
+    listForensicProgrammes,
     listForensicRuns,
     listForensicWorkspaces,
     type CoairForensicRun,
@@ -43,18 +51,139 @@ function mapWorkspace(
     };
 }
 
-function summarizeRun(run: CoairForensicRun | null) {
-    if (!run) return "No live run yet.";
-    if (run.status && !["ready", "complete", "completed"].includes(run.status)) {
-        return `Status: ${run.status}${run.error ? ` — ${run.error}` : ""}`;
+function isOpenRun(status?: string) {
+    const value = (status || "").toLowerCase();
+    return value === "queued" || value === "processing";
+}
+
+function statusClass(status?: string) {
+    const value = (status || "").toUpperCase();
+    if (value === "PASS") return "text-green-600";
+    if (value === "FAIL") return "text-red-500";
+    return "text-sub-600";
+}
+
+function forensicFailure(run: CoairForensicRun) {
+    const code = run.error_code || run.error || "";
+    if (code === "forensic_programmes_insufficient") {
+        return "This check needs two programme files: one as-planned and one as-built. This workspace has only one XER, so the run stopped before any model was called. It is not a token limit.";
+    }
+    if (code === "token_quota_exceeded" || code.includes("quota")) {
+        return "The account is over its CA usage limit, so this run could not continue.";
+    }
+    if (!code) return "Run failed.";
+    return `Run failed — ${code.replaceAll("_", " ")}`;
+}
+
+function NarrativeText({ text }: { text: string }) {
+    return <div className="flex flex-col gap-2" aria-label="AI narrative">
+                {parseAnswer(text).map((block, index) => {
+                    const parts = (values: AnswerPart[]) => values.map((part, i) => part.type === "bold"
+                        ? <strong key={i} className="font-semibold">{part.text}</strong>
+                        : <span key={i}>{part.type === "cite" ? part.name : part.text}</span>);
+                    if (block.type === "code") return <pre key={index} className="overflow-auto whitespace-pre-wrap">{block.text}</pre>;
+                    if (block.type === "table") return <div key={index} className="overflow-auto"><table className="w-full text-left text-label-sm"><thead><tr>{block.headers.map((h,i)=><th key={i} className="px-2 py-1 font-semibold">{h}</th>)}</tr></thead><tbody>{block.rows.map((row,i)=><tr key={i}>{row.map((cell,j)=><td key={j} className="px-2 py-1">{cell}</td>)}</tr>)}</tbody></table></div>;
+                    return block.type === "heading" ? <h3 key={index} className="font-semibold">{parts(block.parts)}</h3> : <p key={index} className="text-label-sm leading-6">{parts(block.parts)}</p>;
+                })}
+            </div>;
+}
+
+function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
+    if (!run) {
+        return (
+            <p className="mt-2 text-label-sm leading-6 text-sub-600">
+                No live run yet.
+            </p>
+        );
+    }
+    if (isOpenRun(run.status)) {
+        return (
+            <p className="mt-2 text-label-sm leading-6 text-sub-600">
+                Status: {run.status}. You can close this page. The run
+                continues, and coming back shows running, ready, or failed.
+            </p>
+        );
+    }
+    if ((run.status || "").toLowerCase() === "failed") {
+        return (
+            <p className="mt-2 text-label-sm leading-6 text-red-500">
+                {forensicFailure(run)}
+            </p>
+        );
     }
     const result = run.result;
-    if (!result) return "Run finished with no summary.";
-    if (typeof result.summary === "string") return result.summary;
-    if (typeof result.narrative === "string") return result.narrative;
-    if (typeof result.text === "string") return result.text;
-    if (Array.isArray(result.findings)) return result.findings.join(" ");
-    return JSON.stringify(result).slice(0, 1200);
+    const checks =
+        result?.tables?.flatMap((table) => table.rows ?? []) ?? [];
+    if (!result || (checks.length === 0 && !(result.metrics ?? []).length)) {
+        const fallback =
+            result?.summary ||
+            result?.narrative ||
+            result?.text ||
+            (Array.isArray(result?.findings) ? result.findings.join(" ") : "");
+        return (
+            <div className="mt-2 flex flex-col gap-2">
+                {result?.narrative ? <NarrativeText text={result.narrative} /> : <p className="text-label-sm leading-6 text-sub-600">{fallback || "Run finished with no summary."}</p>}
+                {(result?.warnings ?? []).map((warning, index) => <p key={index} className="text-label-sm text-sub-600">{warning}</p>)}
+            </div>
+        );
+    }
+    return (
+        <div className="mt-3 flex flex-col gap-4">
+            {(result.metrics ?? []).length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                    {result.metrics?.map((metric) => (
+                        <span
+                            key={`${metric.label}-${metric.value}`}
+                            className="rounded-full border border-stroke-soft-200 px-3 py-1 text-label-xs text-sub-600"
+                        >
+                            {metric.label}: {metric.value}
+                        </span>
+                    ))}
+                </div>
+            ) : null}
+            {checks.length > 0 ? (
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-left text-label-sm">
+                        <thead>
+                            <tr className="text-label-xs uppercase tracking-[0.14em] text-soft-400">
+                                <th className="py-2 pr-3 font-medium">Check</th>
+                                <th className="py-2 pr-3 font-medium">Status</th>
+                                <th className="py-2 pr-3 font-medium">Result</th>
+                                <th className="py-2 font-medium">Threshold</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stroke-soft-200">
+                            {checks.map((row) => (
+                                <tr key={`${row.number}-${row.name}`}>
+                                    <td className="py-3 pr-3 text-strong-950">
+                                        {row.number}. {row.name}
+                                        {row.summary ? (
+                                            <p className="mt-1 text-label-xs leading-5 text-sub-600">
+                                                {row.summary}
+                                            </p>
+                                        ) : null}
+                                    </td>
+                                    <td
+                                        className={`py-3 pr-3 ${statusClass(row.status)}`}
+                                    >
+                                        {row.status || "—"}
+                                    </td>
+                                    <td className="py-3 pr-3 text-sub-600">
+                                        {row.metric_value ?? "—"}
+                                    </td>
+                                    <td className="py-3 text-sub-600">
+                                        {row.threshold || row.na_reason || "—"}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : null}
+            {(result.warnings ?? []).map((warning, index) => <p key={index} className="text-label-sm text-sub-600">{warning}</p>)}
+            {result.narrative ? <NarrativeText text={result.narrative} /> : null}
+        </div>
+    );
 }
 
 const ForensicToolPage = ({ toolId }: Props) => {
@@ -91,6 +220,16 @@ const ForensicToolPage = ({ toolId }: Props) => {
     const [run, setRun] = useState<CoairForensicRun | null>(null);
     const [runError, setRunError] = useState("");
     const [running, setRunning] = useState(false);
+    const [programmeNames, setProgrammeNames] = useState<Record<string, string>>(
+        {}
+    );
+    const [delayActivity, setDelayActivity] = useState("");
+    const [delayStart, setDelayStart] = useState("");
+    const [delayFinish, setDelayFinish] = useState("");
+    const [cabCodes, setCabCodes] = useState("");
+    const [cabAnchor, setCabAnchor] = useState("");
+    const [downloadingArtifact, setDownloadingArtifact] = useState("");
+    const [includeAiNarrative, setIncludeAiNarrative] = useState(false);
 
     const programmeWorkspaces = live.enabled ? liveWorkspaces : mockWorkspaces;
     const activeWorkspace =
@@ -104,7 +243,24 @@ const ForensicToolPage = ({ toolId }: Props) => {
               activeWorkspace.programmeIds.includes(file.id)
           )
         : [];
-    const canLiveRun = Boolean(defaultForensicRunParameters(toolId));
+    const runParameters = tool
+        ? forensicRunParameters(tool.id, {
+              activity: delayActivity,
+              start: delayStart,
+              finish: delayFinish,
+              activityCodes: cabCodes,
+              anchor: cabAnchor,
+          })
+        : null;
+    const canLiveRun = Boolean(runParameters);
+    const programmeCount = live.enabled
+        ? (activeWorkspace?.programmeIds.length ?? 0)
+        : activeProgrammes.length;
+    const requirement = FORENSIC_MODULE_REQUIREMENTS[toolId];
+    const shortOnFiles = Boolean(
+        requirement && !requirement.extra && programmeCount < requirement.files
+    );
+    const runBusy = running || isOpenRun(run?.status);
 
     useEffect(() => {
         if (gate?.state === "locked") {
@@ -124,6 +280,16 @@ const ForensicToolPage = ({ toolId }: Props) => {
         const projectId = session.projectId;
         const companyId = session.companyId ?? "live";
         let cancelled = false;
+        void listForensicProgrammes(token, projectId)
+            .then((payload) => {
+                if (cancelled) return;
+                const names: Record<string, string> = {};
+                for (const row of payload.programmes ?? []) {
+                    names[row.file_id] = row.name;
+                }
+                setProgrammeNames(names);
+            })
+            .catch(() => undefined);
         void listForensicWorkspaces(token, projectId)
             .then((payload) => {
                 if (cancelled) return;
@@ -188,6 +354,46 @@ const ForensicToolPage = ({ toolId }: Props) => {
         tool,
     ]);
 
+    useEffect(() => {
+        if (
+            !live.enabled ||
+            !session?.accessToken ||
+            !session.projectId ||
+            !liveActiveId ||
+            !tool ||
+            !isOpenRun(run?.status)
+        ) {
+            return;
+        }
+        const token = session.accessToken;
+        const projectId = session.projectId;
+        const moduleSlug = tool.id;
+        let cancelled = false;
+        const timer = window.setInterval(() => {
+            void listForensicRuns(token, projectId, liveActiveId)
+                .then((payload) => {
+                    if (cancelled) return;
+                    const latest =
+                        (payload.runs ?? []).find(
+                            (item) => item.module_slug === moduleSlug
+                        ) ?? null;
+                    if (latest) setRun(latest);
+                })
+                .catch(() => undefined);
+        }, 2000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [
+        live.enabled,
+        liveActiveId,
+        run?.status,
+        session?.accessToken,
+        session?.projectId,
+        tool,
+    ]);
+
     const runLive = async () => {
         if (!session?.accessToken || !session.projectId || !liveActiveId || !tool) {
             return;
@@ -199,7 +405,15 @@ const ForensicToolPage = ({ toolId }: Props) => {
                 session.accessToken,
                 session.projectId,
                 liveActiveId,
-                tool.id
+                tool.id,
+                forensicRunParameters(tool.id, {
+                    activity: delayActivity,
+                    start: delayStart,
+                    finish: delayFinish,
+                    activityCodes: cabCodes,
+                    anchor: cabAnchor,
+                }),
+                includeAiNarrative && tool.id !== "report-assembler"
             );
             setRun(created);
         } catch (err) {
@@ -220,7 +434,7 @@ const ForensicToolPage = ({ toolId }: Props) => {
                     <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                             <p className="text-[11px] uppercase tracking-[0.22em] text-soft-400">
-                                Programme / deterministic engine
+                                Programme analysis
                             </p>
                             <h1 className="mt-3 text-4xl font-medium tracking-tight text-strong-950 max-md:text-3xl">
                                 {tool.label}
@@ -261,6 +475,9 @@ const ForensicToolPage = ({ toolId }: Props) => {
                             </select>
                         </label>
                     </div>
+                    <p className="mt-4 text-label-sm text-sub-600">
+                        {forensicRequirementCopy(tool.id, programmeCount)}
+                    </p>
 
                     {!activeWorkspace ? (
                         <section className="mt-8 rounded-2xl border border-stroke-soft-200 bg-white-0 p-5">
@@ -288,46 +505,212 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                     {activeWorkspace.name}
                                 </p>
                                 <p className="mt-2 text-label-xs text-sub-600">
-                                    {live.enabled
-                                        ? `${activeWorkspace.programmeIds.length} programme(s)`
-                                        : `${activeProgrammes.length} XER programme${
-                                              activeProgrammes.length === 1
-                                                  ? ""
-                                                  : "s"
-                                          }`}
+                                    {programmeCount === 1
+                                        ? "1 programme file"
+                                        : `${programmeCount} programme files`}
                                 </p>
+                                <ul className="mt-2 space-y-1">
+                                    {(live.enabled
+                                        ? activeWorkspace.programmeIds.map(
+                                              (id) => programmeNames[id] || id
+                                          )
+                                        : activeProgrammes.map((file) => file.name)
+                                    ).map((name, index) => (
+                                        <li
+                                            key={`${name}-${index}`}
+                                            className="truncate text-label-xs text-strong-950"
+                                        >
+                                            {name}
+                                        </li>
+                                    ))}
+                                </ul>
                             </section>
                             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:col-span-2">
                                 <h2 className="text-label-xs uppercase tracking-[0.16em] text-soft-400">
                                     {live.enabled ? "Live engine" : "Mock finding"}
                                 </h2>
-                                <p className="mt-2 text-label-sm leading-6 text-sub-600">
-                                    {live.enabled
-                                        ? summarizeRun(run)
-                                        : `${tool.label} ran against ${
-                                              activeProgrammes
-                                                  .map((file) => file.name)
-                                                  .join(" · ") || "the selected set"
-                                          }. This is a deterministic mock result for product review — live engine output comes later.`}
-                                </p>
+                                {live.enabled ? (
+                                    <ForensicLiveResult run={run} />
+                                ) : (
+                                    <p className="mt-2 text-label-sm leading-6 text-sub-600">
+                                        {`${tool.label} ran against ${
+                                            activeProgrammes
+                                                .map((file) => file.name)
+                                                .join(" · ") || "the selected set"
+                                        }. This is a deterministic mock result for product review — live engine output comes later.`}
+                                    </p>
+                                )}
+                                {live.enabled && (run?.artifacts ?? []).length > 0 ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {(run?.artifacts ?? []).map((artifact) => (
+                                            <button
+                                                key={artifact.artifact_id}
+                                                type="button"
+                                                disabled={
+                                                    downloadingArtifact ===
+                                                    artifact.artifact_id
+                                                }
+                                                className="h-10 rounded-xl border border-stroke-soft-200 px-4 text-label-sm text-strong-950 hover:bg-weak-50 disabled:opacity-60"
+                                                onClick={() => {
+                                                    if (
+                                                        !session?.accessToken ||
+                                                        !session.projectId
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    setDownloadingArtifact(
+                                                        artifact.artifact_id
+                                                    );
+                                                    setRunError("");
+                                                    void downloadForensicArtifact(
+                                                        session.accessToken,
+                                                        session.projectId,
+                                                        artifact.artifact_id,
+                                                        artifact.name
+                                                    )
+                                                        .catch((err) => {
+                                                            setRunError(
+                                                                err instanceof Error
+                                                                    ? err.message
+                                                                    : "Could not download the result."
+                                                            );
+                                                        })
+                                                        .finally(() =>
+                                                            setDownloadingArtifact("")
+                                                        );
+                                                }}
+                                            >
+                                                {downloadingArtifact ===
+                                                artifact.artifact_id
+                                                    ? "Preparing…"
+                                                    : `Download ${artifact.name}`}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
                                 {runError ? (
                                     <p className="mt-3 text-label-sm text-red-500">
                                         {runError}
                                     </p>
                                 ) : null}
+                                {live.enabled &&
+                                (tool.id === "impacted-as-planned" ||
+                                    tool.id === "time-impact-analysis") ? (
+                                    <div className="mt-4 grid gap-3">
+                                        <label className="block">
+                                            <span className="mb-1 block text-label-xs text-sub-600">
+                                                Delayed activity
+                                            </span>
+                                            <input
+                                                value={delayActivity}
+                                                onChange={(event) =>
+                                                    setDelayActivity(event.target.value)
+                                                }
+                                                className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                            />
+                                        </label>
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            <label className="block">
+                                                <span className="mb-1 block text-label-xs text-sub-600">
+                                                    Start
+                                                </span>
+                                                <input
+                                                    type="date"
+                                                    value={delayStart}
+                                                    max={delayFinish || undefined}
+                                                    onChange={(event) =>
+                                                        setDelayStart(event.target.value)
+                                                    }
+                                                    className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-label-xs text-sub-600">
+                                                    Finish
+                                                </span>
+                                                <input
+                                                    type="date"
+                                                    value={delayFinish}
+                                                    min={delayStart || undefined}
+                                                    onChange={(event) =>
+                                                        setDelayFinish(event.target.value)
+                                                    }
+                                                    className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                                />
+                                            </label>
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {live.enabled && tool.id === "collapsed-as-built" ? (
+                                    <div className="mt-4 grid gap-3">
+                                        <label className="block">
+                                            <span className="mb-1 block text-label-xs text-sub-600">
+                                                Activity codes to remove
+                                            </span>
+                                            <textarea
+                                                value={cabCodes}
+                                                onChange={(event) =>
+                                                    setCabCodes(event.target.value)
+                                                }
+                                                rows={3}
+                                                placeholder="A1010, A1040"
+                                                className="w-full rounded-xl border border-stroke-soft-200 px-3 py-2 text-label-sm text-strong-950 outline-none placeholder:text-soft-400 focus:border-blue-500"
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="mb-1 block text-label-xs text-sub-600">
+                                                Anchor activity (optional)
+                                            </span>
+                                            <input
+                                                value={cabAnchor}
+                                                onChange={(event) =>
+                                                    setCabAnchor(event.target.value)
+                                                }
+                                                className="h-11 w-full rounded-xl border border-stroke-soft-200 px-3 text-label-sm text-strong-950 outline-none focus:border-blue-500"
+                                            />
+                                        </label>
+                                    </div>
+                                ) : null}
+                                {live.enabled && tool.id !== "report-assembler" ? (
+                                    <label className="mt-4 flex items-center gap-2 text-label-sm text-sub-600">
+                                        <input type="checkbox" checked={includeAiNarrative} disabled={runBusy} onChange={event => setIncludeAiNarrative(event.target.checked)} />
+                                        Include AI narrative
+                                    </label>
+                                ) : null}
                                 {live.enabled ? (
                                     <button
                                         type="button"
-                                        disabled={!canLiveRun || running}
+                                        disabled={!canLiveRun || runBusy || shortOnFiles}
                                         onClick={() => void runLive()}
                                         className="mt-4 h-10 rounded-xl bg-blue-500 px-4 text-label-sm text-white-0 disabled:cursor-not-allowed disabled:bg-soft-200 disabled:text-soft-400"
                                     >
-                                        {running
+                                        {runBusy
                                             ? "Running…"
-                                            : canLiveRun
-                                              ? `Run ${tool.label}`
-                                              : "Needs extra inputs"}
+                                            : !canLiveRun
+                                              ? "Needs extra inputs"
+                                              : shortOnFiles
+                                                ? "Needs another programme"
+                                                : `Run ${tool.label}`}
                                     </button>
+                                ) : null}
+                                {live.enabled && tool.id === "report-assembler" ? (
+                                    <p className="mt-3 text-label-xs leading-5 text-sub-600">
+                                        Run the required checks in this workspace first,
+                                        then assemble their results into a Word report.
+                                    </p>
+                                ) : null}
+                                {live.enabled && !canLiveRun ? (
+                                    <p className="mt-3 text-label-xs leading-5 text-sub-600">
+                                        {tool.id === "evidence-led-draft"
+                                            ? "This draft is not available from the engine yet."
+                                            : tool.id === "collapsed-as-built"
+                                              ? "Enter the activity codes to remove from the as-built programme."
+                                              : tool.id === "impacted-as-planned" ||
+                                                  tool.id === "time-impact-analysis"
+                                                ? "Enter the delayed activity and a finish on or after the start."
+                                                : requirement?.extra ||
+                                                  "This analysis needs dates or a baseline that are not on the programme yet. Check the XER set in Data Intake."}
+                                    </p>
                                 ) : null}
                             </section>
                             <section className="rounded-2xl border border-stroke-soft-200 bg-white-0 p-5 md:col-span-3">
@@ -336,7 +719,9 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 </h2>
                                 <p className="mt-3 text-label-sm leading-7 text-sub-600">
                                     {live.enabled
-                                        ? "Open Intake to swap the XER set, then run this analysis against the live forensic engine."
+                                        ? run
+                                            ? "The checks above are the live engine result for this workspace. Run again after you change the XER set."
+                                            : "No run yet. The result appears here after you run this analysis."
                                         : `The selected programmes support a readable ${tool.label.toLowerCase()} position. Open Intake to swap the XER set, or keep this workspace and move through the native COAir analyses in the left nav.`}
                                 </p>
                             </section>

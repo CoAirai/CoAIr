@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from typing import Dict, Iterator, List, Tuple
 
-_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+_HEADING = re.compile(r"^(#{1,6})(?:\s+|(?<=##)(?=[^#\s]))(.*)$")
 _BULLET = re.compile(r"^(\s*)[-*+]\s+(.*)$")
 _ORDERED = re.compile(r"^(\s*)(\d+)[.)]\s+(.*)$")
 _QUOTE = re.compile(r"^>\s?(.*)$")

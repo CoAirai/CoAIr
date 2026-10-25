@@ -28,9 +28,12 @@ class TaskProfile:
     thinking_level: str
     timeout_seconds: int
     provider_retries: int = 3
+    retry_output_tokens: int = 0
 
 
 MODEL_CAPABILITIES: Dict[str, ModelCapabilities] = {
+    'qwen3.6-35b-a3b': ModelCapabilities(input_tokens=131_072, output_tokens=32_768,
+                                     thinking_levels=('minimal',)),
     "gemini-3.6-flash": ModelCapabilities(
         input_tokens=1_048_576,
         output_tokens=65_536,
@@ -114,17 +117,21 @@ def get_task_profile(task_type: str) -> TaskProfile:
         "query_plan": "research_plan",
         "answer_synthesis": "chat_answer",
         "document_synthesis": "chat_answer",
+        "forensic_narrative": "report_structured",
     }.get(key, key)
     profile = TASK_PROFILES.get(key, TASK_PROFILES["generation"])
     from .config import LOCAL_LLM, LLM_CONTEXT_TOKENS, LLM_LOCAL_OUTPUT_TOKENS
     if LOCAL_LLM:
-        output = min(profile.max_output_tokens, LLM_LOCAL_OUTPUT_TOKENS)
+        long_task = key in ("chronology_synthesis", "report_structured", "chronology_aggregation", "chronology_extract", "ingestion_event_extract")
+        initial = 16_384 if long_task else profile.max_output_tokens
+        output = min(initial, LLM_LOCAL_OUTPUT_TOKENS)
+        retry_output = min(output * 2, LLM_LOCAL_OUTPUT_TOKENS, 32_768)
         profile = replace(profile, max_output_tokens=output,
+                          provider_retries=1,
+                          retry_output_tokens=retry_output,
                           max_input_tokens=min(profile.max_input_tokens,
-                                               LLM_CONTEXT_TOKENS - output - 1024),
-                          thinking_level="minimal", timeout_seconds=max(
-                              600 if key.startswith("chronology_") or key == "ingestion_event_extract" else 180,
-                              profile.timeout_seconds))
+                                               LLM_CONTEXT_TOKENS - retry_output - 1024),
+                          thinking_level="minimal", timeout_seconds=600 if long_task else 360)
     return profile
 
 

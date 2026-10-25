@@ -36,6 +36,7 @@ from src.user_store import (
     SUPERADMIN_ROLE,
     UserStore,
     account_auth_error,
+    account_expired,
     get_user_store,
     normalize_account_status,
 )
@@ -48,6 +49,11 @@ class LoginRequest(BaseModel):
     username: str
     password: str
     device_token: str = Field(default="", max_length=200)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=12, max_length=72)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -96,8 +102,12 @@ def _user_payload(record: Dict[str, Any], usage: Dict[str, Any]) -> Dict[str, An
         "username": record["username"],
         "display_name": record["display_name"],
         "role": record["role"],
+        "expires_at": record.get("expires_at"),
+        "must_change_password": bool(record.get("must_change_password")),
+        "access_plan": record.get("access_plan", ""),
         "features": record["features"],
-        "token_limit": record["token_limit"],
+        "token_limit": usage.get('token_limit', record["token_limit"]),
+        "reserved_tokens": usage.get('reserved_tokens', 0),
         "used_tokens": usage["used_tokens"],
         "percent_remaining": usage["percent_remaining"],
         "plan_type": usage.get("plan_type", "legacy"),
@@ -207,6 +217,8 @@ async def login(
         )
         if status != ACCOUNT_ACTIVE:
             raise HTTPException(403, account_auth_error(status))
+    if account_expired(record):
+        raise HTTPException(403, "account_expired")
     usage = store.get_billing_summary(record["username"])
     security = ops.get_security()
     timeout_minutes = int(security.get("session_timeout_minutes") or 30)
@@ -450,6 +462,9 @@ async def activate_invite(
         limit=20,
         window_seconds=60,
     )
+    from src.demo_invites import enabled as demo_invites_enabled
+    if demo_invites_enabled() and (len(req.password) < 12 or len(req.password.encode("utf-8")) > 72):
+        raise HTTPException(422, "password_requires_12_to_72_bytes")
     optional_email = (req.email or "").strip().lower() or None
     optional_org = (req.org_id or "").strip() or None
     try:
@@ -512,12 +527,18 @@ async def activate_invite(
         store.update_user(
             email,
             password=req.password,
-            account_status=ACCOUNT_ACTIVE,
-            is_active=True,
+            account_status=ACCOUNT_INVITED if demo_invites_enabled() and record.get("access_plan") == "demo" else ACCOUNT_ACTIVE,
+            is_active=not (demo_invites_enabled() and record.get("access_plan") == "demo"),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    if demo_invites_enabled() and record.get("access_plan") == "demo":
+        from src.demo_invites import activate_local_demo
+        activate_local_demo(store, orgs, email)
+        ops.record_audit(actor=email, action="demo.activate", target_type="user",
+                         target_id=email, target_label=email,
+                         detail="Email verified; seven-day demo started")
     if use_supabase_auth():
         try:
             uid = ensure_auth_user(email, req.password)
@@ -573,7 +594,11 @@ async def reset_password(
         raise HTTPException(400, str(exc)) from exc
     if not store.get_user(username):
         raise HTTPException(400, "invalid_reset_token")
-    store.update_user(username, password=req.password)
+    record = store.get_user(username)
+    if record.get('access_plan') and (len(req.password) < 12 or len(req.password.encode('utf-8')) > 72):
+        raise HTTPException(422, 'password_requires_12_to_72_bytes')
+    store.update_user(username, password=req.password, must_change_password=False)
+    store.bump_token_epoch(username)
     if use_supabase_auth():
         try:
             ensure_auth_user(username, req.password)
@@ -719,6 +744,30 @@ async def update_my_profile(
     refreshed = store.get_user(user.username) or record
     usage = store.get_billing_summary(user.username)
     return {"user": _user_payload(refreshed, usage)}
+
+
+@router.post("/auth/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    user: UserContext = Depends(get_current_user),
+    store: UserStore = Depends(get_user_store),
+):
+    if use_supabase_auth():
+        raise HTTPException(409, "use_identity_provider_password_flow")
+    if not store.verify_password(user.username, req.current_password):
+        raise HTTPException(403, "invalid_current_password")
+    if req.current_password == req.new_password:
+        raise HTTPException(400, "new_password_required")
+    if len(req.new_password.encode("utf-8")) > 72:
+        raise HTTPException(400, "password_too_long")
+    store.update_user(user.username, password=req.new_password, must_change_password=False)
+    store.bump_token_epoch(user.username)
+    record = store.get_user(user.username)
+    return {
+        "access_token": _issue_local_token(record, timeout_minutes=30),
+        "token_type": "bearer",
+        "user": _user_payload(record, store.get_billing_summary(user.username)),
+    }
 
 
 @router.post("/auth/logout")

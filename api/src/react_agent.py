@@ -211,6 +211,8 @@ class ReActAgent:
             parsed = resp.raw if isinstance(resp.raw, dict) else json.loads(resp.text)
             return parsed if isinstance(parsed, dict) else {"action": "finish", "action_input": ""}
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[ReActAgent] decide failed → finishing: {e}")
             return {"action": "finish", "action_input": ""}
 
@@ -279,6 +281,8 @@ class ReActAgent:
 
             return f"(unknown tool: {action})", [], {}
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[ReActAgent] tool '{action}' failed: {e}")
             return f"(tool {action} error: {e})", [], {}
 
@@ -306,6 +310,8 @@ class ReActAgent:
             _record(resp)
             return resp.text.strip()
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"[ReActAgent] final synthesis failed: {e}")
             # Last-resort: stitch the raw observations so the answer never drops.
             return "\n\n".join(s["observation"] for s in scratchpad if s.get("observation"))
@@ -346,6 +352,8 @@ class ReActAgent:
             r = self.router.document_rag.query(
                 topic, top_k=max(limit * 2, 20), doc_ids=doc_ids, synthesize=False)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[ReActAgent] survey retrieval failed: {e}")
             return [], {}
         reg = None

@@ -109,20 +109,28 @@ class LightGraph:
          "SELECT date, sender, recipient, subject, topics, file_name FROM notices WHERE LOWER(topics) LIKE '%{0}%' ORDER BY date"),
     ]
 
-    def __init__(self):
+    def __init__(self, project_id: str = ''):
         """Initialize light graph."""
         self.graph = DocumentGraph()
-        self._db = duckdb.connect(":memory:")
+        self._project_id = project_id
+        self._graph_file = GRAPH_FILE.parent / 'projects' / project_id / GRAPH_FILE.name if project_id else GRAPH_FILE
+        self._db = duckdb.connect(":memory:", config={'enable_external_access': False})
         self._notices_table_ready = False
         self._load_graph()
         self._sync_notices_to_duckdb()
 
     def _load_graph(self):
         """Load graph from disk."""
-        if GRAPH_FILE.exists():
+        source = self._graph_file if self._graph_file.exists() else GRAPH_FILE
+        if source.exists():
             try:
-                with open(GRAPH_FILE, 'r', encoding='utf-8') as f:
+                with open(source, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                if self._project_id:
+                    from .document_registry import get_document_registry
+                    allowed = {r.doc_id for r in get_document_registry().get_all(project_id=self._project_id)}
+                    data['nodes'] = {key:node for key,node in data.get('nodes',{}).items() if key in allowed}
+                    data['edges'] = [e for e in data.get('edges',[]) if e.get('from_doc') in allowed and e.get('to_doc') in allowed]
                 self.graph = DocumentGraph(
                     nodes=data.get('nodes', {}),
                     edges=data.get('edges', []),
@@ -137,6 +145,7 @@ class LightGraph:
         """Persist graph to disk."""
         temporary = None
         try:
+            self._graph_file.parent.mkdir(parents=True, exist_ok=True)
             data = {
                 'nodes': self.graph.nodes,
                 'edges': self.graph.edges,
@@ -147,12 +156,12 @@ class LightGraph:
                 },
             }
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
-                    dir=GRAPH_FILE.parent, prefix='.graph-', suffix='.tmp', delete=False) as f:
+                    dir=self._graph_file.parent, prefix='.graph-', suffix='.tmp', delete=False) as f:
                 temporary = Path(f.name)
                 json.dump(data, f, indent=2, ensure_ascii=False)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(temporary, GRAPH_FILE)
+            os.replace(temporary, self._graph_file)
             logger.info(f"[LightGraph] Saved graph: {len(self.graph.nodes)} nodes, {len(self.graph.edges)} edges")
         except Exception as e:
             logger.error(f"[LightGraph] Error saving graph: {e}")
@@ -226,7 +235,7 @@ class LightGraph:
                 continue
 
             # Fill in captured groups
-            groups = [g.strip() for g in m.groups()] if m.groups() else []
+            groups = [g.strip().replace("'", "''") for g in m.groups()] if m.groups() else []
             sql = sql_template
             for i, g in enumerate(groups):
                 sql = sql.replace(f"{{{i}}}", g)
@@ -1233,6 +1242,8 @@ class LightGraph:
 
         except Exception as e:
             logger.error(f"[LightGraph] LLM synthesis error: {e}")
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             # Fallback to basic listing
             answer = f"Found {len(nodes)} documents:\n\n"
             for i, node in enumerate(nodes[:15], 1):
@@ -1576,6 +1587,10 @@ class LightGraph:
     def rebuild_from_notices(self) -> int:
         """Rebuild entire graph from saved notices and sync DuckDB. Returns loaded count."""
         notice_files = list(NOTICES_DIR.glob("*.json"))
+        allowed = None
+        if self._project_id:
+            from .document_registry import get_document_registry
+            allowed = {r.doc_id for r in get_document_registry().get_all(project_id=self._project_id)}
         total = len(notice_files)
         logger.info(f"[LightGraph] Rebuilding graph from {total} notices...")
 
@@ -1588,6 +1603,8 @@ class LightGraph:
                 with open(notice_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 notice = NoticeMetadata(**data)
+                if allowed is not None and notice.doc_id not in allowed:
+                    continue
                 self.add_notice(notice)
                 loaded += 1
             except Exception as e:
@@ -1611,12 +1628,21 @@ class LightGraph:
 
 # Singleton
 _graph: Optional[LightGraph] = None
+_project_graphs = {}
 _graph_lock = threading.Lock()
 
 
 def get_light_graph() -> LightGraph:
     """Get or create LightGraph singleton."""
     global _graph
+    from .project_context import get_current_project_id
+    project_id = get_current_project_id()
+    if project_id:
+        key = (str(GRAPH_FILE), project_id)
+        with _graph_lock:
+            if key not in _project_graphs:
+                _project_graphs[key] = LightGraph(project_id)
+        return _project_graphs[key]
     if _graph is None:
         with _graph_lock:
             if _graph is None:

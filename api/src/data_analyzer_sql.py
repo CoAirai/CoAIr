@@ -463,6 +463,7 @@ class DataAnalyzerSQL:
         read_csv_auto/read_parquet.
         """
         from .prompt_security import TABLE_FUNCTION, find_table_violation
+        allowed_tables = self._scoped_tables(allowed_tables)
         allowed = allowed_tables if allowed_tables is not None \
             else list(self.tables.keys())
         violation = find_table_violation(sql, allowed)
@@ -472,6 +473,18 @@ class DataAnalyzerSQL:
                 raise UnsafeSqlError(detail)
             raise ValueError(f"SQL references an {detail}")
         return self.conn.execute(sql).fetchdf()
+
+    def _scoped_tables(self, allowed_tables=None):
+        """Apply the server tenant boundary even when a caller omits its list."""
+        project = _active_project()
+        from .document_rag import _current_user_corpus
+        corpus = _current_user_corpus()
+        scoped = self.get_tables_for_project(project) if project else None
+        if corpus and not scoped:
+            scoped = self.get_tables_for_corpus(corpus)
+        if scoped is None:
+            return allowed_tables
+        return scoped if allowed_tables is None else [name for name in allowed_tables if name in scoped]
 
     @property
     def jargon(self):
@@ -497,6 +510,8 @@ class DataAnalyzerSQL:
                 "row_count": row_count,
             }
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Error getting table info: {e}")
             return {}
 
@@ -809,6 +824,8 @@ class DataAnalyzerSQL:
                 "result_data": result_df.to_dict('records'),
             }
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Schema shortcut failed: {e}")
             return None
 
@@ -896,6 +913,8 @@ class DataAnalyzerSQL:
             }
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[Shortcut] Failed: {e}")
             return None
 
@@ -976,6 +995,8 @@ class DataAnalyzerSQL:
             logger.info(f"   [Proactive] Detail query returned {len(detail_df)} rows")
             return detail_df
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   [Proactive] Detail query failed: {e}")
             return None
 
@@ -1012,6 +1033,8 @@ class DataAnalyzerSQL:
             try:
                 df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_row)
             except Exception as e1:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e1)
                 logger.warning(f"   Normal read failed: {e1}, trying with dtype=str")
                 df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_row, dtype=str)
 
@@ -1028,6 +1051,8 @@ class DataAnalyzerSQL:
                 self.conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM temp_df")
                 self.conn.unregister('temp_df')
             except Exception as e2:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e2)
                 logger.warning(f"   DuckDB create failed: {e2}, converting all to string")
                 df = df.astype(str)
                 df = df.replace(['nan', 'None'], None)
@@ -1052,12 +1077,16 @@ class DataAnalyzerSQL:
             try:
                 self._register_normalized_views(table_name, df)
             except Exception as norm_err:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(norm_err)
                 logger.warning(f"   Normalization skipped: {norm_err}")
 
             log_document_processing(path.name, "Loaded to SQL")
             return True
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Error loading Excel: {e}")
             import traceback
             logger.error(traceback.format_exc())
@@ -1093,6 +1122,8 @@ class DataAnalyzerSQL:
             return True
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Error loading CSV: {e}")
             return False
 
@@ -1149,12 +1180,16 @@ class DataAnalyzerSQL:
                 df = self.conn.execute(f"SELECT * FROM {view_name}").fetchdf()
                 self._register_normalized_views(view_name, df)
             except Exception as norm_err:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(norm_err)
                 logger.warning(f"   Parquet normalization skipped: {norm_err}")
 
             log_document_processing(path.name, "Parquet view registered")
             return True
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"[Parquet] Error registering view: {e}")
             import traceback
             logger.error(traceback.format_exc())
@@ -1248,6 +1283,8 @@ class DataAnalyzerSQL:
             logger.info(f"[Catalog] Loaded {count} new tables from catalog")
             return count
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"[Catalog] Error loading from catalog: {e}")
             return 0
 
@@ -1354,6 +1391,8 @@ class DataAnalyzerSQL:
                     f"{len(largest_group)} tables, {info.get('row_count', 0)} rows"
                 )
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.error(f"[Combined] Error creating view: {e}")
 
     def _build_month_coverage(self, table_names: List[str]) -> str:
@@ -1534,6 +1573,8 @@ class DataAnalyzerSQL:
                     f"{len(unique_group)} tables, {info.get('row_count', 0)} rows"
                 )
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.error(f"[Grouped] Error creating view {view_name}: {e}")
 
     def refresh_from_catalog(self) -> int:
@@ -1569,7 +1610,9 @@ class DataAnalyzerSQL:
         """List only tables that are trustworthy SQL data sources (excludes
         OCR pseudo-tables extracted from prose PDFs). Use this everywhere SQL
         candidacy is decided so neither the planner nor the DATA route queries junk."""
-        return [n for n in self.tables if is_reliable_sql_table(self.tables.get(n, {}))]
+        allowed = self._scoped_tables()
+        return [n for n in self.tables if (allowed is None or n in allowed)
+                and is_reliable_sql_table(self.tables.get(n, {}))]
 
     def _reliable_search_space(self, search_space: Dict[str, Any]) -> Dict[str, Any]:
         """Filter a table search space to reliable SQL tables. Never strands to
@@ -1579,6 +1622,9 @@ class DataAnalyzerSQL:
 
     def create_ipc_unified_view(self, table_names: List[str]) -> Optional[str]:
         """Create a unified IPC view combining all monthly sheets with a period column."""
+        projects = {self.tables.get(n, {}).get('project_id', '') for n in table_names}
+        if len(projects) != 1:
+            raise UnsafeSqlError('cross-project unified view')
         if len(table_names) < 2:
             return None
 
@@ -1587,7 +1633,7 @@ class DataAnalyzerSQL:
             info = self.tables.get(tname, {})
             sheet_name = info.get("sheet_name", tname)
             # Extract period label (e.g., "IPC_Jan_2025" → "Jan 2025")
-            period_label = str(sheet_name).replace("IPC_", "").replace("_", " ")
+            period_label = str(sheet_name).replace("IPC_", "").replace("_", " ").replace("'", "''")
             union_parts.append(
                 f"SELECT *, '{period_label}' AS period FROM \"{tname}\""
             )
@@ -1606,6 +1652,8 @@ class DataAnalyzerSQL:
                 "description": "Combined IPC data across all periods with 'period' column",
                 "is_combined": True,
                 "source_tables": table_names,
+                "project_id": self.tables[table_names[0]].get('project_id', ''),
+                "corpus": self.tables[table_names[0]].get('corpus', ''),
                 "header_metadata": {"target_schema": "ipc_sample"},
                 **info,
             }
@@ -1614,12 +1662,15 @@ class DataAnalyzerSQL:
                         f"({len(table_names)} sheets, {info.get('row_count', 0)} rows)")
             return unified_name
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"[IPC] Unified view error: {e}")
             return None
 
     def get_table_summary(self, table_name: str) -> Optional[Dict[str, Any]]:
         """Get summary info for a table."""
-        return self.tables.get(table_name)
+        allowed = self._scoped_tables()
+        return self.tables.get(table_name) if allowed is None or table_name in allowed else None
 
     def get_all_tables_summary(self) -> str:
         """Get summary of all tables for routing, including metadata."""
@@ -1627,7 +1678,10 @@ class DataAnalyzerSQL:
             return "No data tables loaded."
 
         summaries = []
+        allowed = self._scoped_tables()
         for name, info in self.tables.items():
+            if allowed is not None and name not in allowed:
+                continue
             cols = ', '.join(info.get('columns', [])[:5])
             if len(info.get('columns', [])) > 5:
                 cols += '...'
@@ -1941,6 +1995,8 @@ class DataAnalyzerSQL:
         try:
             self._schema_guard_warn(sql_clean, table_name)
         except Exception as ge:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(ge)
             logger.debug(f"[DataAnalyzerSQL] schema guard skipped: {ge}")
 
         return sql_clean
@@ -2021,6 +2077,8 @@ class DataAnalyzerSQL:
 
             return sql.strip()
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   SQL retry failed: {e}")
             return None
 
@@ -2181,6 +2239,9 @@ class DataAnalyzerSQL:
         If allowed_tables is provided, only consider those tables.
         """
         log_separator("SQL Data Query")
+        allowed_tables = self._scoped_tables(allowed_tables)
+        if allowed_tables == [] or (table_name and allowed_tables is not None and table_name not in allowed_tables):
+            return {'answer': 'No permitted data tables for this selection.', 'sources': [], 'sql': None}
         logger.info(f"Question: {question[:100]}...")
 
         if not self.tables:
@@ -2227,12 +2288,14 @@ class DataAnalyzerSQL:
             try:
                 table_name = self.select_table(question, allowed_tables=allowed_tables)
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.warning(f"   Table selection failed ({e}); using fallback table")
                 table_name = None
             if table_name is None:
                 space = self.tables
-                if allowed_tables:
-                    space = {k: v for k, v in self.tables.items() if k in allowed_tables} or self.tables
+                if allowed_tables is not None:
+                    space = {k: v for k, v in self.tables.items() if k in allowed_tables}
                 if space:
                     table_name = max(space.keys(),
                                      key=lambda n: self.tables.get(n, {}).get("row_count", 0))
@@ -2248,6 +2311,8 @@ class DataAnalyzerSQL:
         try:
             shortcut = self._try_deterministic_shortcut(question, table_name)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Deterministic shortcut errored ({e}); using LLM SQL path")
             shortcut = None
         if shortcut is not None:
@@ -2305,10 +2370,12 @@ class DataAnalyzerSQL:
             logger.info("   Executing SQL...")
             start_time = time.time()
             try:
-                result_df = self._execute_checked(sql)
+                result_df = self._execute_checked(sql, allowed_tables)
             except UnsafeSqlError:
                 raise            # never self-correct an unsafe query
             except Exception as exec_err:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(exec_err)
                 # Self-correct on execution error
                 logger.warning(f"   SQL execution failed: {exec_err}, attempting self-correction...")
                 corrected = self._retry_sql_generation(sql, str(exec_err), table_name)
@@ -2317,7 +2384,7 @@ class DataAnalyzerSQL:
                     is_valid, error = validate_sql(corrected)
                     if is_valid:
                         sql = corrected
-                        result_df = self._execute_checked(sql)
+                        result_df = self._execute_checked(sql, allowed_tables)
                         logger.info(f"   Self-corrected SQL executed OK: {sql[:100]}...")
                     else:
                         logger.warning(f"   [SQL] Self-correction validation failed: {error}")
@@ -2392,6 +2459,8 @@ class DataAnalyzerSQL:
             }
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   Query error: {e}")
             return {
                 "answer": f"Error executing query: {str(e)}",
@@ -2405,6 +2474,9 @@ class DataAnalyzerSQL:
                             allowed_tables: Optional[List[str]] = None) -> Dict[str, Any]:
         """Query data using a specific LLM provider for SQL gen and summary."""
         log_separator(f"SQL Data Query ({provider})")
+        allowed_tables = self._scoped_tables(allowed_tables)
+        if allowed_tables == [] or (table_name and allowed_tables is not None and table_name not in allowed_tables):
+            return {'answer': 'No permitted data tables for this selection.', 'sources': [], 'sql': None}
         logger.info(f"[{provider}] Question: {question[:100]}...")
 
         if not self.tables:
@@ -2447,17 +2519,19 @@ class DataAnalyzerSQL:
 
             # Table references are checked inside _execute_checked.
             try:
-                result_df = self._execute_checked(sql)
+                result_df = self._execute_checked(sql, allowed_tables)
             except UnsafeSqlError:
                 raise            # never self-correct an unsafe query
             except Exception as exec_err:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(exec_err)
                 corrected = self._retry_sql_generation(sql, str(exec_err), table_name, provider=provider)
                 if corrected:
                     corrected = self._fix_sql_syntax(corrected)
                     is_valid, error = validate_sql(corrected)
                     if is_valid:
                         sql = corrected
-                        result_df = self._execute_checked(sql)
+                        result_df = self._execute_checked(sql, allowed_tables)
                     else:
                         raise exec_err
                 else:
@@ -2509,6 +2583,8 @@ class DataAnalyzerSQL:
             }
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   [{provider}] Query error: {e}")
             return {
                 "answer": f"Error executing query: {str(e)}",
@@ -2538,6 +2614,8 @@ class DataAnalyzerSQL:
                     prov, result = future.result()
                     results[prov] = result
                 except Exception as e:
+                    from .llm_errors import raise_local_generation_error
+                    raise_local_generation_error(e)
                     prov = futures[future]
                     logger.error(f"   [{prov}] Dual query failed: {e}")
                     results[prov] = {
@@ -2574,7 +2652,7 @@ class DataAnalyzerSQL:
                 table_doc_id = generate_doc_id(source_file)
                 if table_doc_id in doc_ids:
                     matching.append(table_name)
-        return matching
+        return self._scoped_tables(matching)
 
     def get_tables_for_project(self, project_id: Optional[str]) -> List[str]:
         """DuckDB table names belonging to ``project_id``.
@@ -2682,6 +2760,7 @@ class DataAnalyzerSQL:
 
         Defensive: returns None on any problem so callers fall back to per-table.
         """
+        allowed_tables = self._scoped_tables(allowed_tables)
         try:
             names = []
             for name, info in self.tables.items():
@@ -2708,7 +2787,8 @@ class DataAnalyzerSQL:
                 return None
 
             col_list = ", ".join(f'"{c}"' for c in first_cols)
-            view = "_unified_" + re.sub(r"[^a-z0-9_]", "", (target_schema or "schema").lower())
+            import hashlib
+            view = "_unified_" + re.sub(r"[^a-z0-9_]", "", (target_schema or "schema").lower()) + '_' + hashlib.sha256('|'.join(sorted(names)).encode()).hexdigest()[:10]
             union_sql = " UNION ALL ".join(
                 f"SELECT {col_list}, '{n}' AS _source_table FROM {n}" for n in names
             )
@@ -2724,6 +2804,8 @@ class DataAnalyzerSQL:
                 "is_combined": True,
                 "is_grouped": True,
                 "source_tables": names,
+                "project_id": base.get('project_id', ''),
+                "corpus": base.get('corpus', ''),
                 "description": f"Unified UNION across {len(names)} {target_schema} tables",
                 "semantic_tags": base.get("semantic_tags", []),
                 "header_metadata": dict(base.get("header_metadata", {})),
@@ -2738,6 +2820,8 @@ class DataAnalyzerSQL:
             result["unified_table_count"] = len(names)
             return result
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[Unified] schema union failed ({e}); falling back to per-table")
             return None
 
@@ -2764,6 +2848,8 @@ class DataAnalyzerSQL:
                     logger.info(f"   [SchemaAware] unified over schema '{schema}'")
                     return unified
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   [SchemaAware] skipped ({e}); using single-table path")
 
         if provider != "gemini":
@@ -2775,6 +2861,7 @@ class DataAnalyzerSQL:
         Select the best table for a question.
         Strategy: LLM-based selection with heuristic fallback.
         """
+        allowed_tables = self._scoped_tables(allowed_tables)
         search_space = self.tables
         if allowed_tables is not None:
             search_space = {k: v for k, v in self.tables.items() if k in allowed_tables}
@@ -2850,6 +2937,8 @@ class DataAnalyzerSQL:
                     return name
             logger.warning(f"[TableSelect] LLM returned unknown table: {selected}")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[TableSelect] LLM selection failed: {e}")
 
         # Fallback: heuristic scoring
@@ -2861,6 +2950,7 @@ class DataAnalyzerSQL:
         Used for multi-table queries that may need data from several sources.
         Filters out _clean/_raw view duplicates to avoid querying same data twice.
         """
+        allowed_tables = self._scoped_tables(allowed_tables)
         search_space = self.tables
         if allowed_tables is not None:
             search_space = {k: v for k, v in self.tables.items() if k in allowed_tables}
@@ -2986,9 +3076,11 @@ class DataAnalyzerSQL:
             return None, error
 
         try:
-            result = self.conn.execute(sql).fetchdf()
+            result = self._execute_checked(sql)
             return result, ""
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             return None, str(e)
 
 

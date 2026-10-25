@@ -1,0 +1,13 @@
+# On DGX: combine with /home/coair/llm/docker-compose.yml.
+# The script belongs in that deployment's existing scripts/ directory.
+services:
+  vllm:
+    entrypoint:
+      - python3
+      - /opt/coair/vllm-qwen36-start.py
+    environment:
+      VLLM_MODEL: nvidia/Qwen3.6-35B-A3B-NVFP4
+      VLLM_SERVED_MODEL: qwen3.6-35b-a3b
+      VLLM_MODEL_REVISION: 1355db6a052410cfd62085d94b58866fd0f2c3c5
+      VLLM_MAX_MODEL_LEN: '131072'
+      VLLM_GPU_MEMORY_UTILIZATION: '0.4'

@@ -8,9 +8,11 @@ import { useChat } from "@/context/ChatContext";
 const PanelMessage = () => {
     const { sendMessage, isReplying, sendError } = useChat();
     const [message, setMessage] = useState("");
+    const [lastSent, setLastSent] = useState("");
 
     const submit = async () => {
         const text = message;
+        setLastSent(text);
         setMessage("");
         await sendMessage(text);
     };
@@ -39,8 +41,9 @@ const PanelMessage = () => {
                         aria-label="Message"
                     />
                     {sendError ? (
-                        <div className="mt-2 text-label-sm text-red-500">
+                        <div role="alert" className="mt-2 text-label-sm text-red-500">
                             {sendError}
+                            {lastSent && <button type="button" disabled={isReplying} onClick={() => void sendMessage(lastSent)} className="ml-3 underline disabled:opacity-50">Retry</button>}
                         </div>
                     ) : null}
                 </div>

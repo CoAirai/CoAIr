@@ -39,7 +39,8 @@ def _reject_mac_sidecar(safe_name: str) -> None:
 def _validate_uploaded_bytes(safe_name: str, path: Path) -> None:
     """Reject AppleDouble / non-PDF payloads that would otherwise toast-success then vanish."""
     _reject_mac_sidecar(safe_name)
-    head = path.read_bytes()[:8]
+    with path.open("rb") as handle:
+        head = handle.read(8)
     if head.startswith(_APPLEDOUBLE_MAGIC):
         raise ValueError(
             "mac_sidecar: File content is macOS AppleDouble metadata, not a "
@@ -86,6 +87,10 @@ class FileService:
                         break
                     handle.write(chunk)
                     total += len(chunk)
+                    limit = int(os.getenv("UPLOAD_MAX_BYTES", "100000000"))
+                    if total > limit:
+                        from fastapi import HTTPException
+                        raise HTTPException(413, "file_size_limit_exceeded")
             _validate_uploaded_bytes(safe_name, temp)
         except Exception:
             temp.unlink(missing_ok=True)

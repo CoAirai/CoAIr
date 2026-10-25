@@ -168,6 +168,9 @@ def test_topic_inventory_cache_is_keyed_by_project(monkeypatch):
 
 
 class _EmptyRegistry:
+    def get_all(self, project_id=None):
+        return []
+
     def get_completed(self, project_id=None):
         return []
 

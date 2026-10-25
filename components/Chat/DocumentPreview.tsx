@@ -252,7 +252,6 @@ const DocumentPreview = () => {
                                                 </thead>
                                                 <tbody>
                                                     {(live.rows || [])
-                                                        .slice(0, 40)
                                                         .map((row, i) => (
                                                             <tr key={i}>
                                                                 {(
@@ -273,6 +272,7 @@ const DocumentPreview = () => {
                                                         ))}
                                                 </tbody>
                                             </table>
+                                            <p className="mt-2 text-soft-400">{live.rows?.length ?? 0} of {live.total_rows ?? live.rows?.length ?? 0} rows shown.</p>
                                         </div>
                                     )}
                                 {!loading &&

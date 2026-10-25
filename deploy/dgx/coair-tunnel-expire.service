@@ -1,0 +1,6 @@
+[Unit]
+Description=Revoke expired Coair application tunnels
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/coair/tunnel_accounts.py expire

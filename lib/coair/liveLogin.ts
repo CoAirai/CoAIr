@@ -359,6 +359,7 @@ export async function sendLiveChat(input: {
 }) {
     return coairFetch<{
         assistant_text: string;
+        sql_artifact?: import("@/lib/chat/types").SqlArtifact | null;
         citations?: Array<{
             doc_id?: string;
             doc_name?: string;
@@ -369,7 +370,7 @@ export async function sendLiveChat(input: {
         method: "POST",
         token: input.token,
         projectId: input.projectId,
-        timeoutMs: 120000,
+        timeoutMs: 900000,
         body: {
             message: input.message,
             conversation_id: input.conversationId,

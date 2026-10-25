@@ -128,6 +128,8 @@ export async function inviteOrgUser(
         email_sent?: boolean;
         email_error?: string | null;
         temporary_password?: string;
+        invite_url?: string | null;
+        invite_expires_at?: string | null;
     }>("/org/invites", {
         method: "POST",
         token,

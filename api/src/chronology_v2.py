@@ -163,6 +163,39 @@ def _claims_are_source_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> b
     return True
 
 
+def _date_matches_quote(event_date: str, precision: str, quote: str) -> bool:
+    """Normalize only date wording actually present in the supplied quotation."""
+    names = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december")
+    months = {alias: i for i, name in enumerate(names, 1) for alias in (name, name[:3])}
+    months["sept"] = 9
+    candidates = set()
+    def add(year, month=1, day=1, depth=3):
+        try:
+            year = datetime.strptime(str(year), "%y").year if len(str(year)) == 2 else int(year)
+            value = datetime(year, int(month), int(day)).strftime("%Y-%m-%d")
+            candidates.add(value[:{1:4, 2:7, 3:10}[depth]])
+        except ValueError:
+            pass
+    for year, month, day in re.findall(r"\b(\d{4})-(\d{2})-(\d{2})\b", quote):
+        add(year, month, day)
+    for day, month, year in re.findall(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})\b", quote):
+        add(year, month, day)
+    for day, month, year in re.findall(r"\b(\d{1,2})(?:st|nd|rd|th)?[\s-]+([A-Za-z]+)\.?[,]?[\s-]+(\d{4}|\d{2})\b", quote):
+        if month.lower() in months:
+            add(year, months[month.lower()], day)
+    for month, day, year in re.findall(r"\b([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?[,]?\s+(\d{4})\b", quote):
+        if month.lower() in months:
+            add(year, months[month.lower()], day)
+    for month, year in re.findall(r"\b([A-Za-z]+)\.?\s+(\d{4})\b", quote):
+        if month.lower() in months:
+            add(year, months[month.lower()], depth=2)
+    for year, month in re.findall(r"\b(\d{4})-(\d{2})\b", quote):
+        add(year, month, depth=2)
+    if precision == "year":
+        return bool(re.search(r"(?<!\d)" + re.escape(event_date) + r"(?!\d)", quote))
+    return any(value.startswith(event_date) for value in candidates)
+
+
 def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
     event_date = str(event.get("event_date") or "").strip()
     date_source = str(event.get("date_source") or "unresolved")
@@ -179,16 +212,15 @@ def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
     if date_source not in ALLOWED_DATE_SOURCES - {"unresolved"}:
         return False
     pattern = patterns.get(precision)
-    if not pattern or not re.fullmatch(pattern, event_date) or not date_evidence:
+    if (not pattern or not re.fullmatch(pattern, event_date) or not date_evidence
+            or not _date_matches_quote(event_date, precision, date_evidence)):
         return False
     by_id = {item.source_id: item.excerpt.casefold() for item in evidence}
     source_ids = {
         str(source_id) for claim in event.get("claims", [])
         for source_id in claim.get("source_ids", [])
     }
-    from .chronology_dates import event_date_is_grounded
-    return event_date_is_grounded(event_date, precision, date_source, date_evidence,
-                                  [by_id.get(sid, "") for sid in source_ids])
+    return any(date_evidence.casefold() in by_id.get(source_id, "") for source_id in source_ids)
 
 
 def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
@@ -989,6 +1021,14 @@ def verify_claims(
     for index, claim in enumerate(chronology.get("overview_claims", [])):
         claims.append({"claim_ref": f"overview:{index}", **claim})
     for event_index, event in enumerate(chronology.get("entries", [])):
+        if event.get("event_date"):
+            claims.append({
+                "claim_ref": f"date:{event_index}", "verification_kind": "event_date",
+                "event_date": event["event_date"], "date_precision": event.get("date_precision"),
+                "date_source": event.get("date_source"), "date_evidence": event.get("date_evidence"),
+                "text": " ".join(str(c.get("text") or "") for c in event.get("claims", [])),
+                "source_ids": sorted({sid for c in event.get("claims", []) for sid in c.get("source_ids", [])}),
+            })
         for claim_index, claim in enumerate(event.get("claims", [])):
             claims.append({
                 "claim_ref": f"event:{event_index}:{claim_index}", **claim,
@@ -1024,6 +1064,11 @@ def verify_claims(
                 f"TOPIC: {prepared.english_query}\n{prompts['verifier']}\n\n"
                 f"CLAIMS:\n{json.dumps(batch, ensure_ascii=False)}\n\n"
                 f"EVIDENCE BEGIN\n{evidence_markdown(cited)}\nEVIDENCE END\n\n"
+                "For verification_kind=event_date, approve only if the quoted date normalizes to event_date "
+                "and explicitly dates ALL the event's assertions. A date on a cover, design programme or "
+                "retrospective witness statement does not date subsequent works or quantities. If any "
+                "assertion has no proven temporal link, reject the date decision; the factual claims "
+                "are judged separately and may remain as undated evidence. "
                 "Return exactly one decision for every claim_ref. Use reason_code values such as "
                 "supported, missing_source, number_not_found, quotation_not_found, date_conflict, "
                 "unattributed_position or unsupported_causation."

@@ -25,6 +25,9 @@ from src.user_store import UserStore, get_user_store
 router = APIRouter()
 
 
+
+
+
 class OrgCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     owner_username: str = Field(default="", max_length=160)
@@ -52,6 +55,30 @@ class OrgUpdate(BaseModel):
     project_limit: Optional[int] = Field(default=None, ge=0)
     allow_member_projects: Optional[bool] = None
     archived: Optional[bool] = None
+
+
+@router.patch("/admin/orgs/{org_id}")
+def update_organization(
+    org_id: str, req: OrgUpdate,
+    _admin: UserContext = Depends(require_admin),
+    store: OrgStore = Depends(get_org_store),
+):
+    if not store.get_org(org_id):
+        raise HTTPException(404, "organization_not_found")
+    fields = req.model_dump(exclude_unset=True)
+    archived = fields.pop("archived", None)
+    if any(value is None for value in fields.values()):
+        raise HTTPException(422, "organization_fields_cannot_be_null")
+    try:
+        if fields:
+            store.update_org(org_id, **fields)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if archived is True:
+        store.archive_org(org_id)
+    elif archived is False:
+        store.unarchive_org(org_id)
+    return store.get_org(org_id)
 
 
 class OrgMemberRequest(BaseModel):
@@ -221,6 +248,11 @@ def create_org(
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+    from src.config import DEPLOYMENT_MODE
+    if DEPLOYMENT_MODE == 'local' and owner:
+        from src.appliance_access import provision_personal_access, STORAGE_BYTES
+        provision_personal_access(get_user_store(), store, owner)
+        org = store.update_org(org['org_id'], default_storage_bytes=STORAGE_BYTES)
     return _with_counts(org, store.summaries())
 
 

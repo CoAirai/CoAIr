@@ -35,9 +35,12 @@ def issue_invite_activation_email(
     ops: OpsStore | None = None,
     org_id: str | None = None,
     created_by: str | None = None,
+    return_invite_link: bool = False,
 ) -> Dict[str, Any]:
     """Create invite token + email-OTP and send them in the invite mail."""
     store = ops or get_ops_store()
+    if return_invite_link:
+        store.revoke_invite_tokens(email, org_id=org_id)
     invite = store.create_invite_token(
         email, org_id=org_id, purpose="invite", created_by=created_by
     )
@@ -61,13 +64,19 @@ def issue_invite_activation_email(
         secret=code if not (result.get("ok") and result.get("mode") == "live") else None,
     )
     emailed = bool(result.get("ok") and result.get("mode") == "live")
+    from backend.core.platform_guard import expose_security_debug
     payload: Dict[str, Any] = {
         "challenge_id": challenge["challenge_id"],
         "emailed": emailed,
-        "debug_code": challenge.get("debug_code"),
+        "debug_code": challenge.get("debug_code") if expose_security_debug() else None,
         "email_error": None if emailed else result.get("error"),
         "invite_token_id": invite["token_id"],
     }
+    if return_invite_link:
+        from src.email_delivery import user_app_origin
+        from urllib.parse import urlencode
+        payload["invite_url"] = user_app_origin() + "/auth/accept-invite?" + urlencode({"token": invite["token"]})
+        payload["invite_expires_at"] = invite["expires_at"]
     from backend.core.platform_guard import expose_security_debug
 
     if expose_security_debug():

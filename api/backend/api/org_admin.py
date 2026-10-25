@@ -54,11 +54,12 @@ ORG_ASSIGNABLE_FEATURES = (
 # commercial data of ours: markup_percent, model_policy, dedicated_provider_key,
 # estimated_provider_cost_usd, uncovered_*.
 _ORG_USER_FIELDS = (
-    "username", "display_name", "is_active", "created_at", "updated_at",
-    "token_limit", "used_tokens", "percent_remaining", "total_calls",
+    "username", "display_name", "is_active", "account_status", "created_at", "updated_at",
+    "token_limit", "used_tokens", "reserved_tokens", "percent_remaining", "total_calls",
     "plan_type", "credits_total", "credits_remaining", "credits_used",
     "credit_percent_remaining", "storage_used_bytes", "storage_limit_bytes",
     "storage_percent_used",
+    "expires_at", "must_change_password", "access_plan", "personal_project_id",
 )
 
 
@@ -190,7 +191,8 @@ async def list_org_users(
     out: List[Dict[str, Any]] = []
     for member in orgs.list_members(org.org_id):
         record = users.get_user(member["username"])
-        if not record or not record.get("is_active", True):
+        from src.demo_invites import enabled as demo_invites_enabled
+        if not record or (not record.get("is_active", True) and not demo_invites_enabled()):
             continue
         entry = _org_user(users, record, member["role"])
         entry["project_count"] = grants.get(member["username"], 0)
@@ -244,7 +246,8 @@ async def create_org_user(
             raise HTTPException(409, str(exc)) from exc
         rebalance_equal_remaining(org.org_id, orgs=orgs, users=users)
         return _org_user(users, users.get_user(record["username"]) or record, "member")
-    if len(password) < 6:
+    from src.config import DEPLOYMENT_MODE
+    if len(password) < (12 if DEPLOYMENT_MODE == "local" else 6):
         raise HTTPException(400, "password_required")
     try:
         record = users.create_user(
@@ -257,6 +260,7 @@ async def create_org_user(
             plan_type=org.policy.get("default_plan_type", "demo"),
             initial_credits=org.policy.get("default_credits", 0),
             storage_limit_bytes=package_storage,
+            is_active=DEPLOYMENT_MODE != "local",
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -270,6 +274,10 @@ async def create_org_user(
         raise HTTPException(409, str(exc)) from exc
     rebalance_equal_remaining(org.org_id, orgs=orgs, users=users)
     refreshed = users.get_user(username) or record
+    from src.config import DEPLOYMENT_MODE
+    if DEPLOYMENT_MODE == "local":
+        from src.appliance_access import provision_personal_access
+        refreshed = provision_personal_access(users, orgs, username)
     return _org_user(users, refreshed, "member")
 
 
@@ -298,6 +306,11 @@ async def update_org_user(
         payload["display_name"] = req.display_name
     if req.password is not None:
         payload["password"] = req.password
+        from src.config import DEPLOYMENT_MODE
+        if DEPLOYMENT_MODE == "local":
+            if len(req.password) < 12:
+                raise HTTPException(400, "password_requires_12_characters")
+            payload["must_change_password"] = True
     if req.is_active is not None:
         payload["is_active"] = req.is_active
     if req.features is not None:
@@ -313,6 +326,8 @@ async def update_org_user(
     record = users.update_user(username, **payload) if payload else users.get_user(username)
     if not record:
         raise HTTPException(404, "user_not_found")
+    if req.password is not None or req.is_active is False:
+        users.bump_token_epoch(username)
     if req.password is not None and use_supabase_auth():
         try:
             uid = ensure_auth_user(username, req.password)

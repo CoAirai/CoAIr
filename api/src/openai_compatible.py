@@ -5,7 +5,7 @@ import re
 from urllib.parse import urlsplit
 
 import httpx
-from openai import OpenAI
+from openai import OpenAI, APIStatusError
 
 
 class ContextLimitError(ValueError):
@@ -65,11 +65,28 @@ def generate(*, base_url: str, api_key: str, model: str, prompt: str,
             "name": "result", "schema": response_schema}}
     elif json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-    with OpenAI(base_url=base_url, api_key=api_key, timeout=timeout_seconds,
-                max_retries=0) as client:
-        response = client.chat.completions.create(
-            model=model, messages=messages, max_tokens=max_tokens,
-            temperature=temperature, extra_body={"chat_template_kwargs": template},
-            **kwargs,
-        )
+    from backend.core.security import get_current_username
+    from .user_store import get_user_store
+    from .appliance_quota import reserve, settle
+    username = get_current_username()
+    store = get_user_store() if username else None
+    reservation = reserve(store, username, count + max_tokens) if store else None
+    actual = None
+    try:
+        with OpenAI(base_url=base_url, api_key=api_key, timeout=timeout_seconds,
+                    max_retries=0) as client:
+            response = client.chat.completions.create(
+                model=model, messages=messages, max_tokens=max_tokens,
+                temperature=temperature, extra_body={"chat_template_kwargs": template},
+                **kwargs,
+            )
+        if response.usage:
+            actual = response.usage.prompt_tokens + response.usage.completion_tokens
+    except APIStatusError as exc:
+        if 400 <= exc.status_code < 500:
+            actual = 0  # Provider explicitly rejected the generation request.
+        raise
+    finally:
+        if store:
+            settle(store, reservation, actual)
     return response

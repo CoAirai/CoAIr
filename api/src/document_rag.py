@@ -283,11 +283,15 @@ class DocumentRAG:
                 try:
                     Settings.llm = _mk_gemini(GEMINI_MODEL)
                 except Exception as e:
+                    from .llm_errors import raise_local_generation_error
+                    raise_local_generation_error(e)
                     if "models/" in str(e) and not GEMINI_MODEL.startswith(("models/", "tunedModels/")):
                         Settings.llm = _mk_gemini(f"models/{GEMINI_MODEL}")
                     else:
                         raise
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.warning(f"   Gemini LLM unavailable ({e}); Settings.llm unset "
                                f"(provider llm_client synthesis still works)")
         Settings.embed_model = self._build_embed_model()
@@ -375,6 +379,8 @@ class DocumentRAG:
                 )
                 logger.info(f"   Dimension: {EMBEDDING_DIMENSION}, Metric: cosine, on_disk+int8")
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 # Concurrent creation race (parallel ingest workers): another
                 # process already created it — tolerate and proceed.
                 if not self.qdrant_client.collection_exists(QDRANT_COLLECTION):
@@ -399,6 +405,8 @@ class DocumentRAG:
             info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
             logger.info(f"   Total vectors: {info.points_count or 0}")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Could not read collection info: {e}")
 
     @staticmethod
@@ -523,6 +531,8 @@ class DocumentRAG:
                 self.pinecone_index.delete(filter=flt)
             logger.info(f"   Cleared existing vectors for: {file_name}")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             # Pinecone free tier might not support metadata filtering for delete
             logger.info(f"   Could not filter-delete (new file or free tier): {file_name}")
 
@@ -631,6 +641,8 @@ class DocumentRAG:
                     logger.warning(f"   TIP: Try enabling OCR mode for scanned PDFs")
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   Error parsing PDF: {e}")
             import traceback
             logger.error(traceback.format_exc())
@@ -662,6 +674,8 @@ class DocumentRAG:
             logger.info(f"   Parsed DOCX: {len(full_text)} characters")
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   Error parsing DOCX: {e}")
 
         return documents
@@ -691,6 +705,8 @@ class DocumentRAG:
             logger.info(f"   Parsed TXT: {len(text)} characters")
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"   Error parsing TXT: {e}")
 
         return documents
@@ -897,6 +913,8 @@ class DocumentRAG:
             logger.info(f"   Indexed {len(self.documents)} documents")
             return True
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Error building index: {e}")
             import traceback
             logger.error(traceback.format_exc())
@@ -980,6 +998,8 @@ class DocumentRAG:
                     })
                 get_chunk_store().add_chunks(rows)
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.warning(f"   Chunk store mirror skipped: {e}")
 
             # 2. Batch embed all nodes at once
@@ -1005,6 +1025,8 @@ class DocumentRAG:
                         logger.info(f"   Embedded batch {batch_num}/{total_batches}")
                         break
                     except Exception as emb_err:
+                        from .llm_errors import raise_local_generation_error
+                        raise_local_generation_error(emb_err)
                         if attempt < 2:
                             import time
                             wait = 2 ** (attempt + 1)
@@ -1024,6 +1046,8 @@ class DocumentRAG:
                     logger.info(f"   Inserted {len(nodes)} vectors (batch mode)")
                     return True
                 except Exception as upsert_err:
+                    from .llm_errors import raise_local_generation_error
+                    raise_local_generation_error(upsert_err)
                     logger.warning(f"   Batch upsert attempt {attempt + 1}/{max_retries} failed: {upsert_err}")
                     if attempt < max_retries - 1:
                         import time
@@ -1034,6 +1058,8 @@ class DocumentRAG:
                         raise
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Error in batch insert: {e}")
             # Fallback to sequential point upserts while preserving the stable
             # tenant-aware node IDs prepared above.
@@ -1050,6 +1076,8 @@ class DocumentRAG:
                         inserted += 1
                         break
                     except Exception as e2:
+                        from .llm_errors import raise_local_generation_error
+                        raise_local_generation_error(e2)
                         if attempt < 2:
                             import time
                             time.sleep(2 ** attempt)
@@ -1121,6 +1149,8 @@ class DocumentRAG:
                 logger.info(f"   Loaded {stats.get('total_vector_count', 0)} vectors")
             return True
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Could not load index: {e}")
             return False
 
@@ -1178,6 +1208,8 @@ class DocumentRAG:
                     question = f"{question} (related: {', '.join(terms_to_add)})"
                     logger.info(f"   Concept-boosted retrieval with {len(terms_to_add)} synonyms")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.debug(f"   Jargon normalization skipped: {e}")
 
         if not self.index:
@@ -1213,6 +1245,8 @@ class DocumentRAG:
                 if hybrid is not None:
                     return hybrid
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.warning(f"   Hybrid retrieval failed → dense fallback: {e}")
 
         logger.info(f"   Retrieving top {top_k} matches...")
@@ -1395,6 +1429,8 @@ class DocumentRAG:
                     self._lexical_terms(raw_question), project_id=project_id,
                 )
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.debug(f"   Lexical lane skipped: {e}")
 
         if not dense and not lexical:
@@ -1446,28 +1482,43 @@ class DocumentRAG:
                                 file_names: Optional[List[str]],
                                 payload_filters: Optional[Dict[str, Any]] = None,
                                 *, project_id: str):
-        """Compose a LlamaIndex MetadataFilters from (doc_ids OR file_names) AND
-        scope (doc_type / project / …). The document selector stays OR (either an
-        explicit doc_id or a filename-resolved file matches), but scope is AND-ed
-        on top so 'only delay notices' genuinely narrows the pool. Returns None
-        when nothing constrains (today's behaviour). Scope values that are empty
-        are dropped so a blank scope never over-filters."""
+        """Intersect explicit file selection, filename hints and project scope.
+
+        LlamaIndex owns the top-level Qdrant ``doc_id`` (a node/document UUID).
+        Canonical uploaded-document IDs live in ``file_id``. Retain ``doc_id``
+        as a legacy alias, but never let a filename hint widen a user selection.
+        """
         from llama_index.core.vector_stores.types import (
             MetadataFilter, MetadataFilters, FilterOperator, FilterCondition,
         )
-        doc_file_specs = []
-        if doc_ids:
-            # Qdrant/LlamaIndex uses doc_id for the parent page UUID. file_id is
-            # our immutable registry identity; retain doc_id for legacy vectors.
-            doc_file_specs.append(
-                MetadataFilter(key="file_id", value=doc_ids, operator=FilterOperator.IN))
-            doc_file_specs.append(
-                MetadataFilter(key="doc_id", value=doc_ids, operator=FilterOperator.IN))
-        if file_names:
-            doc_file_specs.append(
-                MetadataFilter(key="file_name", value=file_names, operator=FilterOperator.IN))
-
         scope_specs = []
+        if doc_ids:
+            selection = [
+                MetadataFilter(key="file_id", value=doc_ids, operator=FilterOperator.IN),
+                MetadataFilter(key="doc_id", value=doc_ids, operator=FilterOperator.IN),
+            ]
+            # Original RAG vectors may predate canonical file_id metadata. Resolve
+            # only unambiguous, project-owned selected files; never substitute an
+            # arbitrary filename hint or another modern file's identity.
+            try:
+                from .document_registry import get_document_registry
+                registry = get_document_registry()
+                records = registry.get_all(project_id=_require_project_id(project_id))
+                selected = [r for r in records if r.doc_id in doc_ids]
+                names = [r.file_name for r in selected if r.file_name and sum(
+                    other.file_name == r.file_name for other in records) == 1]
+            except Exception:
+                names = []
+            if names:
+                selection.append(MetadataFilters(filters=[
+                    MetadataFilter(key="file_id", value=None, operator=FilterOperator.IS_EMPTY),
+                    MetadataFilter(key="file_name", value=names, operator=FilterOperator.IN),
+                ], condition=FilterCondition.AND))
+            scope_specs.append(MetadataFilters(filters=selection, condition=FilterCondition.OR))
+        if file_names:
+            scope_specs.append(MetadataFilter(
+                key="file_name", value=file_names, operator=FilterOperator.IN))
+
         allowed_filter_keys = {"doc_type", "project", "reference", "date", "corpus"}
         unknown = set((payload_filters or {}).keys()) - allowed_filter_keys - {
             "project_id", "file_id", "embedding_profile",
@@ -1497,23 +1548,7 @@ class DocumentRAG:
         scope_specs.append(MetadataFilter(key="project_id", value=project_id,
                                           operator=FilterOperator.EQ))
 
-        if not doc_file_specs and not scope_specs:
-            return None
-        if doc_file_specs and not scope_specs:
-            # Pure document selector — preserve the original OR semantics.
-            return MetadataFilters(
-                filters=doc_file_specs,
-                condition=FilterCondition.OR if len(doc_file_specs) > 1 else None,
-            )
-        if scope_specs and not doc_file_specs:
-            return MetadataFilters(filters=scope_specs, condition=FilterCondition.AND)
-        # Both present: (doc_id OR file_name) AND scope1 AND scope2 …
-        doc_group = MetadataFilters(
-            filters=doc_file_specs,
-            condition=FilterCondition.OR if len(doc_file_specs) > 1 else None,
-        )
-        return MetadataFilters(filters=[doc_group] + scope_specs,
-                               condition=FilterCondition.AND)
+        return MetadataFilters(filters=scope_specs, condition=FilterCondition.AND)
 
     def _dense_candidates(self, question: str, candidate_k: int,
                           doc_ids: Optional[List[str]],
@@ -1530,6 +1565,8 @@ class DocumentRAG:
         try:
             nodes = self.index.as_retriever(**retriever_kwargs).retrieve(question)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   Dense retrieval failed: {e}")
             return []
         out = []
@@ -1601,6 +1638,8 @@ class DocumentRAG:
                     picked.append(c)
             return picked[:final_k]
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"   LLM rerank failed → fused order: {e}")
             return candidates[:final_k]
 
@@ -1921,6 +1960,8 @@ class DocumentRAG:
             logger.info(f"[ScopePayload] {file_name[:40]} += {list(clean.keys())}")
             return True
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[ScopePayload] update skipped for {file_name[:40]}: {e}")
             return False
 
@@ -2024,6 +2065,8 @@ class DocumentRAG:
                     chunks.append({"text": self._chunk_text_from_payload(md),
                                    "metadata": md, "score": score})
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[VectorQuery] {self.backend} query failed: {e}")
         return chunks
 
@@ -2078,6 +2121,8 @@ class DocumentRAG:
                     if values:
                         out.append(list(values))
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[VectorFetch] {self.backend} fetch failed for {file_name!r}: {e}")
         return out
 
@@ -2093,6 +2138,8 @@ class DocumentRAG:
             from llama_index.core import Settings
             qvec = Settings.embed_model.get_query_embedding(question)
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[NamedDoc] embed failed: {e}")
             return []
         return self._vector_query(
@@ -2151,6 +2198,8 @@ class DocumentRAG:
                     qvec, top_k_semantic, project_id=project_id,
                 )
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.warning(f"[NamedDoc] semantic fetch failed: {e}")
 
         # Merge: named first, then semantic that aren't already in named (dedup
@@ -2194,6 +2243,8 @@ class DocumentRAG:
             response = generate_text(prompt, provider=provider, task_type="document_synthesis")
             answer = response.text
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"[NamedDoc] {provider} synthesis failed: {e}")
             answer = ""
 
@@ -2253,6 +2304,8 @@ class DocumentRAG:
                     prov, res = fut.result()
                     results[prov] = res
                 except Exception as e:
+                    from .llm_errors import raise_local_generation_error
+                    raise_local_generation_error(e)
                     prov = futs[fut]
                     logger.error(f"[NamedDoc] {prov} thread failed: {e}")
                     results[prov] = {
@@ -2289,6 +2342,8 @@ class DocumentRAG:
                     prov, result = future.result()
                     results[prov] = result
                 except Exception as e:
+                    from .llm_errors import raise_local_generation_error
+                    raise_local_generation_error(e)
                     prov = futures[future]
                     logger.error(f"   [{prov}] Query failed: {e}")
                     # Attempt fallback to gemini for failed providers
@@ -2321,6 +2376,8 @@ class DocumentRAG:
                 return text
             doc.close()
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Error reading page: {e}")
         return None
 
@@ -2350,9 +2407,13 @@ class DocumentRAG:
                 from .chunk_store import get_chunk_store
                 get_chunk_store().delete_by_file(file_name, project_id=project_id)
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.debug(f"Chunk store delete skipped: {e}")
             logger.info(f"Cleared: {file_name}")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"Error clearing file: {e}")
 
     def get_index_stats(self) -> Dict[str, Any]:

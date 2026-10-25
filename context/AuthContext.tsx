@@ -17,7 +17,7 @@ import {
     type AuthSession,
     resolveLogin,
 } from "@/lib/auth/resolveLogin";
-import { CoairApiError } from "@/lib/coair/client";
+import { CoairApiError, coairFetch } from "@/lib/coair/client";
 import {
     tryLiveLogin,
     sessionFromLiveToken,
@@ -451,6 +451,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 };
             }
             const supabase = getSupabaseBrowser();
+            if (!supabase && session.source === "live") {
+                try {
+                    const changed = await coairFetch<{ access_token: string }>("/auth/change-password", {
+                        method: "POST", token: session.accessToken,
+                        body: { current_password: current, new_password: next },
+                    });
+                    const refreshed = await sessionFromLiveToken(changed.access_token);
+                    applySession(refreshed);
+                    return { ok: true };
+                } catch (error) {
+                    return { ok: false, error: error instanceof Error ? error.message : "Password change failed" };
+                }
+            }
             if (supabase && session.source === "live") {
                 const email =
                     session.email?.includes("@")
@@ -473,7 +486,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             return { ok: true };
         },
-        [session]
+        [session, applySession]
     );
 
     const value = useMemo(

@@ -1,0 +1,17 @@
+// MERGE with the existing tailnet policy; do not replace management grants.
+// Replace EXTERNAL_IDENTITY with a verified Tailscale login. Remove existing
+// wildcard grants which also authorize that identity/device before enabling.
+{
+  "tagOwners": {"tag:coair-demo": ["autogroup:admin"]},
+  "grants": [
+    {"src": ["EXTERNAL_IDENTITY"], "dst": ["tag:coair-demo"], "ip": ["tcp:443"]},
+    // Add only for users with an explicitly provisioned tunnel account:
+    {"src": ["SSH_IDENTITY"], "dst": ["tag:coair-demo"], "ip": ["tcp:2222"]}
+  ],
+  "tests": [
+    {"src": "EXTERNAL_IDENTITY", "accept": ["tag:coair-demo:443"],
+     "deny": ["tag:coair-demo:22", "tag:coair-demo:2222", "tag:coair-demo:8000", "tag:coair-demo:8080"]},
+    {"src": "SSH_IDENTITY", "accept": ["tag:coair-demo:2222"],
+     "deny": ["tag:coair-demo:22", "tag:coair-demo:8000", "tag:coair-demo:8080"]}
+  ]
+}

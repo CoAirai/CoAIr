@@ -10,7 +10,7 @@ import json
 import os
 import threading
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
@@ -62,6 +62,19 @@ def account_auth_error(status: str) -> str:
     if status in VALID_ACCOUNT_STATUSES and status != ACCOUNT_ACTIVE:
         return f"account_{status}"
     return "account_disabled"
+
+
+def account_expired(record: Dict[str, Any]) -> bool:
+    value = record.get("expires_at")
+    if not value:
+        return False
+    try:
+        deadline = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=timezone.utc)
+        return deadline <= datetime.now(timezone.utc)
+    except ValueError:
+        return True  # malformed access deadlines fail closed
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -139,6 +152,14 @@ class UserStore:
                     )
         with self._connect() as conn:
             columns = table_columns(conn, "users")
+            for name, definition in (
+                ("expires_at", "TEXT"),
+                ("must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+                ("access_plan", "TEXT NOT NULL DEFAULT ''"),
+                ("personal_project_id", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
             if "supabase_user_id" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN supabase_user_id TEXT")
             if "account_status" not in columns:
@@ -208,6 +229,10 @@ class UserStore:
             "is_active": is_active and account_status == ACCOUNT_ACTIVE,
             "account_status": account_status,
             "token_epoch": int(row["token_epoch"]) if "token_epoch" in row.keys() else 0,
+            "expires_at": row["expires_at"] if "expires_at" in row.keys() else None,
+            "must_change_password": bool(row["must_change_password"]) if "must_change_password" in row.keys() else False,
+            "access_plan": row["access_plan"] if "access_plan" in row.keys() else "",
+            "personal_project_id": row["personal_project_id"] if "personal_project_id" in row.keys() else "",
             "supabase_user_id": (
                 row["supabase_user_id"] if "supabase_user_id" in row.keys() else None
             ),
@@ -379,6 +404,10 @@ class UserStore:
             "is_active",
             "account_status",
             "password",
+            "expires_at",
+            "must_change_password",
+            "access_plan",
+            "personal_project_id",
         }
         invalid = set(fields) - allowed
         if invalid:
@@ -389,6 +418,13 @@ class UserStore:
         # `user` checks are positive-only).
         if "role" in fields and fields["role"] not in VALID_ROLES:
             raise ValueError(f"invalid role: {fields['role']!r}")
+        if "access_plan" in fields and fields["access_plan"] not in ("", "demo", "office"):
+            raise ValueError("invalid access plan")
+        if fields.get("expires_at"):
+            deadline = datetime.fromisoformat(str(fields["expires_at"]).replace("Z", "+00:00"))
+            if deadline.tzinfo is None:
+                raise ValueError("expires_at requires a timezone")
+            fields["expires_at"] = deadline.astimezone(timezone.utc).isoformat()
         if "account_status" in fields:
             fields["account_status"] = normalize_account_status(
                 str(fields["account_status"]),
@@ -413,8 +449,8 @@ class UserStore:
             elif key == "password":
                 sets.append("password_hash = ?")
                 params.append(self._hash_password(value))
-            elif key == "is_active":
-                sets.append("is_active = ?")
+            elif key in ("is_active", "must_change_password"):
+                sets.append(f"{key} = ?")
                 params.append(1 if value else 0)
             elif key == "account_status":
                 sets.append("account_status = ?")
@@ -541,13 +577,19 @@ class UserStore:
         ct = int(row["completion_tokens"]) if row else 0
         used = pt + ct
         limit = int(urow["token_limit"])
+        reserved = 0
+        if "access_plan" in urow.keys() and urow["access_plan"]:
+            from .appliance_quota import snapshot
+            local = snapshot(self, self._row_to_user(urow))
+            used, reserved, limit = local["used"], local["reserved"], local["limit"]
         if limit <= 0:
             percent_remaining = 0.0
         else:
-            percent_remaining = max(0.0, min(100.0, (1.0 - used / limit) * 100.0))
+            percent_remaining = max(0.0, min(100.0, (1.0 - (used + reserved) / limit) * 100.0))
         return {
             "username": username,
             "used_tokens": used,
+            "reserved_tokens": reserved,
             "token_limit": limit,
             "percent_remaining": round(percent_remaining, 2),
             "prompt_tokens": pt,
@@ -559,7 +601,7 @@ class UserStore:
         """Usage + billing for every account in a handful of queries."""
         with self._connect() as conn:
             users = conn.execute(
-                "SELECT username, token_limit FROM users"
+                "SELECT username, token_limit, access_plan FROM users"
             ).fetchall()
             usage_rows = conn.execute("SELECT * FROM user_usage").fetchall()
         usage_by = {row["username"]: row for row in usage_rows}
@@ -600,6 +642,9 @@ class UserStore:
                     },
                 ),
             }
+        for user in users:
+            if user['access_plan']:
+                out[user['username']] = self.get_billing_summary(user['username'])
         return out
 
     def get_billing_summary(self, username: str) -> Dict[str, Any]:
@@ -629,7 +674,7 @@ class UserStore:
 
         snapshot = self.get_usage(username)
         limit = int(snapshot["token_limit"] or 0)
-        used = int(snapshot["used_tokens"] or 0)
+        used = int(snapshot["used_tokens"] or 0) + int(snapshot.get("reserved_tokens", 0))
         if should_block_quota(used=used, limit=limit, attempted=0):
             raise UserQuotaExceededError(username, used, limit)
 

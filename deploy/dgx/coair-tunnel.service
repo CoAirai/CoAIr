@@ -1,0 +1,12 @@
+[Unit]
+Description=Coair key-only application SSH tunnel
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+ExecStartPre=/usr/sbin/sshd -t -f /etc/ssh/sshd_config_coair_tunnel
+ExecStart=/usr/sbin/sshd -D -e -f /etc/ssh/sshd_config_coair_tunnel
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

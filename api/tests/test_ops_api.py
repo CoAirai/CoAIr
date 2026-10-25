@@ -228,10 +228,12 @@ def test_password_reset_and_invite(client, acme, stores):
         "email": "surveyor@acme.example", "display_name": "Site Surveyor",
     })
     assert invited.status_code == 201
-    password = invited.json()["temporary_password"]
-    assert _auth(client, "surveyor@acme.example", password)["Authorization"].startswith(
-        "Bearer "
-    )
+    assert invited.json()["temporary_password"] == ""
+    assert invited.json()["activation_required"] is True
+    assert stores[0].get_user("surveyor@acme.example")["account_status"] == "invited"
+    assert client.post("/api/auth/login", json={
+        "username": "surveyor@acme.example", "password": "",
+    }).status_code in (401, 403)
 
 
 def test_mfa_challenge_for_company_owner(client, acme, stores):

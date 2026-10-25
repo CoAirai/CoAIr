@@ -7,7 +7,7 @@ from typing import List, Optional, Set
 from fastapi import APIRouter, HTTPException, Depends
 
 from backend.core.security import get_current_user, UserContext
-from backend.core.projects import ProjectContext, get_current_project
+from backend.core.projects import ProjectContext, get_current_project, require_project_editor
 from backend.models.responses import (
     LibraryClusterSummary,
     LibraryDocument,
@@ -124,6 +124,12 @@ def _load_notice_metadata(doc_id: str) -> Optional[NoticeMetadataOut]:
 def _build_library_doc(r, include_notice: bool = True) -> LibraryDocument:
     """Build LibraryDocument from a registry record."""
     notice = _load_notice_metadata(r.doc_id) if include_notice and r.notice_extracted else None
+    from src.project_context import get_current_project_id
+    if r.project_id:
+        from src.document_clusterer import get_clusterer
+        cluster_id, cluster_label = get_clusterer(r.project_id).get_assignment(r.doc_id)
+    else:
+        cluster_id, cluster_label = getattr(r, 'cluster_id', None), getattr(r, 'cluster_label', None)
     return LibraryDocument(
         doc_id=r.doc_id,
         file_name=r.file_name,
@@ -135,8 +141,8 @@ def _build_library_doc(r, include_notice: bool = True) -> LibraryDocument:
         notice_extracted=r.notice_extracted,
         created_at=r.created_at,
         notice_metadata=notice,
-        cluster_id=getattr(r, "cluster_id", None),
-        cluster_label=getattr(r, "cluster_label", None),
+        cluster_id=cluster_id,
+        cluster_label=cluster_label,
     )
 
 
@@ -271,14 +277,14 @@ async def list_library_clusters(
     from src.document_clusterer import get_clusterer
     from src.document_registry import get_document_registry
 
-    clusterer = get_clusterer()
+    clusterer = get_clusterer(project.project_id)
     registry = get_document_registry()
 
     # Build a quick map: cluster_id -> list of file_names (first 3)
     samples: dict[str, list[str]] = {}
     project_records = registry.get_completed(project_id=project.project_id)
     for r in project_records:
-        cid = getattr(r, "cluster_id", None)
+        cid, _ = clusterer.get_assignment(r.doc_id)
         if not cid:
             continue
         bucket = samples.setdefault(cid, [])
@@ -303,15 +309,21 @@ async def list_library_clusters(
 @router.post("/library/clusters/recompute")
 async def recompute_library_clusters(
     force: bool = False,
-    project: ProjectContext = Depends(get_current_project),
+    project: ProjectContext = Depends(require_project_editor),
+    user: UserContext = Depends(get_current_user),
 ):
     """Trigger a full re-cluster in the background. Returns immediately."""
     from src.document_clusterer import get_clusterer
 
-    clusterer = get_clusterer()
+    clusterer = get_clusterer(project.project_id)
+    from contextvars import copy_context
+    def run():
+        from backend.core.security import authorize_worker
+        authorize_worker(user.username, project.project_id)
+        clusterer.cluster_all(force=force, project_id=project.project_id)
     thread = threading.Thread(
-        target=clusterer.cluster_all,
-        kwargs={"force": force, "project_id": project.project_id},
+        target=copy_context().run,
+        args=(run,),
         daemon=True,
     )
     thread.start()

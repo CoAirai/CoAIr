@@ -46,6 +46,8 @@ export function mapLiveSession(input: {
         accessToken: input.accessToken,
         projectId: input.projectId ?? null,
         username: input.user.username,
+        mustChangePassword: Boolean(input.user.must_change_password),
+        expiresAt: input.user.expires_at,
         needsCheckout: Boolean(input.org?.subscription?.needs_checkout),
         subscriptionPlanId: input.org?.subscription?.plan_id,
         subscriptionStatus: input.org?.subscription?.status,

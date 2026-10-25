@@ -69,6 +69,9 @@ class CreateUserRequest(BaseModel):
 
 
 class UpdateUserRequest(BaseModel):
+    expires_at: Optional[str] = None
+    must_change_password: Optional[bool] = None
+    access_plan: Optional[Literal['demo', 'office']] = None
     display_name: Optional[str] = None
     role: Optional[str] = None
     token_limit: Optional[int] = None
@@ -209,7 +212,8 @@ async def create_user(
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
         return {**_enriched_user(store, store.get_user(record["username"]) or record), "invited": True}
-    if len(password) < 6:
+    from src.config import DEPLOYMENT_MODE
+    if len(password) < (12 if DEPLOYMENT_MODE == 'local' else 6):
         raise HTTPException(400, "password_required")
     try:
         record = store.create_user(
@@ -226,6 +230,7 @@ async def create_user(
             storage_limit_bytes=0 if operator else limits["storage_limit_bytes"],
             model_policy="" if operator else req.model_policy,
             provider_key_ref="" if operator else req.provider_key_ref,
+            is_active=not (DEPLOYMENT_MODE == 'local' and not operator),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -235,6 +240,9 @@ async def create_user(
         except ValueError as exc:
             store.delete_user(record["username"], soft=False)
             raise HTTPException(409, str(exc)) from exc
+    if DEPLOYMENT_MODE == 'local' and not operator and req.org_id:
+        from src.appliance_access import provision_personal_access
+        record = provision_personal_access(store, get_org_store(), username)
     return _enriched_user(store, record)
 
 
@@ -295,16 +303,30 @@ async def update_user(
         "provider_key_ref",
     }
     payload = {k: v for k, v in raw.items() if k not in billing_keys}
+    requested_plan = payload.pop('access_plan', None)
+    from src.config import DEPLOYMENT_MODE
+    if requested_plan and (DEPLOYMENT_MODE != 'local' or is_admin(target['role'])):
+        raise HTTPException(422, 'appliance_plan_requires_local_company_user')
+    if req.password and DEPLOYMENT_MODE == 'local' and not is_admin(target['role']):
+        if len(req.password) < 12 or len(req.password.encode('utf-8')) > 72:
+            raise HTTPException(422, 'password_requires_12_to_72_bytes')
+        payload.setdefault('must_change_password', True)
     if "features" in payload:
         current_features = dict(target.get("features") or {})
         current_features.update(payload["features"] or {})
         payload["features"] = current_features
     try:
+        if requested_plan:
+            from src.appliance_access import provision_personal_access
+            provision_personal_access(store, get_org_store(), username, requested_plan)
         record = store.update_user(username, **payload)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if not record:
         raise HTTPException(404, "user_not_found")
+    if req.password or req.is_active is False:
+        store.bump_token_epoch(username)
+        record = store.get_user(username)
     if use_supabase_auth() and req.password:
         try:
             uid = ensure_auth_user(username, req.password)
