@@ -10,6 +10,7 @@ Schema: chunks(chunk_id, doc_id, file_name, page_number, text)
 The lexical_index module builds a DuckDB FTS index over this table.
 """
 import hashlib
+import os
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -61,7 +62,13 @@ class ChunkStore:
         except Exception:
             pass
         try:
-            self._con = duckdb.connect(str(CHUNKS_DB))
+            settings = {}
+            if os.getenv("COAIR_DUCKDB_MEMORY_LIMIT"):
+                settings["memory_limit"] = os.environ["COAIR_DUCKDB_MEMORY_LIMIT"]
+            if os.getenv("COAIR_DUCKDB_THREADS"):
+                settings["threads"] = int(os.environ["COAIR_DUCKDB_THREADS"])
+            self._con = (duckdb.connect(str(CHUNKS_DB), config=settings) if settings
+                         else duckdb.connect(str(CHUNKS_DB)))
             self._con.execute(
                 "CREATE TABLE IF NOT EXISTS chunks ("
                 "chunk_id VARCHAR PRIMARY KEY, doc_id VARCHAR, "

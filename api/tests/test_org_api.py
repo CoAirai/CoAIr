@@ -24,6 +24,8 @@ os.environ.setdefault("JWT_SECRET", "test-secret-please-replace-in-prod")
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
+    from backend.core import platform_guard
+    monkeypatch.setattr(platform_guard, "_rate_limiter", platform_guard.RateLimiter())
     for key in (
         "DATABASE_URL",
         "SUPABASE_DB_URL",
@@ -144,7 +146,9 @@ def test_owner_creates_a_user_on_the_company_plan(client, acme, stores):
     assert body["org_role"] == "member"
     # Plan, credits and quota come from the company policy, not the request.
     assert body["credits_total"] == 250
-    assert body["token_limit"] == 500_000
+    assert body["token_limit"] > 0
+    assert sum(users.get_user(member["username"])["token_limit"]
+               for member in orgs.list_members(acme["org"]["org_id"])) == 500_000
     # Always a plain account, and inside the caller's company.
     assert users.get_user("surveyor")["role"] == "user"
     assert orgs.membership_for("surveyor")["org_id"] == acme["org"]["org_id"]
@@ -205,7 +209,7 @@ def test_owner_cannot_mint_an_operator_account(client, acme, stores):
     assert users.get_user("backdoor")["role"] == "user"
 
 
-def test_owner_cannot_mint_credits_or_quota(client, acme):
+def test_owner_cannot_mint_credits_or_quota(client, acme, stores):
     resp = client.post("/api/org/users", headers=_auth(client, "acme-admin"), json={
         "username": "greedy", "password": "pw123456",
         "initial_credits": 999999, "token_limit": 999999999,
@@ -213,7 +217,10 @@ def test_owner_cannot_mint_credits_or_quota(client, acme):
 
     assert resp.status_code == 201
     assert resp.json()["credits_total"] == 250
-    assert resp.json()["token_limit"] == 500_000
+    users, _projects, orgs = stores
+    assert resp.json()["token_limit"] < 500_000
+    assert sum(users.get_user(member["username"])["token_limit"]
+               for member in orgs.list_members(acme["org"]["org_id"])) == 500_000
 
 
 def test_owner_cannot_assign_the_legacy_corpus_feature(client, acme, stores):
@@ -335,6 +342,8 @@ def test_last_owner_is_protected(client, acme):
 
 
 def test_owner_can_grant_module_rights_without_dropping_correspondence(client, acme, stores):
+    from src.ops_store import get_ops_store
+    get_ops_store().set_org_module_grant(acme["org"]["org_id"], "forensic", True)
     users, _projects, _orgs = stores
     created = client.post("/api/org/users", headers=_auth(client, "acme-admin"), json={
         "username": "rights-user", "password": "pw123456",
@@ -811,3 +820,13 @@ def test_impersonate_and_force_logout(client, stores, acme):
     assert client.get("/api/projects", headers=as_engineer).status_code == 401
     fresh = _auth(client, "engineer")
     assert client.get("/api/projects", headers=fresh).status_code == 200
+
+
+def test_company_update_requires_platform_admin_and_rejects_null_name(client, acme, stores):
+    org_id = acme["org"]["org_id"]
+    assert client.patch(f"/api/admin/orgs/{org_id}", headers=_auth(client,"acme-admin"), json={"archived":True}).status_code == 403
+    stores[0].create_user("update-ops", "pw", role="admin")
+    headers = _auth(client,"update-ops")
+    assert client.patch(f"/api/admin/orgs/{org_id}", headers=headers, json={"name":None}).status_code == 422
+    assert stores[2].get_org(org_id)["name"] == "Acme"
+    assert client.patch("/api/admin/orgs/missing", headers=headers, json={"name":"New"}).status_code == 404

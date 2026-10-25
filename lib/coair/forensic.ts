@@ -52,6 +52,7 @@ export type CoairForensicRun = {
         summary?: string;
         findings?: string[] | string;
         narrative?: string;
+        ai_status?: string;
         text?: string;
         warnings?: string[];
         metrics?: CoairForensicMetric[];
@@ -197,7 +198,8 @@ export async function createForensicRun(
     projectId: string,
     workspaceId: string,
     moduleSlug: string,
-    parameters?: Record<string, unknown> | null
+    parameters?: Record<string, unknown> | null,
+    aiNarrative = false
 ) {
     const bodyParameters =
         parameters === undefined
@@ -213,7 +215,7 @@ export async function createForensicRun(
             token,
             projectId,
             timeoutMs: 30000,
-            body: { parameters: bodyParameters, ai_narrative: false },
+            body: { parameters: bodyParameters, ai_narrative: aiNarrative },
         }
     );
 }

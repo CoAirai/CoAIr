@@ -37,8 +37,13 @@ services:
       CHRONOLOGY_PIPELINE_VERSION: v2
       CHRONOLOGY_V3_DEMO_ENABLED: "false"
       EVENT_INDEX_ENABLED: "false"
-      FORENSIC_NATIVE_UI_V1: "false"
+      FORENSIC_NATIVE_UI_V1: "true"
+      FORENSIC_PARITY_UI_V1: "true"
       SKIP_STARTUP_OBJECT_SYNC: "true"
+      # Budget the embedded search engine, not the entire API process. DuckDB
+      # may spill to disk while reporting/OCR retain their own working memory.
+      COAIR_DUCKDB_MEMORY_LIMIT: 1GB
+      COAIR_DUCKDB_THREADS: "1"
       INGEST_MAX_CONCURRENCY: "1"
       OCR_MAX_WORKERS: "1"
       # Staging must never inherit a production relational DB or object bucket.
@@ -60,7 +65,6 @@ services:
       - ${INTEGRATION_ROOT}/storage:/app/storage
       - ${INTEGRATION_ROOT}/data:/app/data
       - ${INTEGRATION_ROOT}/provider-keys:/run/secrets/google_keys:ro
-    mem_limit: 2g
     depends_on: [qdrant]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
