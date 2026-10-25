@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-24",
+  "commit": "651d9c1c7938083d92370fff2a6ad9484d0266d3",
+  "branch": "integration/rag-agent-parity",
+  "focused_tests": {
+    "passed": 199,
+    "subtests": 4
+  },
+  "selected_api_gate": {
+    "passed": 309,
+    "subtests": 13,
+    "seconds": 46.25
+  },
+  "ci_url": "https://github.com/CoAirai/CoAIr/actions/runs/40111477950",
+  "runtime_validation": "passed on https://coair-test.duckdns.org",
+  "production_rag": "unchanged",
+  "main": "unchanged",
+  "live_acceptance": {
+    "projects": [
+      "72af601217884a54",
+      "f432d56cd6874a3c"
+    ],
+    "files": [
+      {
+        "project_id": "72af601217884a54",
+        "file_id": "24926b5e355abe2b"
+      },
+      {
+        "project_id": "f432d56cd6874a3c",
+        "file_id": "01920748c667607b"
+      }
+    ],
+    "checks": {
+      "same_filename_cross_project_preview": "blocked in both directions; own PDF opens",
+      "unselected_chat": "each project answers from its own same-named PDF only",
+      "forged_foreign_doc_selection": "no foreign citations or marker",
+      "unknown_project": "404",
+      "missing_project": "428",
+      "original_sample_pdf_pages": "all 8 pages still render"
+    },
+    "accepted": true,
+    "cleanup": "own test files deleted and projects archived",
+    "original_project_unchanged": true
+  },
+  "ci": {
+    "conclusion": "success",
+    "api_tests": 309,
+    "api_subtests": 13,
+    "postgresql_tests": 3,
+    "api_seconds": 27.9,
+    "public_smoke": "passed",
+    "production_reference_containers": "unchanged"
+  }
+}

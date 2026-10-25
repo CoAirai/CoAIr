@@ -1,0 +1,81 @@
+{
+  "same_fixtures": true,
+  "modules": {
+    "intake": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "dcma": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "baseline-critical-path": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "revision-comparison": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "out-of-sequence": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "float-erosion": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "progress-s-curve": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "resource-loading": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "sequence-coding": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "hierarchy": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "milestone-shift": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "progress-transfer": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "as-built-critical-path": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "report-assembler": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "as-planned-vs-as-built": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "windows-analysis": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "impacted-as-planned": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "collapsed-as-built": {
+      "equal": true,
+      "difference_fields": []
+    },
+    "time-impact-analysis": {
+      "equal": true,
+      "difference_fields": []
+    }
+  }
+}

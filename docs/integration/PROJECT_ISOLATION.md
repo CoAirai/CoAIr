@@ -55,3 +55,18 @@ unit-test success alone is not a claim that the running environment is updated.
 The independent company archive/restore PATCH issue from the release review is
 outside this correction and remains open. Full-corpus report quality and hosted
 provider qualification also remain separate acceptance items.
+
+## Deployed runtime result
+
+Commit `651d9c1c7938083d92370fff2a6ad9484d0266d3` is healthy at
+`https://coair-test.duckdns.org`. GitHub run 40111477950 passed the full 309-test
+API gate, 13 subtests, three PostgreSQL tests and guarded public deployment smoke.
+The live two-project qualification passed: same-name previews stayed local in
+both directions, each chat returned only its own marker and canonical source ID,
+a foreign selected document returned no foreign citations/content, unknown
+projects returned 404 and missing project headers returned 428. All eight pages
+of the original three PDFs still rendered. Synthetic uploads were deleted, test
+projects archived and the original document inventory was unchanged.
+
+Evidence: `project-isolation-check.json`. Production RAG and main were not
+modified by this release.

@@ -1,0 +1,233 @@
+{
+  "date": "2026-10-24",
+  "reviewed_application_commit": "c6124f5958305b72b7f1374fab72f82a11430f01",
+  "coair_main": "ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417",
+  "protected_source_comparison": [
+    {
+      "path": "api/backend/api/auth.py",
+      "unchanged_from_main": true,
+      "sha256": "5bba3f81decfdbb0abf22032a2e2f9b525e64bd26eda05619cb630de59404941"
+    },
+    {
+      "path": "api/backend/api/admin_orgs.py",
+      "unchanged_from_main": true,
+      "sha256": "74554d182b05eca8c5e1f1cc646a4da34804c5dc4bbe6f8eb89e21d28d3b9f41"
+    },
+    {
+      "path": "api/backend/api/org_admin.py",
+      "unchanged_from_main": true,
+      "sha256": "4d7abe7899d9c43f071cf3916c3da9aaa2f07fb1f56bf35a78b4c074604140a8"
+    },
+    {
+      "path": "api/backend/api/commerce.py",
+      "unchanged_from_main": true,
+      "sha256": "7c94c794eb44d24e5c8d43e884022ead8abb8b9b90461c43cba99a7a555cc584"
+    },
+    {
+      "path": "api/backend/api/files.py",
+      "unchanged_from_main": true,
+      "sha256": "b75d157d26db07256f5b41d36db87a281487f39c7a662703d144db16ee93b826"
+    },
+    {
+      "path": "api/backend/services/document_service.py",
+      "unchanged_from_main": true,
+      "sha256": "43ac53b8b41b59addeb9c4a2adc4ac2b124c49c57fa5f5765d19cdfd0b123c01"
+    },
+    {
+      "path": "api/src/ocr.py",
+      "unchanged_from_main": true,
+      "sha256": "2c1fd6902e4501c3e4dfc2e7c720415742feb4bfb6fb2d383d1f3d1e2d0186ae"
+    },
+    {
+      "path": "api/src/database.py",
+      "unchanged_from_main": true,
+      "sha256": "dd16a3201f20bcd7bbb4d943afa34a02cf0da8387eb0fc2912c8967cd1e638a3"
+    },
+    {
+      "path": "api/src/org_store.py",
+      "unchanged_from_main": true,
+      "sha256": "bfeb7f8cd8978511c94c6420202722b29f706d1c401b3526fb9684e3b07bfb4a"
+    },
+    {
+      "path": "api/src/project_store.py",
+      "unchanged_from_main": true,
+      "sha256": "57fb31aa2e610b5dcd8baf9e698fe40d815150575ad999dab1877fde4465bfe5"
+    },
+    {
+      "path": "api/src/user_store.py",
+      "unchanged_from_main": true,
+      "sha256": "9dad44b94202eeaeae12f357a02a17b1496ee5a3af981edfa6a498179fbe5b81"
+    },
+    {
+      "path": "api/src/billing_store.py",
+      "unchanged_from_main": true,
+      "sha256": "ba2be66d8e2f16179edad46b2cbcfb869060f8ccd4d6f32f5db834e0c0c4a98b"
+    },
+    {
+      "path": "api/src/ca_tokens.py",
+      "unchanged_from_main": true,
+      "sha256": "26e7e9c53439aa18a9b341c57a1a146d57b3a49c341899219a57dea0473f7d2b"
+    },
+    {
+      "path": "api/backend/core/security.py",
+      "unchanged_from_main": true,
+      "sha256": "c0c4cc7d2e0e3ed5375e0efad079fef2a0800a8126e51fe3b0fbb467d3b0e91f"
+    },
+    {
+      "path": "api/backend/core/orgs.py",
+      "unchanged_from_main": true,
+      "sha256": "8a3523a975d5cebcad86432a83b713ad2e7dcb819a8d9cead3967f6fbd78c069"
+    },
+    {
+      "path": "api/backend/core/projects.py",
+      "unchanged_from_main": true,
+      "sha256": "f9520579a2ee848abad4be74a967f96cdfa408f0a3ef291d876a2664d254cb86"
+    }
+  ],
+  "registry_inventory": {
+    "aws_rag": {
+      "records": 206,
+      "completed": 204,
+      "error": 2
+    },
+    "coair_test_after_qa_cleanup": {
+      "records": 3,
+      "completed": 3
+    }
+  },
+  "ui": {
+    "real_login_and_mfa": "passed",
+    "persisted_chat": "passed",
+    "bottom_source_chip_to_right_pdf_panel": "passed",
+    "rendered_image_width": 1248,
+    "expanded_pdf_and_close": "passed",
+    "javascript_errors": [],
+    "screenshot": "source-panel-review.png"
+  },
+  "inherited_blockers": [
+    {
+      "severity": "high",
+      "feature": "Project document preview",
+      "finding": "Foreign-project chunk text returned when requesting a known document ID through a different project",
+      "scope": "Confirmed against main code in isolation and integration via its public HTTPS API. Production Coair was not probed."
+    },
+    {
+      "severity": "functional",
+      "feature": "Company editing/archive/restore",
+      "finding": "Frontend PATCH /api/admin/orgs/{org_id} has no backend PATCH handler; returns 405",
+      "baseline_main_reproduction": "405 reproduced in isolation"
+    }
+  ],
+  "external_services": "Real email delivery, Stripe, hosted Supabase/RLS and object storage not qualified by isolated staging.",
+  "regression_tests": {
+    "tests": 136,
+    "failures": 1,
+    "errors": 0,
+    "seconds": 129.057,
+    "failed_tests": [
+      "tests.test_org_api.test_platform_admin_can_archive_and_restore_a_company"
+    ],
+    "files": [
+      "test_auth_flow",
+      "test_auth_provision",
+      "test_citation_open_contract",
+      "test_commerce_api",
+      "test_document_registry_load",
+      "test_email_delivery",
+      "test_file_router",
+      "test_ingestion_billing",
+      "test_ingestion_model_routing",
+      "test_ocr_pipeline",
+      "test_org_api",
+      "test_platform_security",
+      "test_project_document_viewer_resolution",
+      "test_stripe_billing",
+      "test_supabase_auth_map",
+      "test_vector_selection_integration"
+    ]
+  },
+  "live_ingestion": {
+    "project_id": "8833fedd0fbc44dd",
+    "origin": "https://coair-test.duckdns.org",
+    "files": [
+      {
+        "name": "acceptance-native.pdf",
+        "file_id": "feb0b5390adb56ad",
+        "seconds": 2.21,
+        "stages": [
+          "queued",
+          "ready"
+        ],
+        "ocr_pages": 0,
+        "source_download_sha256": "matched",
+        "preview": "passed"
+      },
+      {
+        "name": "acceptance-scanned.pdf",
+        "file_id": "85a84d6b38c3b959",
+        "seconds": 4.76,
+        "stages": [
+          "queued",
+          "embedding",
+          "ready"
+        ],
+        "ocr_pages": 1,
+        "source_download_sha256": "matched",
+        "preview": "passed"
+      }
+    ],
+    "accepted": false,
+    "cross_project_preview": {
+      "blocked": false,
+      "returned_text": true,
+      "returned_image": false,
+      "source_project": "8833fedd0fbc44dd",
+      "requested_project": "6cebdac2835a4df8"
+    },
+    "duplicate_upload": "skipped (assertion passed in initial run)",
+    "chat": "both dates and both canonical citation IDs passed assertions in initial run",
+    "cleanup": "test files deleted; test project archived"
+  },
+  "original_document_coverage": [
+    {
+      "file_id": "161298c26281926a",
+      "file_name": "CEC01546478.pdf",
+      "download_bytes": 34566,
+      "download_sha256": "06edd3eb7ea71b418d44ddba56491c8758aeba59151412341c4a64fe3a672ae1",
+      "previewed_pages": [
+        1
+      ]
+    },
+    {
+      "file_id": "0235aed85faa16ec",
+      "file_name": "CEC01123743.pdf",
+      "download_bytes": 119865,
+      "download_sha256": "30040b4dbe8d49d291d97c071854ad0a83752dea820f9892271f7c388d22018b",
+      "previewed_pages": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "file_id": "8a04f0812c996d8b",
+      "file_name": "CEC01630357.pdf",
+      "download_bytes": 147770,
+      "download_sha256": "681665ccd8b05f16b566d7a13decc7adb07c9bc32562be9feae7e37fa1724baf",
+      "previewed_pages": [
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "baseline_regressions": {
+    "tested_source": "ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417",
+    "failed_as_expected": [
+      "company archive/restore PATCH returns 405",
+      "foreign-project chunk text is returned by preview"
+    ],
+    "tests": 2
+  }
+}
