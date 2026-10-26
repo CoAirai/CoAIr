@@ -1,4 +1,4 @@
-# Why COAir answers were slow — findings report
+# Why COAir answers were slow — findings and improvements report
 
 **Date:** 26 October 2026
 **Scope:** QUERIS chat answers and CHRONOS chronology runs on the production server.
@@ -220,6 +220,127 @@ extracted per run by ranking them before extraction.
   (`llama-index>=0.10.0`) are not pinned. Any rebuild can pull a new major version
   and break something, as happened with keyword search.
 
+## Further improvements that would make COAir better
+
+These go beyond speed. Each was observed on the production server or in the
+code during this investigation, not taken from a generic checklist.
+
+### Answer accuracy
+
+**A. UK dates in spreadsheets are read the wrong way round — high priority.**
+Spreadsheet dates are read US-style (month first) whenever the day is 12 or
+less. Tested on the current code:
+
+| Spreadsheet says | Meant (UK) | COAir reads |
+|---|---|---|
+| 03/04/2010 | 3 April 2010 | **4 March 2010** |
+| 12/01/2011 | 12 January 2011 | **1 December 2011** |
+| 25/03/2010 | 25 March 2010 | 25 March 2010 (correct) |
+
+Within one column some dates come out right and others wrong, which can
+mislead spreadsheet answers and chronologies built from programme or cost
+sheets. The server log is full of warnings from this code. **Fix:** decide the
+format once per column (if any value has a first number above 12, the column is
+day-first) and default to day-first for UK projects, or make it a project
+setting. About half a day including tests.
+
+**B. Learn from "weak" answers.** The run store already records which questions
+the answer check rated weak (50 of 108). Reviewing those questions each week
+shows which documents or question types the search misses, and turns the check
+into a quality-improvement loop instead of only a speed cost.
+
+**C. Show users when an answer is uncertain.** When the check rates an answer
+weak and the deeper search finds nothing better, say so plainly ("I found
+limited evidence for this") rather than presenting it with the same confidence
+as a well-sourced answer.
+
+### Reliability
+
+**D. Keep logs for at least 30 days.** The server keeps logs only since its last
+restart, so the history of the keyword-search failure was lost and this report
+could not say when it began. Configure Docker log rotation to a file kept on the
+server disk, or ship logs to a service (e.g. Better Stack, Grafana Cloud). About
+an hour.
+
+**E. Make the test suite trustworthy again.** 42 sign-in and company tests fail
+on the current code, most of them because sign-in no longer returns a login
+token directly, which suggests they predate the email-code (MFA) step. 11 more
+fail locally because some packages are missing from developer machines. A test suite that is always partly red stops catching
+real breakages. Update the tests to the MFA flow and add a requirements file for
+development. About a day.
+
+**F. Run the tests automatically before every deploy.** Add a GitHub Actions
+check that runs the test suite on each push, and make the deploy script refuse
+to deploy when it fails. Today nothing stops a broken backend reaching
+production: this morning's 8–10 minute outage was a startup error that a test
+importing the app would have caught before deploy.
+
+**G. Keep the previous version ready for rollback.** A daily job on the server
+deletes all Docker images not in use (`docker image prune -af`), so after a bad
+deploy there is no previous image to switch back to; recovery means rebuilding.
+The deploy script now keeps a code backup; additionally keep the last working
+image under a separate tag and exclude it from the cleanup.
+
+**H. Back up the server's working databases.** Users, companies and billing live
+in Supabase Postgres, which has its own backups. But these files exist only on
+the server's disk, with no backup job:
+
+| File | Contains |
+|---|---|
+| `storage/report_jobs.db` | Chronology report jobs and results |
+| `storage/forensic.db` | FORENSIS analysis results |
+| `storage/query_runs.db` | Question history and timings (the data behind this report) |
+| `storage/ingestion_jobs.db` | Upload and indexing history |
+| `storage/activity_notices.db` | Header notifications |
+
+A nightly copy to the object storage bucket (S3 now, Azure later) would protect
+them. About two hours.
+
+**I. A health check that checks the important parts.** `/api/health` reports
+"ok" when the API is running, but not whether keyword search, the vector
+database or object storage are working. The keyword search was broken while the
+health check stayed green. Add those checks so a failure shows up immediately.
+
+### Security
+
+**J. Remove the plain-text copy of production secrets — do this first.** The file
+`/opt/coair-api/render.env.paste` (from 14 September) holds the Google API key,
+the vector database key and the secret that signs login tokens, and is readable
+and writable by every account on the server. Delete it; if it was ever copied
+elsewhere, change those keys.
+
+**K. Tighten file permissions on the server.** `.env` (all live secrets) and the
+whole `/opt/coair-api` folder are writable by every account on the server
+(permissions 666/777). Restrict `.env` to the owner only (`chmod 600`) and the
+folder to `755`. Five minutes, no effect on the app.
+
+**L. Replace a retired Google library.** The server warns at every start that
+the `google.generativeai` package used by one AI integration no longer receives
+updates or security fixes. Move that integration to the supported `google-genai`
+package, which the rest of the code already uses.
+
+### Monitoring and visibility
+
+**M. A speed and quality dashboard for Super Admin.** The run store already holds
+every question's time, route, verdict and cost. A small page showing daily median
+answer time, the share of weak answers, chronology failures and AI cost per
+company would show at a glance whether changes help, and catch regressions like
+the keyword-search failure within a day instead of weeks.
+
+**N. Alerts.** Send an email when the median answer time doubles, chronology runs
+fail repeatedly, or the API restarts unexpectedly.
+
+### Chronology (CHRONOS)
+
+**O. Progress and partial results.** Runs take 18–84 minutes. Show progress with
+an estimate ("120 of 400 documents read, about 25 minutes left") and keep what
+was extracted when a run fails, so a failure late in a run does not waste it.
+
+**P. Rank before extracting.** Extraction (2,530 calls averaging 7.5 seconds) is
+nearly all the time. Ranking documents by relevance first and extracting only
+the strongest matches would shorten runs and reduce cost without losing the key
+evidence.
+
 ## Status at a glance
 
 | Problem | Effect on an answer | Status |
@@ -235,15 +356,31 @@ extracted per run by ranking them before extraction.
 
 ## Recommended next steps, in order
 
-1. **Measure the fixed system.** Ask 10–15 typical questions and compare against
+**This week — quick, low-risk**
+
+1. **Delete the plain-text secrets file and tighten permissions** (J, K).
+   Minutes of work, closes a real exposure.
+2. **Fix UK date reading in spreadsheets** (A). Wrong dates undermine trust in
+   every spreadsheet answer and chronology.
+3. **Measure the fixed system.** Ask 10–15 typical questions and compare against
    the 77-second baseline above; this shows how much Findings 2 and 3 recovered.
-2. **Show the first answer immediately; make deeper research optional**
+4. **Keep logs for 30 days and back up the working databases** (D, H).
+
+**Next — biggest gains for users**
+
+5. **Show the first answer immediately; make deeper research optional**
    (Finding 1). Largest single saving.
-3. **Stream answers word by word** (Finding 4). Largest improvement in how fast
+6. **Stream answers word by word** (Finding 4). Largest improvement in how fast
    it feels.
-4. **Time every step in the run store** (Finding 5), so further work is measured.
-5. **Fix chronology failures** ("model output invalid").
-6. **Pin library versions** in `requirements.txt` to the versions running in
-   production, during a planned deploy with a full test pass.
-7. **Run independent AI steps in parallel** and raise output limits
-   (Findings 6 and 7).
+7. **Fix chronology failures** ("model output invalid"), then add progress and
+   partial results (O).
+
+**Then — make it stay fixed**
+
+8. **Repair the test suite and run it automatically before every deploy**
+   (E, F), and **pin library versions** to those running in production during
+   that deploy.
+9. **Time every step in the run store** (Finding 5) and add the **Super Admin
+   dashboard and alerts** (M, N).
+10. **Run independent AI steps in parallel**, raise output limits
+    (Findings 6 and 7), and rank documents before chronology extraction (P).
