@@ -48,6 +48,7 @@ class ChunkStore:
                     # Existing DuckDB FTS schemas are durable. A process restart
                     # alone must not force the first user query to rebuild them.
                     inst._dirty = False
+                    inst._dirty_generation = 0
                     inst._init_db()
                     cls._instance = inst
         return cls._instance
@@ -132,6 +133,8 @@ class ChunkStore:
 
     def _set_fts_dirty(self, dirty: bool) -> None:
         self._dirty = bool(dirty)
+        if dirty:
+            self._dirty_generation = getattr(self, "_dirty_generation", 0) + 1
         self._con.execute(
             "INSERT OR REPLACE INTO chunk_store_meta VALUES ('fts_dirty', ?)",
             ["1" if dirty else "0"],
@@ -237,6 +240,21 @@ class ChunkStore:
 
     def mark_clean(self):
         self._set_fts_dirty(False)
+
+    def mark_dirty(self):
+        with self._db_lock:
+            self._set_fts_dirty(True)
+
+    def fts_revision(self) -> int:
+        with self._db_lock:
+            return getattr(self, "_dirty_generation", 0)
+
+    def mark_clean_if_unchanged(self, revision: int) -> bool:
+        with self._db_lock:
+            if getattr(self, "_dirty_generation", 0) != revision:
+                return False
+            self._set_fts_dirty(False)
+            return True
 
     def is_dirty(self) -> bool:
         return self._dirty

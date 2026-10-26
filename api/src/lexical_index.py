@@ -14,9 +14,12 @@ ilişkili kelimeler" idea):
 Both are fused with the dense lane via Reciprocal Rank Fusion in document_rag.
 """
 import threading
+import time
 from typing import Dict, List, Optional
 
 from .logger import logger
+
+_FTS_REBUILD_MIN_INTERVAL = 300.0
 
 
 class LexicalIndex:
@@ -33,19 +36,44 @@ class LexicalIndex:
                     inst._fts_lock = threading.RLock()
                     inst._fts_ready = False
                     inst._fts_available = None  # unknown until first attempt
+                    inst._fts_building = False
+                    inst._fts_attempted_at = 0.0
                     cls._instance = inst
         return cls._instance
 
     # ── Chunk-level BM25 ─────────────────────────────────────
+    def warm(self) -> None:
+        """Discover a persisted index or build it off the request path."""
+        from .chunk_store import get_chunk_store
+        if not get_chunk_store().is_empty():
+            self._start_fts_build(force=True)
+
     def _ensure_fts(self) -> bool:
-        """(Re)build the DuckDB FTS index over chunks if stale. Returns availability."""
         from .chunk_store import get_chunk_store
         cs = get_chunk_store()
         if cs.is_empty():
             return False
+        if not self._fts_ready or cs.is_dirty():
+            self._start_fts_build()
+        return self._fts_ready
+
+    def _start_fts_build(self, *, force: bool = False) -> None:
         with self._fts_lock:
-            if self._fts_ready and not cs.is_dirty():
-                return True
+            if self._fts_building:
+                return
+            recent = time.monotonic() - self._fts_attempted_at < _FTS_REBUILD_MIN_INTERVAL
+            if recent and not force and self._fts_attempted_at:
+                return
+            self._fts_building = True
+            self._fts_attempted_at = time.monotonic()
+        threading.Thread(target=self._build_fts, name="fts-build", daemon=True).start()
+
+    def _build_fts(self) -> None:
+        from .chunk_store import get_chunk_store
+        cs = get_chunk_store()
+        started = time.monotonic()
+        try:
+            revision = cs.fts_revision()
             con = cs.connection()
             try:
                 try:
@@ -57,25 +85,25 @@ class LexicalIndex:
                     "WHERE schema_name='fts_main_chunks' LIMIT 1"
                 ).fetchone()
                 if existing and not cs.is_dirty():
-                    self._fts_ready = True
-                    self._fts_available = True
+                    self._fts_ready = self._fts_available = True
                     logger.info("[Lexical] Reusing persisted FTS index")
-                    return True
-                con.execute(
-                    "PRAGMA create_fts_index('chunks', 'chunk_id', 'text', overwrite=1)"
-                )
-                self._fts_ready = True
-                self._fts_available = True
-                cs.mark_clean()
-                cs.checkpoint()
-                logger.info("[Lexical] FTS index built over chunks")
-                return True
-            except Exception as e:
-                self._fts_available = False
-                logger.warning(f"[Lexical] FTS unavailable, using LIKE fallback: {e}")
-                return False
+                    return
+                con.execute("PRAGMA create_fts_index('chunks', 'chunk_id', 'text', overwrite=1)")
             finally:
                 con.close()
+            # Never clear an upload/delete that arrived during the build.
+            cs.mark_clean_if_unchanged(revision)
+            cs.checkpoint()
+            self._fts_ready = self._fts_available = True
+            logger.info(f"[Lexical] FTS index built in {time.monotonic() - started:.1f}s")
+        except Exception as exc:
+            cs.mark_dirty()
+            if not self._fts_ready:
+                self._fts_available = False
+            logger.warning(f"[Lexical] FTS build failed, using LIKE fallback: {exc}")
+        finally:
+            with self._fts_lock:
+                self._fts_building = False
 
     def search_chunks(self, query: str, top_k: int = 30,
                       project_id: Optional[str] = None,

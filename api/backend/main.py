@@ -38,6 +38,12 @@ def warm_health() -> None:
         return
     _health_ready = True
     _health_error = ""
+    try:
+        from src.lexical_index import LexicalIndex
+
+        LexicalIndex().warm()
+    except Exception as exc:
+        print(f"[Lexical] warm-up skipped: {exc}", file=sys.stderr)
 
 
 def start_health_warm() -> None:
