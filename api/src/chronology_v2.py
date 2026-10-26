@@ -329,15 +329,8 @@ def _project_domain_hint(project_id: str) -> str:
     resolve is not an error — the glossary then falls back to the generic
     sense, which is what it did before this existed.
     """
-    pid = str(project_id or "").strip()
-    if not pid:
-        return ""
-    try:
-        from .project_store import get_project_store
-        project = get_project_store().get_project(pid)
-    except Exception:  # noqa: BLE001 - the hint is an optimisation, never a gate
-        return ""
-    return str((project or {}).get("name") or "").strip()
+    from .jargon_manager import project_domain_hint
+    return project_domain_hint(project_id)
 
 
 def prepare_chronology_query(
