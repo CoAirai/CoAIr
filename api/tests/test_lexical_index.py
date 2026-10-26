@@ -100,6 +100,8 @@ def test_restart_warm_reuses_clean_persisted_index(stores, monkeypatch):
             statements.append(sql)
             return self.con.execute(sql, *args)
         def close(self): self.con.close()
+        def __enter__(self): return self
+        def __exit__(self, *args): self.close()
     monkeypatch.setattr(chunks, 'connection', Spy)
     monkeypatch.setattr(LexicalIndex, '_instance', None)
     restarted = LexicalIndex()

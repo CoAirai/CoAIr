@@ -881,6 +881,7 @@ class LightGraph:
         terms: List[str],
         scope: Optional[str] = None,
         limit: int = 25,
+        project_id: str = "",
     ) -> List[Dict[str, Any]]:
         """
         Search documents across actions, topics, and subject using
@@ -895,6 +896,13 @@ class LightGraph:
             List of matching node dicts sorted by relevance then date
         """
         if not self._notices_table_ready or not terms:
+            return []
+
+        if not project_id:
+            from .project_context import get_current_project_id
+            project_id = get_current_project_id()
+        owned_ids = self._project_doc_ids(project_id) if project_id else None
+        if not owned_ids:
             return []
 
         try:
@@ -917,6 +925,11 @@ class LightGraph:
                 where = f"({where}) AND LOWER(doc_type) IN ({placeholders})"
                 params.extend([dt.lower() for dt in doc_types])
 
+            # Apply ownership before LIMIT: foreign rows must not crowd out
+            # relevant project notices, and global graph nodes carry no tenant.
+            placeholders = ",".join("?" for _ in owned_ids)
+            where = f"({where}) AND doc_id IN ({placeholders})"
+            params.extend(sorted(owned_ids))
             sql = f"""
                 SELECT doc_id, date, sender, recipient, subject,
                        doc_type, direction, file_name, topics, actions
@@ -934,6 +947,7 @@ class LightGraph:
             results = []
             for row in rows:
                 node = dict(zip(cols, row))
+                node["project_id"] = project_id
                 # Relevance score: count how many terms matched
                 text_blob = " ".join([
                     (node.get("subject") or ""),

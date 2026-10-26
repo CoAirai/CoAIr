@@ -194,7 +194,7 @@ class LexicalIndex:
         # 1. Notice subject/topics/actions (light_graph)
         try:
             from .light_graph import get_light_graph
-            for node in get_light_graph().search_broad(terms, limit=limit):
+            for node in get_light_graph().search_broad(terms, limit=limit, project_id=project_id):
                 if (node.get("project_id") or "") != project_id:
                     continue
                 did = node.get("doc_id")

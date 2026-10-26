@@ -104,14 +104,16 @@ class RetrievalParityTests(unittest.TestCase):
         con = store.connection.return_value
         con.execute.return_value.fetchone.return_value = (1,)
         with patch('src.chunk_store.get_chunk_store', return_value=store):
-            self.assertTrue(index._ensure_fts())
+            index._build_fts()
+            self.assertTrue(index._fts_ready)
             self.assertFalse(any('create_fts_index' in str(c) for c in con.execute.call_args_list))
             store.mark_clean.assert_not_called()
             con.close.assert_called_once()
             store.is_dirty.return_value = True
-            self.assertTrue(index._ensure_fts())
+            index._build_fts()
+            self.assertTrue(index._fts_ready)
             self.assertTrue(any('create_fts_index' in str(c) for c in con.execute.call_args_list))
-            store.mark_clean.assert_called_once()
+            store.mark_clean_if_unchanged.assert_called_once_with(store.fts_revision.return_value)
             store.checkpoint.assert_called_once()
 
     def test_workers_inherit_context_and_queries_are_deduplicated(self):

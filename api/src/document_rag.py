@@ -1404,7 +1404,7 @@ class DocumentRAG:
                 from .lexical_index import get_lexical_index
                 li = get_lexical_index()
                 lexical = li.search_chunks(
-                    raw_question, RAG_CANDIDATE_K, project_id=project_id,
+                    raw_question, RAG_CANDIDATE_K, project_id=project_id, doc_ids=doc_ids,
                 )
                 if doc_ids:
                     ids = set(doc_ids)
