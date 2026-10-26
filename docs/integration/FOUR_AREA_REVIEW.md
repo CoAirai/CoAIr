@@ -72,3 +72,29 @@ The first remote DGX source CI found frontend unit discovery entering the separa
 ### Final independent DGX source CI
 
 After the discovery-boundary repair, commit `b18c781` passed both API and web jobs in [40209787996](https://github.com/CoAirai/CoAIr/actions/runs/40209787996). The API image built successfully and the 78-test local source contract gate passed; the frontend unit tests, TypeScript and local-mode production build passed. The branch is pushed. Hardware/protected deployment remains pending, as distinct from this successful source qualification.
+
+## Group discussion review — 26 October 2026
+
+Reviewed integration `207aa2e` against freshly fetched main `f5b1238`. Main has two new commits after the shared `ca5302b` baseline: `771ad53` (DuckDB BM25 correction and Azure migration guide) and `f5b1238` (background FTS warm/build and VPS deployment script). No application changes, merges or live configuration changes were made during this review.
+
+### Storage and source references
+
+The claim that replacing S3 necessarily requires re-ingestion is too broad. `lib/coair/documents.ts` resolves citations through authenticated, project-scoped `/docs/{id}/content`, not a persisted public S3 URL. `DocumentService` resolves registry/catalog/vector membership, approved local paths and on-demand object-store downloads. Original objects, stable document/project identities, locators and lookup metadata must remain resolvable. Copying source objects and updating the storage adapter/path resolution can preserve embeddings and OCR; reprocessing is necessary only for missing/invalid derived data or deliberate pipeline changes. Re-ingesting everything changes legacy path-derived IDs and can itself break old references or create duplicates.
+
+Neither reviewed branch implements Azure storage: main only adds a guide. Implementation is broader than one adapter switch: backend selection and object operations; upload-plan modes/model; frontend PUT headers and completion; canonical artifact URI recognition (currently only `s3://` and `gs://` are remote); and source path resolution all need coordinated checks. An `https://...blob.core.windows.net/...` canonical URI would currently be handled as a local path unless this reader is adapted.
+
+The guide's statement excluding chat history from object storage is incomplete: `gcs_storage.py` has conversation JSON and review-session sync functions, in addition to uploads, chunks, registry, Parquet/catalog, feedback and converter registry. This does not prove those prefixes contain production objects; it means the migration inventory must enumerate them rather than assume absence. The guide's measured bucket inventory, transfer duration, cloud configuration and rollback copy instructions were not independently verified in this code-only review.
+
+A 5–10-document Edinburgh PoC is appropriate on isolated resources. First test copying the originals while preserving existing IDs and embeddings, so old saved references can be tested; separately test a genuinely new upload through OCR/indexing. Include PDF, scanned PDF, email and spreadsheet if present. Acceptance: source checksums/counts; same project/doc IDs; old and new citations opening the correct page; restart/cold source hydration; upload/delete/retry; spreadsheet/canonical artifacts; and foreign-project access rejection. Use an isolated subset with verified ownership, not a broad filename fallback across projects. Keep the current store available until reconciliation and rollback are tested.
+
+### Query latency work
+
+Main's new BM25 SQL and background-build changes address real mechanisms: volatile-score filtering and a synchronous FTS build blocking a request. Our integration already fixes the score query with a materialized CTE and adds durable dirty-state/persisted-index reuse plus independent reader cursors. Main's warm-up forces a background build and adds a five-minute rebuild throttle; it does not contain those durable-state/reuse changes. Background warm-up can be considered as a small adapted follow-up, preserving existing dev behavior and testing concurrent uploads, dirty state after restart and fresh-document availability. Blindly replacing dev's `lexical_index.py` or `chunk_store.py` would remove tested integration changes.
+
+Fresh isolated verification used DuckDB 2.0.0 and disposable in-memory data: both main's subquery and dev's materialized query returned the expected project-scoped BM25 row. Main's three lexical-index tests also passed against its actual `chunk_store.py` and `lexical_index.py`, mounted into an isolated disposable API container. No customer databases were mounted. The last-24-hour, at-most-10,000-line target log sample had zero selected FTS/BM25 failure markers; no representative load was issued, so this is not a latency or zero-error guarantee. Hasnain's other unspecified errors and the runtime on his separate host cannot be diagnosed from these group messages alone.
+
+### Integration recommendation
+
+Keep the reviewed integration branch as the combined AI baseline and ask for the PoC/code changes as a separate branch or PR against it. Preserve Coair management/payment behavior and the qualified RAG agent, source scope, date proof and export changes. Review new main fixes individually rather than deploying main over the integration. The new `deploy_vps.ps1` targets another host and copies only backend/src/config/migrations/tests, despite its full-tree description; it omits requirements, Dockerfile, vendor engine, API frontend and top-level web changes. It is not the guarded AWS integration deployment path and should not be used to replace this environment.
+
+No Azure PoC, real Azure upload, bucket inventory or storage cutover was performed. The existing AWS integration release remains `0488dbc5fc58ade61a93552c94eba457b8e8a74f`; documentation commits do not change that running application.
