@@ -143,3 +143,59 @@ class SelectedAnswerContextTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SelectedRouteTests(unittest.TestCase):
+    def test_injected_selected_pdf_bypasses_classifier_for_both_provider_modes(self):
+        from src.router import QueryRouter, QueryType
+        for dual in (False, True):
+            router = QueryRouter.__new__(QueryRouter)
+            router._jargon = SimpleNamespace(expand_query=lambda query: query)
+            router._is_greeting = lambda query: False
+            router._classify_obvious_offtopic = lambda query: False
+            router._selected_text_context = lambda ids: True
+            router._is_complex_query = MagicMock(side_effect=AssertionError('selected evidence must bypass classification'))
+            router._dispatch_query = MagicMock(return_value={'answer':'Sourced answer','sources':[]})
+            router._dispatch_query_dual = MagicMock(return_value={})
+            token = answer_context_var.set(SELECTED)
+            try:
+                with patch('src.telemetry.start_trace', return_value=MagicMock()), patch('src.telemetry.finish_trace'):
+                    fn = router.route_and_execute_dual if dual else router.route_and_execute
+                    fn('What was PB responsible for?', ['d1'])
+                dispatch = router._dispatch_query_dual if dual else router._dispatch_query
+                self.assertEqual(dispatch.call_args.args[0], QueryType.DOCUMENT)
+                self.assertEqual(dispatch.call_args.args[3], ['d1'])
+                router._is_complex_query.assert_not_called()
+            finally:
+                answer_context_var.reset(token)
+
+    def test_selection_without_extracted_document_text_keeps_normal_routing(self):
+        from src.router import QueryRouter
+        router = QueryRouter.__new__(QueryRouter)
+        router._jargon = SimpleNamespace(expand_query=lambda query: query)
+        router._is_greeting = lambda query: False
+        router._classify_obvious_offtopic = lambda query: False
+        router._is_complex_query = MagicMock(side_effect=RuntimeError('normal routing reached'))
+        token = answer_context_var.set('')
+        try:
+            with patch('src.telemetry.start_trace', return_value=MagicMock()), patch('src.telemetry.finish_trace'):
+                with self.assertRaisesRegex(RuntimeError, 'normal routing reached'):
+                    router.route_and_execute('Sum selected spreadsheet costs', ['spreadsheet'])
+        finally:
+            answer_context_var.reset(token)
+
+
+    def test_text_context_requires_all_selected_documents_to_be_owned_text(self):
+        from src.router import QueryRouter
+        docs = {'pdf':SimpleNamespace(project_id='p1',file_name='notice.pdf'),
+                'sheet':SimpleNamespace(project_id='p1',file_name='costs.xlsx'),
+                'foreign':SimpleNamespace(project_id='p2',file_name='notice.pdf')}
+        token = answer_context_var.set(SELECTED)
+        try:
+            with patch('src.project_context.get_current_project_id', return_value='p1'), \
+                 patch('src.document_registry.get_document_registry', return_value=SimpleNamespace(get=docs.get)):
+                self.assertTrue(QueryRouter._selected_text_context(['pdf']))
+                for ids in (['sheet'], ['pdf','sheet'], ['foreign'], ['unknown']):
+                    self.assertFalse(QueryRouter._selected_text_context(ids))
+        finally:
+            answer_context_var.reset(token)

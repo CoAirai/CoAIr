@@ -641,8 +641,9 @@ class ChatOrchestrator:
             return ""
 
         header = (
-            f"SELECTED DOCUMENTS ({len(blocks)}) — treat the text below as the "
-            f"primary source of truth for the user's request. If the answer is "
-            f"not present in it, say so explicitly:"
+            f"SELECTED DOCUMENT EXCERPTS ({len(blocks)}): use these together with "
+            f"retrieved passages from the selected files. These excerpts may be partial; "
+            f"absence here does not prove that the entire document lacks the information. "
+            f"State clearly when the available evidence does not support an answer:"
         )
         return header + "\n\n" + "\n\n".join(blocks)

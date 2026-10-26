@@ -3692,6 +3692,28 @@ class QueryRouter:
 
     # ── Main entry point ──────────────────────────────────────
 
+    @staticmethod
+    def _selected_text_context(doc_ids) -> bool:
+        """Only bypass routing for owned text documents with extracted context.
+
+        Spreadsheet and mixed selections must retain SQL/hybrid routing.
+        """
+        from .document_rag import answer_context_var
+        if not doc_ids or not answer_context_var.get():
+            return False
+        from .document_registry import get_document_registry
+        from .project_context import get_current_project_id
+        project = get_current_project_id()
+        if not project:
+            return False
+        registry = get_document_registry()
+        for doc_id in set(doc_ids):
+            rec = registry.get(doc_id)
+            if (not rec or rec.project_id != project
+                    or not rec.file_name.lower().endswith(('.pdf', '.docx', '.doc', '.txt', '.rtf'))):
+                return False
+        return True
+
     def route_and_execute(self, query: str, doc_ids: Optional[List[str]] = None, mode: str | None = None, email_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Classify and route query to appropriate handler.
         Complex queries are routed through the hybrid executor for multi-step planning.
@@ -3735,9 +3757,10 @@ class QueryRouter:
             # that grounded context instead of re-classifying. (Only the DOCUMENT/
             # HYBRID synthesis path actually uses the injected context, so routing
             # elsewhere would waste it.) Mode-less: triggered by any selection.
-            if email_ids:
+            selected_context_files = email_ids or (doc_ids if self._selected_text_context(doc_ids) else None)
+            if selected_context_files:
                 logger.info(
-                    f"   {len(email_ids)} selected context file(s) "
+                    f"   {len(selected_context_files)} selected context file(s) "
                     f"-> forcing DOCUMENT (answer from injected context)"
                 )
                 trace.route = "DOCUMENT_SELECTED_CONTEXT"
@@ -3970,9 +3993,10 @@ class QueryRouter:
 
             # Selected context files: bypass classification.
             # See route_and_execute for rationale. Mode-less: any selection.
-            if email_ids:
+            selected_context_files = email_ids or (doc_ids if self._selected_text_context(doc_ids) else None)
+            if selected_context_files:
                 logger.info(
-                    f"   {len(email_ids)} selected context file(s) "
+                    f"   {len(selected_context_files)} selected context file(s) "
                     f"-> forcing DOCUMENT (answer from injected context)"
                 )
                 trace.route = "DOCUMENT_SELECTED_CONTEXT_DUAL"
@@ -3984,7 +4008,7 @@ class QueryRouter:
                     "routing": {
                         "decision": QueryType.DOCUMENT.value,
                         "confidence": 1.0,
-                        "reasons": [f"Selected-context bypass with {len(email_ids)} file(s)"],
+                        "reasons": [f"Selected-context bypass with {len(selected_context_files)} file(s)"],
                         "used_llm": False,
                     },
                 }
