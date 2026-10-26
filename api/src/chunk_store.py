@@ -201,6 +201,9 @@ class ChunkStore:
     def mark_clean(self):
         self._dirty = False
 
+    def mark_dirty(self):
+        self._dirty = True
+
     def is_dirty(self) -> bool:
         return self._dirty
 
