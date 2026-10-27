@@ -11,7 +11,7 @@ import { chatTransition } from "@/lib/chat/motion";
 import MessageBubble from "./MessageBubble";
 
 const HomePage = () => {
-    const { messages, isReplying, replyActivity, activeWorkspaceUserId, sendMessage } =
+    const { messages, isReplying, replyActivity, replyDraft, activeWorkspaceUserId, sendMessage } =
         useChat();
     const examples = [
         "Which notices were issued this month?",
@@ -103,6 +103,11 @@ const HomePage = () => {
                                                 animate={{ opacity: 1 }}
                                             >
                                                 <ReplyOrb activity={replyActivity} />
+                                                {replyDraft ? <div className="mt-4">
+                                                    <p className="mb-2 text-label-xs text-sub-600">Writing answer · final response pending</p>
+                                                    <MessageBubble message={{ id: "streaming-answer", role: "assistant", content: replyDraft,
+                                                        createdAt: "", streaming: true }} />
+                                                </div> : null}
                                             </motion.div>
                                         )}
                                     </motion.div>

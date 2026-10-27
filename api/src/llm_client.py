@@ -469,12 +469,51 @@ def _gemini_generate_native(
         config_kwargs["response_json_schema"] = _gemini_compatible_response_schema(
             response_schema
         )
-    resp = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(**config_kwargs),
-    )
-    text = (resp.text or "").strip()
+    from .answer_stream import answer_stream_var, publish_answer
+    if answer_stream_var.get() and not (json_mode or response_schema):
+        chunks = []
+        resp = None
+        try:
+            for chunk in client.models.generate_content_stream(
+                model=model, contents=prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
+            ):
+                if getattr(chunk, "usage_metadata", None) is not None:
+                    usage_metadata = chunk.usage_metadata
+                candidates = getattr(chunk, "candidates", None) or []
+                if candidates and getattr(candidates[0], "finish_reason", None):
+                    finish_candidates = candidates
+                resp = chunk
+                # Read only public content parts. Never forward thought parts or
+                # reasoning signatures to the browser.
+                candidates = getattr(chunk, "candidates", None) or []
+                parts = getattr(getattr(candidates[0], "content", None), "parts", None) if candidates else None
+                delta = "".join(getattr(part, "text", "") or "" for part in (parts or [])
+                                if not getattr(part, "thought", False))
+                if delta:
+                    chunks.append(delta)
+                    publish_answer("answer_delta", text=delta)
+            text = "".join(chunks).strip()
+        except Exception:
+            if not chunks:
+                raise
+            # Preserve known usage for charging before failing a broken stream.
+            text = "".join(chunks).strip()
+            finish_candidates = None
+        finally:
+            client.close()
+        from types import SimpleNamespace
+        resp = SimpleNamespace(
+            candidates=locals().get("finish_candidates") or
+                [SimpleNamespace(finish_reason="STREAM_INCOMPLETE")],
+            usage_metadata=locals().get("usage_metadata"),
+        )
+    else:
+        resp = client.models.generate_content(
+            model=model, contents=prompt,
+            config=types.GenerateContentConfig(**config_kwargs),
+        )
+        text = (resp.text or "").strip()
     comp_tok = 0
     thoughts_tok = 0
     um = getattr(resp, "usage_metadata", None)
@@ -695,7 +734,32 @@ def effective_providers(providers: List[str]) -> List[str]:
 
 # ── Core API ─────────────────────────────────────────────────
 
-def generate_text(
+def generate_text(*args, **kwargs) -> LLMResponse:
+    from .answer_stream import answer_stream_var, answer_append_var, publish_answer
+    enabled = (kwargs.get("task_type", "generation") in
+               {"chat_answer", "answer_synthesis", "document_synthesis"}
+               and not kwargs.get("json_mode") and not kwargs.get("response_schema"))
+    callback = answer_stream_var.get()
+    token = None
+    if callback and enabled:
+        publish_answer("answer_start", append=answer_append_var.get())
+    elif callback:
+        token = answer_stream_var.set(None)
+    try:
+        result = _generate_text(*args, **kwargs)
+        if callback and enabled and result.usage.cache_hit:
+            publish_answer("answer_delta", text=result.text)
+        return result
+    except Exception:
+        if callback and enabled:
+            publish_answer("answer_reset")
+        raise
+    finally:
+        if token is not None:
+            answer_stream_var.reset(token)
+
+
+def _generate_text(
     prompt: str,
     *,
     system: str = "",
@@ -912,6 +976,9 @@ def generate_text(
     retry_count = max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
     original_prompt = prompt
     for attempt in range(1 + retry_count):
+        if attempt:
+            from .answer_stream import publish_answer
+            publish_answer("answer_retry")
         try:
             if chronology_budget_active_var.get():
                 call_count = chronology_call_count_var.get()

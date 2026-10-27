@@ -30,6 +30,7 @@ export type Message = {
     sqlArtifact?: SqlArtifact;
     /** How much of the library was indexed when this answer was written. */
     libraryNote?: string;
+    streaming?: boolean;
 };
 
 export type KnowledgeBaseItem = {

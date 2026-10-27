@@ -1631,13 +1631,6 @@ class DocumentRAG:
         from . import llm_client
         if not nodes:
             return "No relevant document excerpts were found for this question."
-        parts = []
-        for i, nd in enumerate(nodes, 1):
-            parts.append(
-                f"[Source {i}: {nd.get('file_name')}, p.{nd.get('page_number')}]\n"
-                f"{nd.get('text') or nd.get('text_snippet') or ''}"
-            )
-        context = "\n\n---\n\n".join(parts)
         asked = answer_question_var.get() or question
         history = conversation_history_var.get()
         history_block = (
@@ -1647,13 +1640,14 @@ class DocumentRAG:
             "not supported by them, say so):\n"
             f"{history}\n\n"
         ) if history else ""
-        prompt = (
-            f"{history_block}{_selected_answer_context()}DOCUMENT EXCERPTS:\n{context}\n\n"
-            f"QUESTION: {asked}\n\nANSWER:"
-        )
-        resp = llm_client.generate_text(
-            prompt, system=self.DOCUMENT_SYSTEM_PROMPT,
-            task_type="document_synthesis",
+        def render_prompt(context):
+            return (
+                f"{history_block}{_selected_answer_context()}DOCUMENT EXCERPTS:\n{context}\n\n"
+                f"QUESTION: {asked}\n\nANSWER:"
+            )
+        from .chat_evidence import synthesize_sources
+        resp = synthesize_sources(
+            f"{history_block}{asked}", nodes, render_prompt=render_prompt, system=self.DOCUMENT_SYSTEM_PROMPT,
         )
         # Telemetry
         try:
@@ -1815,29 +1809,23 @@ class DocumentRAG:
         nodes = retriever.retrieve(question)
 
         # Step 2: Build context from retrieved chunks
-        context_parts = []
-        for i, node in enumerate(nodes, 1):
-            meta = node.metadata
-            fname = meta.get("file_name", "Unknown")
-            page = meta.get("page_number", "?")
-            context_parts.append(f"[Source {i}: {fname}, p.{page}]\n{node.text}")
-        context = "\n\n---\n\n".join(context_parts)
-
         # Step 3: Synthesize with LLM
-        prompt = (
-            "Based on the following document excerpts, answer the user's question.\n"
-            "Only use information from the provided sources.\n"
-            "Cite the source document name for every claim, and especially for every number.\n"
-            "Only state a numeric figure that appears verbatim in a source; name that source. "
-            "If you must add up or infer a total across sources, say 'approximately', list which "
-            "sources you combined, and mark it as an estimate — never present an inferred number as exact.\n"
-            "If the information is not available, say so.\n\n"
-            f"{_selected_answer_context()}SOURCES:\n{context}\n\n"
-            f"QUESTION: {question}\n\n"
-            "ANSWER:"
-        )
-        from .llm_client import generate_text
-        response = generate_text(prompt, provider=provider, task_type="document_synthesis")
+        def render_prompt(context):
+            return (
+                "Based on the following document excerpts, answer the user's question.\n"
+                "Only use information from the provided sources.\n"
+                "Cite the source document name for every claim, and especially for every number.\n"
+                "Only state a numeric figure that appears verbatim in a source; name that source. "
+                "If you must add up or infer a total across sources, say 'approximately', list which "
+                "sources you combined, and mark it as an estimate — never present an inferred number as exact.\n"
+                "If the information is not available, say so.\n\n"
+                f"{_selected_answer_context()}SOURCES:\n{context}\n\n"
+                f"QUESTION: {question}\n\n"
+                "ANSWER:"
+            )
+        from .chat_evidence import synthesize_sources
+        response = synthesize_sources(question, [dict(node.metadata, text=node.text) for node in nodes],
+                                      render_prompt=render_prompt, provider=provider)
         answer = response.text
 
         # Step 4: Extract sources metadata
@@ -2204,27 +2192,21 @@ class DocumentRAG:
                 "sources": [],
             }
 
-        # Build LLM prompt
-        context_parts = []
-        for i, c in enumerate(merged, 1):
-            md = c.get("metadata") or {}
-            fname = md.get("file_name", "Unknown")
-            page = md.get("page_number", "?")
-            text = (c.get("text") or "")[:1500]
-            context_parts.append(f"[Source {i}: {fname}, p.{page}]\n{text}")
-        context = "\n\n---\n\n".join(context_parts)
-        prompt = (
-            "Based on the following document excerpts, answer the user's question. "
-            "Use information from the provided sources. Cite the relevant filename "
-            "and page number naturally where appropriate.\n\n"
-            f"{_selected_answer_context()}SOURCES:\n{context}\n\n"
-            f"QUESTION: {question}\n\n"
-            "ANSWER:"
-        )
+        def render_prompt(context):
+            return (
+                "Based on the following document excerpts, answer the user's question. "
+                "Use information from the provided sources. Cite the relevant filename "
+                "and page number naturally where appropriate.\n\n"
+                f"{_selected_answer_context()}SOURCES:\n{context}\n\n"
+                f"QUESTION: {question}\n\n"
+                "ANSWER:"
+            )
 
         try:
-            from .llm_client import generate_text
-            response = generate_text(prompt, provider=provider, task_type="document_synthesis")
+            from .chat_evidence import synthesize_sources
+            response = synthesize_sources(question,
+                [dict(c.get("metadata") or {}, text=c.get("text") or "") for c in merged],
+                render_prompt=render_prompt, provider=provider)
             answer = response.text
         except Exception as e:
             logger.error(f"[NamedDoc] {provider} synthesis failed: {e}")

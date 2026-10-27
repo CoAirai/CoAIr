@@ -75,6 +75,9 @@ TASK_PROFILES: Dict[str, TaskProfile] = {
     "routing_classification": TaskProfile(
         "routing_classification", 16_384, 1_024, "minimal", 45,
     ),
+    "answer_evidence_review": TaskProfile(
+        "answer_evidence_review", 32_768, 8_192, "low", 120,
+    ),
     "chat_answer": TaskProfile("chat_answer", 131_072, 8_192, "medium", 120),
     "research_plan": TaskProfile("research_plan", 32_768, 4_096, "low", 90),
     "chronology_research_plan": TaskProfile(

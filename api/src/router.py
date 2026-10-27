@@ -3401,6 +3401,8 @@ class QueryRouter:
                 return "OK"  # answered the question — nothing to dig for
         elif not self._verify_looks_weak(answer, sources):
             return "OK"  # strong answer on a cheap route — no verify call spent
+        self._report("verifying", "Checking answer coverage",
+                     "Checking whether the answer needs additional project evidence")
         try:
             from . import llm_client
             from .prompt_security import build_system_prompt

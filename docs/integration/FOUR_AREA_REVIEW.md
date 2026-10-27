@@ -480,3 +480,67 @@ The supplied Spark compose deliberately uses the current cloud model path;
 fully local vLLM inference remains a separate provider integration and quality
 qualification. Existing account, organization, role and payment schemas and
 production AWS/RAG/DGX deployments were not changed in this audit.
+
+## Live answer streaming and bounded chat source review (2026-10-28)
+
+The new authenticated/project-scoped `POST /api/chat/stream` wraps the same chat
+orchestrator, account/quota checks, selected-document scope, response builder,
+conversation persistence and final citation/SQL contract. The existing JSON
+endpoint and progress endpoint remain compatible. The Next.js proxy already
+passes a response body through without buffering. SSE sends actual Gemini public
+text deltas during prose synthesis, workflow activity and one authoritative final
+response. It does not replay a finished answer at an artificial typing speed.
+Only prose answer tasks may stream; routing, schema output, source reviews and
+provider thought/signature parts cannot reach the browser. Provider usage and
+finish metadata remain metered; incomplete output is not cached as success.
+The SDK's public-content/`thought` distinction follows the
+[Gemini API contract](https://ai.google.dev/api/generate-content).
+
+The existing progress orb remains, with English responsibility labels (Research
+coordinator, Project retrieval, Source review, Answer writer, Answer check) and
+real operation details. These are workflow roles, not invented autonomous work
+or a display of hidden model reasoning. A live draft is labelled pending; it has
+no Word export or final citation chips. The checked/mapped final response replaces
+it, and only that canonical response is persisted. Retries reset the current
+section instead of duplicating text. A disconnected stream is not accepted as
+complete or automatically resubmitted. A bounded queue protects server RAM;
+disconnect drains the still-running turn so accounting and saving can finish.
+Cached answers may arrive immediately. The active Gemini path is qualified;
+optional non-native providers retain their existing final-response behavior.
+
+For document chat, source packets up to 48K characters retain the accepted
+single-call prompts/system instructions. Larger retrieved evidence packets are
+reviewed in overlapping 12K-character source-local windows with at most three
+in-flight reviewers. Thread context carries project/user/usage identity. Reviewers
+return quotations, which must occur in their own source window; they cannot add
+source IDs or silently invent paraphrased evidence. Every selected window is
+processed. Only relevant checked quotations reach 32K-character section writers;
+when multiple sections are necessary they are all retained in the answer, rather
+than compressing the whole archive into one overflowing context. The former
+1500-character named-document prefix cut is removed from this synthesis path.
+
+If a prose call actually hits its output cap, it reuses the existing source
+packet/review results and splits the writing packet into strictly smaller parts;
+it does not restart retrieval, graph search or the full ReAct workflow. Auth,
+billing, policy failures and other errors do not trigger that split. A minimal
+packet can still fail explicitly; provider output/context limits remain finite.
+This is not a claim that context growth is the sole cause of every MAX_TOKENS
+failure. Existing chronology source windows, report verification/repair and
+Word/Excel/table rendering are retained. Retrieval candidate budgets are not
+removed, and all-window review means all supplied evidence, not an exhaustive
+search of every project document.
+
+Initial verification: 78 focused backend tests plus four subtests, 173 web tests
+and TypeScript checks passed. The late-fact regression uses more than 600K source
+characters while each reviewer prompt remains under 13K characters. Fabricated
+quotations, interrupted provider output, missing finish metadata, hidden thoughts,
+retry duplication, concurrent-stream separation and disconnected-client saving
+are covered. Local Vitest ignores AppleDouble `._*` metadata files; test modules
+remain included.
+
+A real Gemini synthetic-source probe reviewed eight source windows, retained a
+planned 03 April 2010 finish separately from an actual 12 January 2011 inspection
+and GBP 25 cost, cited both correct file/page references, and produced a Markdown
+table. All eight checks passed. Public text arrived in six real deltas; first
+nonempty delta at 11.959 s, complete at 12.632 s including parallel source review.
+This is a controlled synthetic case, not a full-corpus latency or recall claim.

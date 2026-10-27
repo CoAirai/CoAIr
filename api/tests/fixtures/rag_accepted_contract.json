@@ -231,6 +231,13 @@
       "status": "reviewed_addition",
       "rag_sha256": null,
       "coair_sha256": "70b688cb5a3363c9318b49e4f7b4f756b2faed9dfe0e23ec231c0e2fd56ded83"
+    },
+    {
+      "module": "chat_evidence",
+      "prompt": "REVIEW_INSTRUCTIONS",
+      "status": "reviewed_addition",
+      "rag_sha256": null,
+      "coair_sha256": "14b9c7b2be1cbf460c08422366a56dda016cfe2384c7b09e91de932d5c287d18"
     }
   ],
   "approved_differences": {
@@ -241,6 +248,7 @@
     "chronology_v2:verify_claims.prompt": "Independent event-date decisions prevent retrospective quantities from inheriting document dates; factual claims remain separately verified. Evidence: FOUR_AREA_REVIEW.md.",
     "prompt_files:chronology_v2.yaml": "Remove extraction event quota; enumerate distinct on-topic occurrences and named workstreams, preserve planned/actual distinction, and use the actual date provenance enum. Date, source and four-claim guards remain. Reviewed real three-file Edinburgh Word output: nine source-reviewed occurrences retained with their dates; 95 focused tests plus 9 subtests. Evidence: FOUR_AREA_REVIEW.md and occurrence-provider-acceptance.json on the qualification host.",
     "chronology_v2:synthesize.overview_prompt": "Identical overview wording over a bounded evidence subset, with hierarchical reduction for long reports. Full event drafting remains independent and lossless; see long-evidence window regressions.",
-    "chronology_claim_repair:REPAIR_INSTRUCTIONS": "One source-local repair pass for rejected wording; no new source IDs or research; each replacement independently reverified. Actual rejected Edinburgh wording replay and scope/error regressions: FOUR_AREA_REVIEW.md."
+    "chronology_claim_repair:REPAIR_INSTRUCTIONS": "One source-local repair pass for rejected wording; no new source IDs or research; each replacement independently reverified. Actual rejected Edinburgh wording replay and scope/error regressions: FOUR_AREA_REVIEW.md.",
+    "chat_evidence:REVIEW_INSTRUCTIONS": "Bounded parallel chat source review: source-local verbatim quotations only, no new retrieval, all windows processed, original file/page identities retained. Large-input late-fact, quote fabrication, cutoff splitting and real planned/actual/cost/table provider checks documented in FOUR_AREA_REVIEW.md."
   }
 }

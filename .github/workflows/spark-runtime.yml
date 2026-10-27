@@ -34,7 +34,7 @@ jobs:
             -v "$PWD/api/tests:/app/tests:ro" \
             -v "$PWD/api/requirements-test.txt:/app/requirements-test.txt:ro" \
             coair-arm64:qualification -c \
-            'pip install --quiet -r requirements-test.txt && pip check && tesseract --list-langs && python -m pytest tests/test_dependency_lock.py tests/test_multimodal_output_limits.py tests/test_duckdb_resource_budget.py tests/test_vector_runtime.py tests/test_answer_docx.py tests/test_answer_xlsx.py tests/test_markdown_blocks.py -q'
+            'pip install --quiet -r requirements-test.txt && pip check && tesseract --list-langs && python -m pytest tests/test_dependency_lock.py tests/test_multimodal_output_limits.py tests/test_chat_streaming.py tests/test_chat_evidence.py tests/test_duckdb_resource_budget.py tests/test_vector_runtime.py tests/test_answer_docx.py tests/test_answer_xlsx.py tests/test_markdown_blocks.py -q'
       - name: Build the current web UI on ARM64
         uses: docker/build-push-action@v6
         with:

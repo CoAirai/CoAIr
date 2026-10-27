@@ -41,6 +41,26 @@ async def chat(
     )
 
 
+@router.post("/chat/stream")
+async def chat_stream(
+    req: ChatRequest,
+    user: UserContext = Depends(get_current_user),
+    query_router=Depends(get_query_router),
+    store=Depends(get_conversation_store),
+    project: ProjectContext = Depends(get_current_project),
+):
+    if req.mode == "correspondence" and not user.features.get("correspondence", False):
+        raise HTTPException(403, "feature_not_available:correspondence")
+    # Preserve normal HTTP quota errors before SSE headers have been sent.
+    from src.user_store import get_user_store
+    get_user_store().enforce_quota(user.username)
+    from backend.services.chat_stream import stream_chat
+    async def run(request_id):
+        return await chat(req.model_copy(update={"request_id": request_id}),
+                          user, query_router, store, project)
+    return stream_chat(run)
+
+
 @router.get("/chat/progress/{request_id}", response_model=QueryProgressResponse)
 async def chat_progress(
     request_id: str,
