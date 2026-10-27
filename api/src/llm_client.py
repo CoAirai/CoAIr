@@ -742,6 +742,11 @@ def generate_text(*args, **kwargs) -> LLMResponse:
     callback = answer_stream_var.get()
     token = None
     if callback and enabled:
+        from backend.tasks.query_progress import report_step, query_progress, query_request_var
+        activity = query_progress.get(query_request_var.get())
+        if not activity or not activity.steps or activity.steps[-1].kind != "answer":
+            report_step("answer", "Writing the answer",
+                        "Combining the retrieved project evidence into the response")
         publish_answer("answer_start", append=answer_append_var.get())
     elif callback:
         token = answer_stream_var.set(None)

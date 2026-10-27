@@ -104,7 +104,7 @@ const HomePage = () => {
                                             >
                                                 <ReplyOrb activity={replyActivity} />
                                                 {replyDraft ? <div className="mt-4">
-                                                    <p className="mb-2 text-label-xs text-sub-600">Writing answer · final response pending</p>
+                                                    <p className="mb-2 text-label-xs text-sub-600">Draft answer · final response pending</p>
                                                     <MessageBubble message={{ id: "streaming-answer", role: "assistant", content: replyDraft,
                                                         createdAt: "", streaming: true }} />
                                                 </div> : null}
