@@ -688,7 +688,11 @@ def extract_batches(
             with counter_lock:
                 fail(batch, key, input_hash, exc)
 
-    batches = evidence_batches(evidence)
+    # Retrieval rank can vary between identical searches. Extraction reads all
+    # chosen evidence, so use stable source/page order for coherent reads and
+    # content-addressed reuse without discarding a lower-ranked passage.
+    ordered = sorted(evidence, key=lambda item: (item.file_name, item.page or 0, item.doc_id, item.source_id))
+    batches = evidence_batches(ordered)
     counters["batches_total"] = len(batches)
     def read_one(index, batch):
         output: List[Dict] = []

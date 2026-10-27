@@ -55,3 +55,20 @@ def test_extraction_cache_invalidates_on_query_and_revalidates_source_quotes(mon
         row['output']={'entries':[{'claims':[{'text':'A fabricated cost 999 was paid.','source_ids':['s1']}]}]}
     chronology_v2.extract_batches(evidence,prepared,**kwargs)
     assert len(calls)==5
+
+
+def test_same_evidence_in_a_different_retrieval_order_reuses_one_extraction(monkeypatch):
+    saved={};calls=[]
+    evidence=[EvidenceItem('s1','d1','a.pdf',page=1,excerpt='Engineer issued notice 17.'),EvidenceItem('s2','d2','b.pdf',page=2,excerpt='Contractor received notice 18.')]
+    def extract(**kwargs):
+        calls.append([e.source_id for e in kwargs['batch']])
+        return [{'claims':[{'text':'Engineer issued notice 17.','source_ids':['s1']}]}]
+    monkeypatch.setattr(chronology_v2,'extract_batch',extract)
+    def load(key,value):return saved.get(value)
+    def save(key,value,status,output,error):saved[value]={'status':status,'output':output}
+    prepared=chronology_v2.PreparedChronologyQuery('notices','notices',(),(),(),(),(),('q',))
+    chronology_v2.extract_batches(evidence,prepared,load_step=load,save_step=save)
+    stats={}
+    chronology_v2.extract_batches(list(reversed(evidence)),prepared,load_step=load,save_step=save,stats=stats)
+    assert calls==[['s1','s2']]
+    assert stats['batches_reused']==1
