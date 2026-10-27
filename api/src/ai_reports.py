@@ -7,12 +7,12 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .llm_client import _model_for_task
 from .evidence_model import ChronologyEntry, EvidenceItem, VerifiedClaim
-from .evidence_pack import CANDIDATE_PASSAGES, assess_pack, select_pack
+from .evidence_pack import assess_pack, select_pack
 from .report_docx import FORENSIC_SECTIONS, build_ai_chronology_docx, build_forensic_report_docx
 
 
@@ -219,7 +219,7 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
         current = by_id.get(item.source_id)
         if current is None or item.score > current.score:
             by_id[item.source_id] = item
-    return sorted(by_id.values(), key=lambda x: x.score, reverse=True)[:CANDIDATE_PASSAGES]
+    return sorted(by_id.values(), key=lambda x: x.score, reverse=True)
 
 
 def _evidence_payload(evidence: Sequence[EvidenceItem]) -> str:
@@ -334,22 +334,18 @@ def _generate_chronology_v2(
     selection_stats: Dict = {}
     event_discovery_audit: Dict = {}
     if source_doc_ids:
-        # An explicit selection is the analyst's, not ours: read every document
-        # they chose, however many that is. The budget still applies, shared
-        # evenly so a long document cannot consume the pack and leave the rest
-        # of their choice unread — which is the failure a document *count* limit
-        # was pretending to prevent.
+        # Read every selected passage across bounded extraction calls. A long
+        # document must not lose its later pages to a total/per-file pack cap.
         picked = evidence_from_documents(project_id, chosen)
         selection = select_pack(
-            picked, facets=COVERAGE_FACETS,
-            max_document_share=1.0 / max(1, len({item.file_name for item in picked})),
-            relevance_floor=0.0,          # the analyst already judged relevance
+            picked, facets=COVERAGE_FACETS, max_chars=None, relevance_floor=0.0,
         )
         evidence = selection.evidence
         selection_stats = selection.stats
     else:
-        # Otherwise keep the passages retrieval actually scored, and bound the
-        # pack by text. The previous path threw the scored passages away, kept
+        # Otherwise keep all qualifying passages retrieval actually scored.
+        # Individual extraction calls remain bounded by text. The previous path
+        # threw the scored passages away, kept
         # only their doc_ids and re-read those fragments whole — which is how a
         # 240 MB corpus produced a 24,000-character pack.
         from .chronology_discovery import discover_chronology_evidence
@@ -360,7 +356,7 @@ def _generate_chronology_v2(
             ),
         )
         event_discovery_audit = discovery.audit
-        selection = select_pack(discovery.evidence, facets=COVERAGE_FACETS)
+        selection = select_pack(discovery.evidence, facets=COVERAGE_FACETS, max_chars=None)
         evidence = selection.evidence
         selection_stats = selection.stats
         chosen = sorted({item.doc_id for item in evidence if item.doc_id})
@@ -625,21 +621,50 @@ def generate_forensic(
         canonical_claims = []
     if not evidence:
         raise ValueError("No project evidence was found for this report topic")
-    prompt = (
-        f"Prepare a {status} forensic report about: {topic}\n"
-        "Use all nine required section names exactly. Do not calculate delay duration, "
-        "critical path, concurrency or entitlement unless a toolkit evidence object supplies it.\n\n"
-        f"{prepared.context}\n\nEVIDENCE JSON:\n{_evidence_payload(evidence)}"
-    )
-    response = generate_response_json(
-        prompt, system=_SYSTEM, schema=_forensic_schema(), schema_name="forensic_report",
-        model=OPENAI_MODEL, reasoning_effort="high", pro_mode=(status.lower() == "issue"),
-        cache_key="forensic-report:" + hashlib.sha256(prompt.encode()).hexdigest()[:28],
-    )
+    # Read all retrieved evidence in bounded calls; merge verified section
+    # claims deterministically instead of stuffing the full pack into one call.
+    batches: List[List[EvidenceItem]] = []
+    current: List[EvidenceItem] = []
+    size = 2
+    for original in evidence:
+        # Keep the original source identity/locator for footnotes. Large source
+        # excerpts are read in overlapping windows, never clipped or discarded.
+        pieces = [original]
+        if len(_evidence_payload(pieces)) > 70_000:
+            pieces = [replace(original, excerpt=original.excerpt[offset:offset + 6000])
+                      for offset in range(0, len(original.excerpt), 5800)]
+        for item in pieces:
+            item_size = len(_evidence_payload([item])) + 2
+            if item_size > 80_000:
+                raise ValueError("forensic_evidence_metadata_exceeds_batch_budget")
+            if current and size + item_size > 80_000:
+                batches.append(current); current = []; size = 2
+            current.append(item); size += item_size
+    if current:
+        batches.append(current)
+
+    def read_batch(evidence):
+        prompt = (
+            f"Prepare a {status} forensic report about: {topic}\n"
+            "Use all nine required section names exactly. Do not calculate delay duration, "
+            "critical path, concurrency or entitlement unless a toolkit evidence object supplies it.\n\n"
+            f"{prepared.context}\n\nEVIDENCE JSON:\n{_evidence_payload(evidence)}"
+        )
+        return generate_response_json(
+            prompt, system=_SYSTEM, schema=_forensic_schema(), schema_name="forensic_report",
+            model=OPENAI_MODEL, reasoning_effort="high", pro_mode=(status.lower() == "issue"),
+            cache_key="forensic-report:" + hashlib.sha256(prompt.encode()).hexdigest()[:28],
+        )
+
+    with ThreadPoolExecutor(max_workers=min(3, len(batches))) as pool:
+        futures = [pool.submit(copy_context().run, read_batch, batch) for batch in batches]
+        responses = [future.result() for future in futures]
+    response = responses[0]
     by_id = {e.source_id: e for e in evidence}
     sections: Dict[str, List[VerifiedClaim]] = {name: [] for name in FORENSIC_SECTIONS}
     removed = 0
-    for section in response.raw.get("sections", []):
+    seen_claims = {name: set() for name in FORENSIC_SECTIONS}
+    for section in (section for result in responses for section in result.raw.get("sections", [])):
         name = str(section.get("name") or "")
         if name not in sections:
             continue
@@ -653,7 +678,10 @@ def generate_forensic(
             )
             claim.supported = _claim_supported(claim, by_id)
             if claim.supported:
-                sections[name].append(claim)
+                identity = (claim.text, tuple(claim.source_ids), tuple(claim.counter_source_ids))
+                if identity not in seen_claims[name]:
+                    sections[name].append(claim)
+                    seen_claims[name].add(identity)
             else:
                 removed += 1
     if canonical_claims:
@@ -672,7 +700,7 @@ def generate_forensic(
     return {"sections": {k: [asdict(c) for c in v] for k, v in sections.items()},
             "evidence": [asdict(e) for e in evidence], "research_questions": questions,
             "removed_claims": removed, "audit": asdict(audit), "docx": blob,
-            "model": response.usage.model}
+            "model": response.usage.model, "evidence_batches": len(batches)}
 
 
 __all__ = [

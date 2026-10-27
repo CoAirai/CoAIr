@@ -15,8 +15,8 @@ WORKDIR /build
 # wheels in this disposable stage so the production image contains no compiler.
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt ./
-RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+COPY requirements.txt requirements.lock ./
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt -c requirements.lock
 
 
 FROM python:3.11-slim
@@ -37,11 +37,12 @@ ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
 # Copy requirements first for caching. No torch — server query embedding uses
 # fastembed (ONNX), keeping the image small and RAM low enough for a 2 GB box.
-COPY requirements.txt ./
+COPY requirements.txt requirements.lock ./
 COPY --from=python-builder /wheels /wheels
 # Installed offline from the wheels built in the previous stage, so no compiler
 # and no package index reach the production image.
-RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt -c requirements.lock \
+    && pip check \
     && rm -rf /wheels
 # Pre-bake the fastembed bge model into the image so query-time embedding works
 # offline (no first-request download). Keep in sync with LOCAL_EMBEDDING_MODEL.

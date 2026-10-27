@@ -150,12 +150,12 @@ class ChatOrchestrator:
                 if not doc_ids:
                     doc_ids = email_ids
 
-        # 3b. Inject the full OCR/extracted text of explicitly selected NON-email
+        # 3b. Inject query-relevant passages of explicitly selected NON-email
         # documents (PDF/DOCX/TXT) directly into the prompt. Covers general doc
         # selection and PDF "conversations" picked in correspondence mode (those
         # are not .eml/.msg, so the email path skips them and they land here).
         doc_context = self._build_document_context(
-            list(dict.fromkeys((email_ids or []) + explicit_doc_ids)), project_id,
+            list(dict.fromkeys((email_ids or []) + explicit_doc_ids)), project_id, query=query,
         )
         if doc_context:
             answer_context_parts.append(doc_context)
@@ -563,38 +563,34 @@ class ChatOrchestrator:
             logging.getLogger("app").warning(f"[Orchestrator] Email context build failed: {e}")
             return ""
 
-    # Per-document and total caps so a large selection never blows up the prompt
-    # (and the LLM cost). Mirrors the spirit of CHAT_MEMORY_MAX_CHARS.
-    _DOC_CONTEXT_PER_DOC_MAX = 8000
+    # A prompt window, not a document-reading limit: scan every selected page
+    # and retain the best passages. Normal project/selection-scoped retrieval
+    # remains available for evidence outside this supplemental window.
     _DOC_CONTEXT_TOTAL_MAX = 16000
 
-    def _build_document_context(self, doc_ids: List[str], project_id: str) -> str:
-        """Inject the full OCR/extracted text of explicitly selected NON-email
-        documents (PDF/DOCX/TXT) into the prompt.
-
-        When a user selects specific documents (general selection, chronological
-        view, or a PDF conversation in correspondence mode), ground the answer
-        directly in those files' text rather than relying only on RAG retrieval
-        scope. Full text is read from the chunk store (the persistent mirror of
-        post-OCR chunk text), ordered by page. Emails are skipped here — they are
-        handled by _build_email_context.
-        """
-        if not doc_ids:
+    def _build_document_context(self, doc_ids: List[str], project_id: str,
+                                query: str = "") -> str:
+        if not doc_ids or not project_id:
             return ""
-        try:
-            from src.document_registry import get_document_registry
-            from src.chunk_store import get_chunk_store
+        import heapq
+        from src.selected_passages import selected_passages
+        from src.document_registry import get_document_registry
+        from src.chunk_store import get_chunk_store
 
+        try:
             registry = get_document_registry()
             con = get_chunk_store().connection()
-        except Exception as e:
+        except Exception:
             import logging
-            logging.getLogger("app").warning(f"[Orchestrator] Document context init failed: {e}")
+            logging.getLogger("app").warning("Selected document window unavailable", exc_info=True)
             return ""
-
-        blocks: List[str] = []
-        total = 0
-        seen: set[str] = set()
+        terms = set(re.findall(r"[a-z0-9]{3,}", query.casefold()))
+        terms -= {"the", "and", "does", "what", "which", "document", "please", "from"}
+        # Only a small heap is retained, even for multi-megabyte selections.
+        best = []
+        sequence = 0
+        scanned = 0
+        seen = set()
         for doc_id in doc_ids:
             if not doc_id or doc_id in seen:
                 continue
@@ -602,48 +598,34 @@ class ChatOrchestrator:
             rec = registry.get(doc_id)
             if not rec or (getattr(rec, "project_id", "") or "") != project_id:
                 continue
-            file_name = rec.file_name or doc_id
-            fl = file_name.lower()
-            if fl.endswith((".eml", ".msg")) or getattr(rec, "file_type", "") == "email":
-                continue  # emails handled by _build_email_context
-
-            # Full extracted text from the chunk store, ordered by page. Fall back
-            # to a file_name lookup when the doc_id doesn't match (the same id
-            # mismatch _resolve_canonical_doc_id guards against on the read side).
-            text = ""
-            try:
-                rows = con.execute(
-                    "SELECT text FROM chunks WHERE project_id=? AND doc_id=? "
-                    "ORDER BY page_number",
-                    [project_id, doc_id],
-                ).fetchall()
-                if not rows and file_name:
-                    rows = con.execute(
-                        "SELECT text FROM chunks WHERE project_id=? AND file_name=? "
-                        "ORDER BY page_number",
-                        [project_id, file_name],
-                    ).fetchall()
-                text = "\n\n".join((r[0] or "") for r in rows).strip()
-            except Exception:
-                text = ""
-            if not text:
+            name = rec.file_name or doc_id
+            if name.lower().endswith((".eml", ".msg")) or getattr(rec, "file_type", "") == "email":
                 continue
-
-            if len(text) > self._DOC_CONTEXT_PER_DOC_MAX:
-                text = text[: self._DOC_CONTEXT_PER_DOC_MAX] + "\n…[truncated]"
-            block = f"--- DOCUMENT: {file_name} ---\n{text}\n--- END {file_name} ---"
-            if total + len(block) > self._DOC_CONTEXT_TOTAL_MAX:
-                break
-            blocks.append(block)
-            total += len(block)
-
+            for page, text in selected_passages(con, registry, project_id, doc_id, name):
+                scanned += 1
+                words = re.findall(r"[a-z0-9]{3,}", text.casefold())
+                hits = sum(word in terms for word in words)
+                distinct = len(terms.intersection(words))
+                score = distinct + min(hits, 20) / 100
+                block = f"--- DOCUMENT: {name} | ID: {doc_id} | Page: {page} ---\n{text}\n--- END ---"
+                candidate = (score, -sequence, block)
+                sequence += 1
+                if len(best) < 24:
+                    heapq.heappush(best, candidate)
+                elif candidate[:2] > best[0][:2]:
+                    heapq.heapreplace(best, candidate)
+        blocks = []
+        total = 0
+        for _, _, block in sorted(best, reverse=True):
+            if total + len(block) <= self._DOC_CONTEXT_TOTAL_MAX:
+                blocks.append(block)
+                total += len(block)
         if not blocks:
             return ""
-
-        header = (
-            f"SELECTED DOCUMENT EXCERPTS ({len(blocks)}): use these together with "
-            f"retrieved passages from the selected files. These excerpts may be partial; "
-            f"absence here does not prove that the entire document lacks the information. "
-            f"State clearly when the available evidence does not support an answer:"
+        return (
+            f"SELECTED DOCUMENT EXCERPTS ({len(blocks)} of {scanned} scanned passages): "
+            "query-relevant excerpts, not a complete reading. Use these together with "
+            "retrieved passages from the selected files. Absence here does not prove "
+            "that a document lacks information. State when the evidence is insufficient.\n\n"
+            + "\n\n".join(blocks)
         )
-        return header + "\n\n" + "\n\n".join(blocks)

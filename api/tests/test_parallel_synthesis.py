@@ -30,7 +30,9 @@ def test_three_workers_keep_scope_charge_and_reuse_steps(tmp_path, monkeypatch):
     good = {'text': 'Notice 17 was issued.', 'source_ids': ['s1']}
     events = [{'cluster_id': str(i), 'claims': [good]} for i in range(2)]
     monkeypatch.setattr(pipeline, '_cluster_events', lambda values: values)
-    monkeypatch.setattr(pipeline, '_synthesis_batches', lambda *args: [[e] for e in events])
+    real_batches = pipeline._synthesis_batches
+    monkeypatch.setattr(pipeline, '_synthesis_batches',
+        lambda *args, **kwargs: real_batches(*args, **kwargs) if kwargs else [[e] for e in events])
 
     def generate(prompt, **kwargs):
         barrier.wait()

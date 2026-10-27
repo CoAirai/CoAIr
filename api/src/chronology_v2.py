@@ -79,7 +79,7 @@ class EventModel(BaseModel):
 
 
 class ExtractionModel(BaseModel):
-    entries: List[EventModel] = Field(default_factory=list, max_length=18)
+    entries: List[EventModel] = Field(default_factory=list)
 
 
 class ChronologyModel(BaseModel):
@@ -455,7 +455,7 @@ def source_preview(
     # the top places to whatever was longest.
     from .evidence_pack import select_pack
 
-    selection = select_pack(evidence, facets=COVERAGE_FACETS)
+    selection = select_pack(evidence, facets=COVERAGE_FACETS, max_chars=None)
     selected_ids = {item.source_id for item in selection.evidence}
 
     docs: Dict[str, Dict] = {}
@@ -558,7 +558,9 @@ def evidence_batches(evidence: Sequence[EvidenceItem], max_chars: int = EVIDENCE
     current: List[EvidenceItem] = []
     size = 0
     for item in evidence:
-        item_size = len(item.excerpt) + 160
+        item_size = len(evidence_markdown([item])) + 1
+        if item_size > max_chars:
+            raise ValueError("evidence_passage_exceeds_batch_budget")
         if current and size + item_size > max_chars:
             batches.append(current); current = []; size = 0
         current.append(item); size += item_size
@@ -604,7 +606,8 @@ def extract_batches(
     Only a non-structured failure (auth, network, budget) aborts the run — those
     are systemic and retrying smaller pieces cannot help.
     """
-    results: List[Dict] = []
+    from threading import Lock
+    counter_lock = Lock()
     counters = stats if stats is not None else {}
     counters.setdefault("batches_total", 0)
     counters.setdefault("batches_failed", 0)
@@ -628,7 +631,7 @@ def extract_batches(
         if save_step:
             save_step(key, input_hash, "failed", None, error_code)
 
-    def run(batch: List[EvidenceItem], key: str, depth: int = 0) -> None:
+    def run(batch: List[EvidenceItem], key: str, output: List[Dict], depth: int = 0) -> None:
         input_hash = _hash({
             "evidence": [asdict(item) for item in batch],
             "prompt": chronology_prompt_hash(),
@@ -636,7 +639,7 @@ def extract_batches(
         })
         previous = load_step(key, input_hash) if load_step else None
         if previous and previous.get("status") == "ready":
-            results.extend((previous.get("output") or {}).get("entries", [])); return
+            output.extend((previous.get("output") or {}).get("entries", [])); return
         if save_step:
             save_step(key, input_hash, "processing", None, "")
         try:
@@ -649,7 +652,7 @@ def extract_batches(
             )
             if save_step:
                 save_step(key, input_hash, "ready", {"entries": entries}, "")
-            results.extend(entries)
+            output.extend(entries)
         except Exception as exc:
             if not _is_structured_output_error(exc):
                 raise
@@ -661,16 +664,24 @@ def extract_batches(
                 # no step key ending in "b" has ever been recorded in
                 # production. run() now only raises for systemic errors, which
                 # should abort the whole run anyway.
-                run(batch[:middle], key + "a", depth + 1)
-                run(batch[middle:], key + "b", depth + 1)
+                run(batch[:middle], key + "a", output, depth + 1)
+                run(batch[middle:], key + "b", output, depth + 1)
                 return
-            fail(batch, key, input_hash, exc)
+            with counter_lock:
+                fail(batch, key, input_hash, exc)
 
     batches = evidence_batches(evidence)
     counters["batches_total"] = len(batches)
-    for index, batch in enumerate(batches, 1):
-        run(list(batch), f"extract:{index}")
-    return results
+    def read_one(index, batch):
+        output: List[Dict] = []
+        run(list(batch), f"extract:{index}", output)
+        return output
+
+    # Match the existing synthesis concurrency; preserve input order on merge.
+    with ThreadPoolExecutor(max_workers=min(3, max(1, len(batches)))) as pool:
+        futures = [pool.submit(copy_context().run, read_one, index, batch)
+                   for index, batch in enumerate(batches, 1)]
+        return [event for future in futures for event in future.result()]
 
 
 def _event_key(raw: Dict) -> Tuple[str, str]:
@@ -721,6 +732,7 @@ def _candidate_source_ids(event: Dict) -> set[str]:
 
 def _synthesis_batches(
     events: Sequence[Dict], evidence: Sequence[EvidenceItem], *, max_chars: int = 180_000,
+    max_events: int | None = SYNTHESIS_BATCH_EVENTS,
 ) -> List[List[Dict]]:
     by_id = {item.source_id: item for item in evidence}
     batches: List[List[Dict]] = []
@@ -735,7 +747,7 @@ def _synthesis_batches(
             for source_id in added_ids if source_id in by_id
         )
         if current and (
-            len(current) >= SYNTHESIS_BATCH_EVENTS or size + added_size > max_chars
+            (max_events is not None and len(current) >= max_events) or size + added_size > max_chars
         ):
             batches.append(current); current = []; current_ids = set(); size = 0
             added_ids = event_ids
@@ -821,15 +833,35 @@ def synthesize(
             save_step(step_key, input_hash, "ready", output, "")
         return output
 
-    overview_hash = _hash({
-        "clusters": ordered, "evidence": [asdict(item) for item in selected],
-        "prompt": chronology_prompt_hash(), "schema": OverviewModel.model_json_schema(),
-    })
-    overview_prompt = (
-        f"{base}\n\nCreate only the sourced overview; do not return dated events.\n\n"
-        f"EVENT CLUSTERS:\n{json.dumps(ordered, ensure_ascii=False)}\n\n"
-        f"EVIDENCE BEGIN\n{evidence_markdown(selected)}\nEVIDENCE END"
-    )
+    def synthesize_overview(events: List[Dict], level: int = 0) -> Dict:
+        # Only the overview is reduced. Every event is still written separately
+        # below; summary compression must never become event omission.
+        chunks = _synthesis_batches(events, evidence, max_chars=120_000, max_events=None)
+        if len(chunks) > 1:
+            summaries = []
+            for number, chunk in enumerate(chunks, 1):
+                part = overview_call(chunk, f"synthesis:overview:{level}:{number}")
+                summaries.extend({"claims": [claim]} for claim in part.get("overview_claims", []))
+            if len(summaries) >= len(events):
+                raise ValueError("overview_reduction_did_not_converge")
+            return synthesize_overview(summaries, level + 1)
+        return overview_call(events, "synthesis:overview" if level == 0 else f"synthesis:overview:reduce:{level}")
+
+    def overview_call(events: List[Dict], step_key: str) -> Dict:
+        ids = {sid for event in events for sid in _candidate_source_ids(event)}
+        context = [item for item in selected if item.source_id in ids]
+        input_hash = _hash({
+            "clusters": events, "evidence": [asdict(item) for item in context],
+            "prompt": chronology_prompt_hash(), "schema": OverviewModel.model_json_schema(),
+        })
+        overview_prompt = (
+            f"{base}\n\nCreate only the sourced overview; do not return dated events.\n\n"
+            f"EVENT CLUSTERS:\n{json.dumps(events, ensure_ascii=False)}\n\n"
+            f"EVIDENCE BEGIN\n{evidence_markdown(context)}\nEVIDENCE END"
+        )
+        return call_step(step_key, input_hash, overview_prompt, schema_name="chronology_v2_overview",
+                         validation_model=OverviewModel)
+
     def synthesize_batch(batch_number: int, batch: List[Dict]) -> List[Dict]:
         expected_ids = {str(item["cluster_id"]) for item in batch}
         batch_ids = {source_id for event in batch for source_id in _candidate_source_ids(event)}
@@ -864,9 +896,7 @@ def synthesize(
     # bounded and collect in batch order; every claim is still verified below.
     with ThreadPoolExecutor(max_workers=3) as pool:
         overview_future = pool.submit(
-            copy_context().run, call_step,
-            "synthesis:overview", overview_hash, overview_prompt,
-            schema_name="chronology_v2_overview", validation_model=OverviewModel,
+            copy_context().run, synthesize_overview, ordered,
         )
         event_futures = [
             pool.submit(copy_context().run, synthesize_batch, number, batch)
