@@ -296,4 +296,34 @@ Targeted validation: 130 tests passed after coverage/cache integration; an addit
 
 Qualification edge cases added before final release: automatic search can hydrate an obsolete vector ID through a unique, project-owned canonical mirror ID without trusting the obsolete preview at an unproven page. Expanded spreadsheet chunks retain sheet/row locators only when they match the exact retrieved chunk; neighbouring chunks cannot inherit another sheet's locator. The final focused package passes 58 tests. The first feature CI run passed 587 API tests plus 13 subtests, 3 PostgreSQL tests and 169 web tests; a follow-up CI/release covers these final two regressions as well.
 
-The first real repeat exposed an additional cache miss: the identical preparation and identical evidence-ID set arrived in a different relevance order, changing the extraction input hash. This was not counted as successful reuse. Extraction now canonicalizes the full chosen evidence by file/page/source identity before forming bounded batches; ranking still selects the evidence upstream and no source is removed. A reversal-order regression verifies one provider extraction across both orders. The focused package including parallel synthesis passes 61 tests. Final live repeat qualification is required after this correction.
+The first real repeat exposed an additional cache miss: the identical preparation and identical evidence-ID set arrived in a different relevance order, changing the extraction input hash. This was not counted as successful reuse. Extraction now canonicalizes the full chosen evidence by file/page/source identity before forming bounded batches; ranking still selects the evidence upstream and no source is removed. A reversal-order regression verifies one provider extraction across both orders. The focused package including parallel synthesis passes 61 tests. Live qualification of this correction is recorded below.
+
+
+### Live qualification of the found-source changes — 27 October 2026
+
+Deployed code: `2cef22016df0bd898fee82457f0709f316794d01` on `https://coair-test.duckdns.org`; API and web use that exact immutable tag. [CI and qualification deployment](https://github.com/CoAirai/CoAIr/actions/runs/40541807758) passed: 590 API tests plus 13 subtests and 3 PostgreSQL adapter tests. The web image retains the previously qualified 169-test build (unchanged UI inputs). The exact-commit qualification pin was removed after deployment. This does not move main, the existing integration merge source, the reference RAG service, or Hasnain's VPS.
+
+The live project contains three Edinburgh PDFs, not the complete reference corpus. The automatic-discovery runs used the same topic; the two final runs used the same frozen preparation and identical eight evidence passages (15,813 characters, three documents). Word downloads have real footnotes, and all returned evidence document IDs belong to this project.
+
+| Run | Total observed time | Entries including overview | Reused extraction batches | Result |
+| --- | ---: | ---: | ---: | --- |
+| Before source changes (`0fae0f9`) | 45.5 s | 10 | unavailable | partial |
+| First qualification before stable ordering | 57.9 s | 12 | 0 | partial |
+| Repeat before stable ordering | 39.5 s | 7 | 0 | partial; genuine reuse miss |
+| Final code, first run | 36.4 s | 6 | 0 | partial |
+| Final code, identical preparation repeated | 48.7 s | 6 | 1 | partial |
+
+The reuse acceptance criterion passes: the final repeat skips provider extraction for one identical batch while final synthesis and verification run again. It does **not** demonstrate a latency improvement: synthesis took longer on that repeat. These are individual observations, not latency percentiles. Both final runs had zero unresolved source owners, locators or unread previews, and two retrieval rounds (initial discovery plus one targeted missing-facet query). No passage was dropped by the extraction batch budget. Two real chat checks also passed: source-grounded utility responsibilities (8.84 s) and refusal to invent an unsupported total cost (5.57 s).
+
+**Content-quality acceptance is not passed.** Manual comparison found fewer distinct programme-target occurrences in the final report than in earlier runs, despite identical available evidence. Both final reports had zero populated event-date fields. An earlier report had six dated entries. Event count alone is not a quality metric, but the missing supported programme targets and dates require correction before recommending this feature for a customer release. Stable ordering makes extraction reuse deterministic; it cannot make a thin extraction complete, and can reproduce that thin candidate set.
+
+Step-store inspection localizes one date loss: synthesis proposed `2007-03-15` with a quoted source passage but `date_source="text"`; the guard accepts only `content_header`, `content_body`, `table_period`, or `unresolved`, so the date was cleared. Another proposal for `2008-10-20` quoted only `On 20th October`, without a supported year; clearing that date remains correct. Do not relax date provenance to repair this. The model schema currently permits arbitrary strings for `date_source` while the prompt/guard require fixed values. Extraction already produced unresolved dates in its saved candidate set; synthesis alone is not the whole cause.
+
+Next controlled corrections, with separate before/after checks:
+
+1. Constrain generated date provenance to the actual allowed values and preserve exact source date quotations. Add a regression for the observed `text` mismatch; reject invented years and metadata-derived dates as before.
+2. Audit extraction coverage against distinct, source-supported occurrences in each document/window, not only keyword facets or total entry count. Use programme targets, the planned June 2007 agreement, and contractual responsibilities as source-reviewed fixtures. Repair only missing occurrences with bounded source windows; do not restart unrestricted research after a weak draft.
+3. Reject or repair incomplete cached candidate sets using that coverage check. Existing schema/source validation proves structural eligibility, not exhaustive recall.
+4. Repeat identical-preparation reports and then qualify a genuinely large, project-isolated corpus. The three-file staging sample cannot certify thousands of documents, OCR intake, every source viewer path, or full RAG quality parity.
+
+Reproducible server artifacts remain under `/opt/coair-integration/qualification/four-stage-review`: `coverage-report-probe.py`, frozen `results/coverage-preparation.json`, `results/coverage-metrics.json`, corresponding `long-evidence-coverage-*.json`/`.docx` files and stage logs. Final jobs: `249aa63294bf4df48499` and `d7f7bb666f5c4d409494`. The pre-order repeat failure is retained rather than presented as a successful cache benchmark. Qualification-only source expansions are removed after retaining their diagnostic test logs.
