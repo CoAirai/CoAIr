@@ -78,8 +78,8 @@ def _source_id(project_id: str, doc_id: str, anchor: str, excerpt: str) -> str:
 def _to_evidence(project_id: str, source: Dict) -> EvidenceItem | None:
     file_name = str(source.get("file_name") or source.get("doc_name") or "").strip()
     doc_id = str(source.get("doc_id") or file_name).strip()
-    text = str(source.get("text_snippet") or source.get("highlight_text")
-               or source.get("text") or "").strip()
+    text = str(source.get("text") or source.get("text_snippet")
+               or source.get("highlight_text") or "").strip()
     if not file_name or not text:
         return None
     try:
@@ -89,7 +89,7 @@ def _to_evidence(project_id: str, source: Dict) -> EvidenceItem | None:
     kind = "email" if file_name.lower().endswith((".eml", ".msg")) else (
         "excel" if file_name.lower().endswith((".xlsx", ".xls", ".csv")) else "document"
     )
-    excerpt = text[:1200]
+    excerpt = text
     if kind == "excel":
         anchor = (
             f"sheet:{source.get('sheet') or ''}|rows:"
@@ -99,6 +99,8 @@ def _to_evidence(project_id: str, source: Dict) -> EvidenceItem | None:
         anchor = f"email:{source.get('subject') or ''}"
     else:
         anchor = f"page:{page}"
+    if source.get("chunk_id") or source.get("evidence_offset"):
+        anchor += f"|chunk:{source.get('chunk_id') or ''}|offset:{source.get('evidence_offset', 0)}"
     sid = _source_id(project_id, doc_id, anchor, excerpt)
     return EvidenceItem(
         source_id=sid, doc_id=doc_id, file_name=file_name,
@@ -139,26 +141,28 @@ def _rank_normalised(rows: Sequence[Dict]) -> List[Dict]:
 
 
 def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12,
-                      doc_ids: Sequence[str] = ()) -> List[EvidenceItem]:
+                      doc_ids: Sequence[str] = (), *, stats: Optional[Dict] = None) -> List[EvidenceItem]:
     """Run dense/hybrid and lexical lanes concurrently per research question."""
     from .document_rag import get_document_rag
     from .lexical_index import get_lexical_index
     from .project_context import set_current_project
 
+    if not project_id:
+        raise ValueError("project_required")
     set_current_project(project_id, "editor")
     rag = get_document_rag()
     lexical = get_lexical_index()
 
+    audit = stats if stats is not None else {}
+    audit.update({"queries": [], "lane_errors": []})
+
     def dense(question: str) -> List[Dict]:
-        try:
-            from .jargon_manager import set_current_prepared_query
-            set_current_prepared_query(question)
-            return (rag.query(
-                question, top_k=top_k, synthesize=False, rerank=True,
-                project_id=project_id, doc_ids=list(doc_ids) or None,
-            ) or {}).get("sources", [])
-        except Exception:
-            return []
+        from .jargon_manager import set_current_prepared_query
+        set_current_prepared_query(question)
+        return (rag.query(
+            question, top_k=top_k, synthesize=False, rerank=True,
+            project_id=project_id, doc_ids=list(doc_ids) or None,
+        ) or {}).get("sources", [])
 
     def bm25(question: str) -> List[Dict]:
         return lexical.search_chunks(
@@ -171,46 +175,30 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
     questions = list(dict.fromkeys(q.strip() for q in questions if q.strip()))
     collected: List[Dict] = []
     with ThreadPoolExecutor(max_workers=min(6, max(2, len(questions) * 2))) as pool:
-        futures = []
-        for question in questions:
-            futures.extend((
-                pool.submit(copy_context().run, dense, question),
-                pool.submit(copy_context().run, bm25, question),
-            ))
-        for future in futures:
+        futures = [(question, lane, pool.submit(copy_context().run, function, question))
+                   for question in questions for lane, function in (("dense", dense), ("bm25", bm25))]
+        for question, lane, future in futures:
             try:
-                collected.extend(_rank_normalised(future.result()))
-            except Exception:
-                pass
-    # Relevance order, not submission order: the neighbour lane below reads the
-    # first 60, and those used to be whatever the first two or three research
-    # questions happened to return.
+                rows = _rank_normalised(future.result())
+                collected.extend(rows)
+                audit["queries"].append({"query":question, "lane":lane, "hits":len(rows)})
+            except Exception as exc:
+                audit["lane_errors"].append({"query":question, "lane":lane,
+                                              "error_type":type(exc).__name__})
     collected.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
-
-    # Add adjacent pages from the scoped chunk mirror. A top-ranked sentence
-    # often depends on the paragraph immediately before or after it; this lane
-    # provides that context without broadening to another project.
+    from .report_source_expansion import expand_report_sources
     try:
         from .chunk_store import get_chunk_store
         con = get_chunk_store().connection()
-        neighbours: List[Dict] = []
-        for source in collected[:60]:
-            file_name = str(source.get("file_name") or source.get("doc_name") or "")
-            doc_id = str(source.get("doc_id") or "")
-            page = int(source.get("page_number") or 1)
-            rows = con.execute(
-                "SELECT doc_id,file_name,page_number,text FROM chunks WHERE project_id=? "
-                "AND (doc_id=? OR file_name=?) AND page_number BETWEEN ? AND ?",
-                [project_id, doc_id, file_name, max(1, page - 1), page + 1],
-            ).fetchall()
-            neighbours.extend({
-                "doc_id": row[0], "file_name": row[1], "page_number": row[2],
-                "text": row[3], "score": float(source.get("score") or 0) * 0.85,
-            } for row in rows)
-        collected.extend(neighbours)
     except Exception:
-        pass
-
+        con = None
+    try:
+        from .document_registry import get_document_registry
+        registry = get_document_registry()
+    except Exception:
+        registry = None
+    collected = expand_report_sources(project_id, collected, con=con,
+                                      registry=registry, doc_ids=doc_ids, stats=audit)
     by_id: Dict[str, EvidenceItem] = {}
     for raw in collected:
         item = _to_evidence(project_id, raw)
@@ -219,6 +207,8 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
         current = by_id.get(item.source_id)
         if current is None or item.score > current.score:
             by_id[item.source_id] = item
+    audit["evidence_passages"] = len(by_id)
+    audit["evidence_characters"] = sum(len(item.excerpt) for item in by_id.values())
     return sorted(by_id.values(), key=lambda x: x.score, reverse=True)
 
 
