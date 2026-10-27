@@ -174,17 +174,27 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
     # and carry user, project, billing and progress context into each worker.
     questions = list(dict.fromkeys(q.strip() for q in questions if q.strip()))
     collected: List[Dict] = []
+    from time import perf_counter
+
+    def timed_search(function, question):
+        started = perf_counter()
+        try:
+            return function(question), "", round((perf_counter()-started)*1000, 2)
+        except Exception as exc:
+            return [], type(exc).__name__, round((perf_counter()-started)*1000, 2)
+
     with ThreadPoolExecutor(max_workers=min(6, max(2, len(questions) * 2))) as pool:
-        futures = [(question, lane, pool.submit(copy_context().run, function, question))
+        futures = [(question, lane, pool.submit(copy_context().run, timed_search, function, question))
                    for question in questions for lane, function in (("dense", dense), ("bm25", bm25))]
         for question, lane, future in futures:
-            try:
-                rows = _rank_normalised(future.result())
-                collected.extend(rows)
-                audit["queries"].append({"query":question, "lane":lane, "hits":len(rows)})
-            except Exception as exc:
-                audit["lane_errors"].append({"query":question, "lane":lane,
-                                              "error_type":type(exc).__name__})
+            rows, error, elapsed_ms = future.result()
+            rows = _rank_normalised(rows)
+            audit["queries"].append({"query":question, "lane":lane, "hits":len(rows),
+                                      "elapsed_ms":elapsed_ms, "failed":bool(error)})
+            if error:
+                audit["lane_errors"].append({"query":question, "lane":lane, "error_type":error})
+            collected.extend(rows)
+    hydration_started = perf_counter()
     collected.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
     from .report_source_expansion import expand_report_sources
     try:
@@ -207,6 +217,7 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
         current = by_id.get(item.source_id)
         if current is None or item.score > current.score:
             by_id[item.source_id] = item
+    audit["hydration_ms"] = round((perf_counter()-hydration_started)*1000, 2)
     audit["evidence_passages"] = len(by_id)
     audit["evidence_characters"] = sum(len(item.excerpt) for item in by_id.values())
     return sorted(by_id.values(), key=lambda x: x.score, reverse=True)
@@ -323,6 +334,15 @@ def _generate_chronology_v2(
     stage("evidence_pack", .2)
     selection_stats: Dict = {}
     event_discovery_audit: Dict = {}
+    retrieval_rounds: List[Dict] = []
+    coverage_repair: Dict = {}
+
+    def tracked_retrieve(project, queries, doc_ids=()):
+        details: Dict = {}
+        found = retrieve_evidence(project, queries, doc_ids=doc_ids, stats=details)
+        retrieval_rounds.append(details)
+        return found
+
     if source_doc_ids:
         # Read every selected passage across bounded extraction calls. A long
         # document must not lose its later pages to a total/per-file pack cap.
@@ -341,7 +361,7 @@ def _generate_chronology_v2(
         from .chronology_discovery import discover_chronology_evidence
         discovery = discover_chronology_evidence(
             project_id=project_id, prepared=prepared, date_from=date_from, date_to=date_to,
-            fallback=lambda queries, doc_ids: retrieve_evidence(
+            fallback=lambda queries, doc_ids: tracked_retrieve(
                 project_id, queries, doc_ids=doc_ids,
             ),
         )
@@ -349,9 +369,20 @@ def _generate_chronology_v2(
         selection = select_pack(discovery.evidence, facets=COVERAGE_FACETS, max_chars=None)
         evidence = selection.evidence
         selection_stats = selection.stats
+        from .report_evidence_ledger import repair_chronology_evidence
+        stage("coverage_repair", .24)
+        evidence = repair_chronology_evidence(
+            evidence, prepared, project_id=project_id, retrieve=tracked_retrieve,
+            audit=coverage_repair,
+        )
         chosen = sorted({item.doc_id for item in evidence if item.doc_id})
     if not evidence:
         raise ValueError("no_evidence")
+    from .report_evidence_ledger import evidence_ledger
+    ledger = evidence_ledger(
+        evidence, scope="selected_documents" if source_doc_ids else "topic_retrieval",
+        retrieval_rounds=retrieval_rounds, repair=coverage_repair,
+    )
 
     # Provider calls are governed by credits, bounded research rounds and
     # request timeouts. Do not make completion depend on corpus/cache-specific
@@ -506,9 +537,10 @@ def _generate_chronology_v2(
         extraction_stats=extraction_stats,
     )
     assessment.pack["selection"] = selection_stats
+    assessment.pack["extraction_batches_reused"] = int(extraction_stats.get("batches_reused", 0))
 
     discovery_reasons = list(event_discovery_audit.get("partial_reasons", []))
-    final_reasons = list(dict.fromkeys([*assessment.reasons, *discovery_reasons]))
+    final_reasons = list(dict.fromkeys([*assessment.reasons, *discovery_reasons, *ledger["partial_reasons"]]))
     return {
         "entries": [asdict(e) for e in entries],
         "evidence": [asdict(e) for e in evidence],
@@ -518,7 +550,7 @@ def _generate_chronology_v2(
             "synthesized_events": len(response.get("entries", [])),
             "verifier_removed_events": len(response.get("entries", [])) - (len(entries) - 1),
             "issued_events": len(entries) - 1,
-        }, "docx": blob, "research_audit": {"event_discovery": event_discovery_audit},
+        }, "docx": blob, "research_audit": {"event_discovery": event_discovery_audit, "evidence_ledger": ledger},
         "model": _model_for_task("report_structured"), "pipeline_version": PIPELINE_VERSION,
         "prompt_version": PROMPT_VERSION,
         "coverage": pack_coverage,

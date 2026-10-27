@@ -46,3 +46,46 @@ def test_every_found_document_can_expand_including_beyond_sixty_hits(retrieval):
     con.execute('INSERT INTO chunks VALUES (?,?,?,?,?,?)',['p','d74','f74.pdf',2,'The final compensation was rejected.','tail'])
     evidence=retrieve_evidence('p',['compensation'])
     assert any('final compensation was rejected' in e.excerpt for e in evidence)
+
+
+def test_same_source_reached_by_many_queries_is_read_once(retrieval):
+    con,hits=retrieval
+    con.execute('INSERT INTO chunks VALUES (?,?,?,?,?,?)',['p','d1','notice.pdf',1,'Exact original instruction.','c1'])
+    hits.append(dict(doc_id='d1',file_name='notice.pdf',page_number=1,text_snippet='Exact'))
+    audit={}
+    evidence=retrieve_evidence('p',['instruction','instruction','notice'],stats=audit)
+    assert len(evidence)==1
+    assert audit['expanded_pages']==1
+    assert len(audit['queries'])==4
+    assert 'Exact original instruction.'==evidence[0].excerpt
+
+
+def test_failed_lane_is_recorded_and_other_lane_still_returns_evidence(retrieval,monkeypatch):
+    con,hits=retrieval
+    def fail(*a,**k):raise TimeoutError('private provider diagnostics must not enter the ledger')
+    monkeypatch.setattr('src.document_rag.get_document_rag',lambda:SimpleNamespace(query=fail))
+    monkeypatch.setattr('src.lexical_index.get_lexical_index',lambda:SimpleNamespace(search_chunks=lambda *a,**k:[dict(doc_id='d1',file_name='f.pdf',page_number=1,text='Original instruction')]))
+    audit={}
+    evidence=retrieve_evidence('p',['instruction'],stats=audit)
+    assert evidence
+    assert audit['lane_errors']==[{'query':'instruction','lane':'dense','error_type':'TimeoutError'}]
+    assert 'private' not in str(audit)
+
+
+def test_legacy_fragment_alias_requires_unique_project_registry_ownership(retrieval,monkeypatch):
+    con,hits=retrieval
+    owned=SimpleNamespace(doc_id='canonical',project_id='p',file_name='notice.pdf')
+    foreign=SimpleNamespace(doc_id='foreign',project_id='other',file_name='notice.pdf')
+    legacy=SimpleNamespace(doc_id='legacy',project_id='',file_name='notice.pdf')
+    registry=SimpleNamespace(get=lambda key:foreign if key=='foreign' else owned if key=='canonical' else legacy if key=='legacy' else None,get_all=lambda **kw:[owned])
+    monkeypatch.setattr('src.document_registry.get_document_registry',lambda:registry)
+    con.execute('INSERT INTO chunks VALUES (?,?,?,?,?,?)',['p','legacy','notice.pdf',1,'Original canonical notice.','c1'])
+    hits.extend([dict(doc_id='legacy',file_name='notice.pdf',page_number=1,text_snippet='Original'),dict(doc_id='foreign',file_name='notice.pdf',page_number=1,text='FOREIGN')])
+    audit={}
+    evidence=retrieve_evidence('p',['notice'],doc_ids=['canonical'],stats=audit)
+    assert {e.doc_id for e in evidence}=={'canonical'}
+    assert not any('FOREIGN' in e.excerpt for e in evidence)
+    assert audit['scope_rejections']==1
+    duplicate=SimpleNamespace(doc_id='other-local',project_id='p',file_name='notice.pdf')
+    registry.get_all=lambda **kw:[owned,duplicate]
+    assert retrieve_evidence('p',['notice'],doc_ids=['canonical'])==[]

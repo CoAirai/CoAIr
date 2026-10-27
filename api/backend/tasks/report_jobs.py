@@ -337,6 +337,35 @@ class ReportJobStore:
             item["output"] = None
         return item
 
+    def load_reusable_step(self, job_id: str, step_key: str, input_hash: str) -> Optional[Dict]:
+        """Reuse extraction only from a completed report of this user/project.
+
+        The caller's hash includes evidence, query, model, prompt, schema and
+        jargon. Drafting and verification always remain job-local.
+        """
+        current = self.load_step(job_id, step_key, input_hash)
+        if (current and current.get("status") == "ready") or not step_key.startswith("extract:"):
+            return current
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT s.* FROM report_job_steps s "
+                "JOIN report_jobs previous ON previous.job_id=s.job_id "
+                "JOIN report_jobs target ON target.job_id=? "
+                "WHERE previous.project_id=target.project_id AND previous.username=target.username "
+                "AND previous.module=target.module AND previous.pipeline_version=target.pipeline_version "
+                "AND previous.status='ready' AND s.status='ready' "
+                "AND s.step_key LIKE 'extract:%' AND s.input_hash=? "
+                "ORDER BY s.updated_at DESC LIMIT 1", [job_id, input_hash],
+            ).fetchone()
+        if not row:
+            return current
+        item = dict(row)
+        try:
+            item["output"] = json.loads(item.pop("output_json") or "null")
+        except Exception:
+            return current
+        return item
+
     def list_steps(self, job_id: str, *, include_output: bool = False) -> List[Dict]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -424,7 +453,7 @@ def _worker() -> None:
                 request["stage_callback"] = lambda stage, progress: store.update(
                     job["job_id"], stage, progress,
                 )
-                request["load_step"] = lambda step_key, input_hash: store.load_step(
+                request["load_step"] = lambda step_key, input_hash: store.load_reusable_step(
                     job["job_id"], step_key, input_hash,
                 )
                 request["save_step"] = lambda step_key, input_hash, status, output, error: (

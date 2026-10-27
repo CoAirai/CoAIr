@@ -35,7 +35,7 @@ def expand_report_sources(project_id, sources, *, con, registry, doc_ids=(), sta
         name = str(source.get('file_name') or source.get('doc_name') or '')
         record = registry.get(raw_id) if registry else None
         if (source.get('project_id') not in (None,'',project_id)
-                or (record and record.project_id != project_id)):
+                or (record and record.project_id not in ("", project_id))):
             stats['scope_rejections'] += 1
             continue
         canonical = raw_id
@@ -43,7 +43,7 @@ def expand_report_sources(project_id, sources, *, con, registry, doc_ids=(), sta
         # by a unique authoritative registry entry in this project.
         if allowed and raw_id not in allowed:
             matches = by_name.get(name, [])
-            if record or len(matches) != 1 or matches[0].doc_id not in allowed:
+            if (record and record.project_id) or len(matches) != 1 or matches[0].doc_id not in allowed:
                 stats['scope_rejections'] += 1
                 continue
             canonical = matches[0].doc_id

@@ -632,14 +632,32 @@ def extract_batches(
             save_step(key, input_hash, "failed", None, error_code)
 
     def run(batch: List[EvidenceItem], key: str, output: List[Dict], depth: int = 0) -> None:
+        from .llm_client import _model_for_task
         input_hash = _hash({
             "evidence": [asdict(item) for item in batch],
+            "topic": prepared.english_query, "parties": prepared.parties,
+            "model": _model_for_task("chronology_extract"),
+            "jargon": jargon_dictionary_version(), "policy": "reusable-extraction-v1",
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
         })
         previous = load_step(key, input_hash) if load_step else None
         if previous and previous.get("status") == "ready":
-            output.extend((previous.get("output") or {}).get("entries", [])); return
+            cached = previous.get("output") or {}
+            try:
+                ExtractionModel.model_validate(cached)
+                valid = _prune_source_invalid_events(cached, batch)
+                reusable = (bool(valid) and len(valid) == len(cached.get("entries", []))
+                            and _claims_are_source_valid(cached, batch))
+            except Exception:
+                reusable = False
+            if reusable:
+                output.extend(valid)
+                with counter_lock:
+                    counters["batches_reused"] = counters.get("batches_reused", 0) + 1
+                if save_step:
+                    save_step(key, input_hash, "ready", {"entries": valid}, "")
+                return
         if save_step:
             save_step(key, input_hash, "processing", None, "")
         try:

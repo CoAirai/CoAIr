@@ -320,7 +320,7 @@ def test_source_preview_aggregates_documents_and_reports_coverage():
 
 
 def test_extraction_checkpoint_is_reused(monkeypatch):
-    evidence = [EvidenceItem("s1", "d", "a.pdf", page=1, excerpt="event")]
+    evidence = [EvidenceItem("s1", "d", "a.pdf", page=1, excerpt="Engineer issued notice 17.")]
     prepared = PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",))
     saved = {}
 
@@ -332,7 +332,7 @@ def test_extraction_checkpoint_is_reused(monkeypatch):
 
     calls = []
     monkeypatch.setattr("src.chronology_v2.extract_batch", lambda **kwargs: (
-        calls.append(1) or [{"event_date": "2025-01-01", "claims": []}]
+        calls.append(1) or [{"event_date": "", "claims": [{"text": "Engineer issued notice 17.", "source_ids": ["s1"]}]}]
     ))
     assert extract_batches(evidence, prepared, load_step=load, save_step=save)
     assert extract_batches(evidence, prepared, load_step=load, save_step=save)

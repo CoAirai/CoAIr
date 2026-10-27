@@ -47,6 +47,7 @@ export function chronologyProgressLabel(stage?: string, progress?: number): stri
         research_plan: "Planning research",
         source_selection: "Selecting sources",
         evidence_pack: "Preparing evidence",
+        coverage_repair: "Checking evidence coverage",
         evidence_extraction: "Extracting evidence",
         aggregation: "Combining events",
         synthesis: "Writing chronology",
