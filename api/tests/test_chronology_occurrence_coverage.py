@@ -161,3 +161,12 @@ def test_verifier_requests_individual_temporal_proofs_for_a_mixed_event(monkeypa
     temporal = {v['claim_ref']: v for v in seen if v.get('verification_kind') == 'event_date'}
     assert temporal['date:0:0']['text'] == 'Programme target.'
     assert temporal['date:0:1']['text'] == 'Undated background.'
+
+
+def test_conflicting_ocr_day_tokens_do_not_prove_a_trailing_date():
+    source = EvidenceItem('s1', 'd1', 'letter.pdf', excerpt='Programme under cover of letter dated 1st\n11\nApril 2007.')
+    event = {'event_date': '2007-04-11', 'date_precision': 'exact', 'date_source': 'content_body',
+             'date_evidence': '11 April 2007', 'claims': [{'text': 'Programme submitted.', 'source_ids': ['s1']}]}
+    assert pipeline._enforce_event_date(event, [source])['event_date'] == ''
+    event.update(event_date='2007-04', date_precision='month', date_evidence='April 2007')
+    assert pipeline._enforce_event_date(event, [source])['event_date'] == '2007-04'

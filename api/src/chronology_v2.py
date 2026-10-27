@@ -228,7 +228,19 @@ def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
     }
     # OCR and PDF line wrapping may change whitespace, never the quoted words.
     quote = " ".join(date_evidence.casefold().split())
-    return any(quote in " ".join(by_id.get(source_id, "").split()) for source_id in source_ids)
+    for source_id in source_ids:
+        text = " ".join(by_id.get(source_id, "").split())
+        ambiguous = []
+        if precision in {"exact", "day"}:
+            # Broken OCR such as "1st 11 April 2007" must not be silently
+            # interpreted as 11 April by matching only its trailing words.
+            ambiguous = [match.span() for match in re.finditer(
+                r"\b\d{1,2}(?:st|nd|rd|th)\s+\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+\s+\d{4}\b", text,
+            )]
+        for match in re.finditer(re.escape(quote), text):
+            if not any(match.start() < end and match.end() > start for start, end in ambiguous):
+                return True
+    return False
 
 
 def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
@@ -709,7 +721,7 @@ def extract_batches(
             "evidence": evidence_markdown(batch),
             "topic": prepared.english_query, "parties": prepared.parties,
             "model": _model_for_task("chronology_extract"),
-            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v2",
+            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v3",
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
         })
