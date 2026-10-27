@@ -44,9 +44,14 @@ cannot be substituted: this branch's provider policy does not support vLLM.
 
 ## Functional acceptance and rollback
 
-Bootstrap a new test account using the guarded existing
-`deploy/integration/bootstrap.py`, supplying its JSON credentials on stdin to
-`docker compose ... exec -T api python` (mount or pipe the script separately).
+Bootstrap a new test account using the guarded existing script. Prepare an
+owner-readable credentials JSON with `app_user` and `app_password`, then run:
+
+```sh
+docker compose -f deploy/spark/compose.yml cp deploy/integration/bootstrap.py api:/tmp/bootstrap_qualification.py
+docker compose -f deploy/spark/compose.yml exec -T api python /tmp/bootstrap_qualification.py < /secure/path/qualification-credentials.json
+```
+
 It requires `COAIR_INTEGRATION=1`; do not reset existing accounts. Upload only
 approved sample documents through the UI. Verify project isolation, citations
 and original-document opening, new upload/OCR completion, chat tables and

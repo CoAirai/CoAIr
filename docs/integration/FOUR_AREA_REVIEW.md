@@ -429,3 +429,14 @@ Full local-vLLM support requires a separately validated provider adapter, actual
 model context/output capabilities, structured-output tests and report-quality
 comparison. The cloud-backed device application and fully local inference are
 different acceptance milestones.
+
+The RAM audit also reproduced a budget bypass in DuckDB's disk-error fallback:
+the replacement `:memory:` connection previously dropped configured RAM/thread
+settings. It now keeps those settings, closes a failed partial connection, and
+refuses invalid explicit budgets instead of silently becoming unbudgeted. All
+three budget tests pass. The focused amd64 suite passes 90 tests when run with
+`GEMINI_INGESTION_MODEL=gemini-2.5-flash-lite`, matching staging. Without that
+explicit environment, two existing policy assertions expect 2.5 while the code's
+default is 3.5; Spark qualification now pins the staging ingestion model rather
+than changing the global default or weakening those assertions. The compose
+configuration also validates successfully without exposing resolved secrets.
