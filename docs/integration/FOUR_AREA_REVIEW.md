@@ -544,3 +544,15 @@ and GBP 25 cost, cited both correct file/page references, and produced a Markdow
 table. All eight checks passed. Public text arrived in six real deltas; first
 nonempty delta at 11.959 s, complete at 12.632 s including parallel source review.
 This is a controlled synthetic case, not a full-corpus latency or recall claim.
+
+Follow-up stream checks preserve HTTP 402 semantics for quota/credit/budget errors
+that occur after SSE headers, and redact dedicated-credential failures as 503.
+The long-review activity buffer now retains the newest 200 steps with monotonic
+sequence IDs, instead of dropping all subsequent states. SSE reads those IDs so
+final writing remains visible after long reviews without unbounded RAM history.
+Five targeted status/concurrency/disconnect/quota regressions pass. A broad
+source-overlay attempt initially passed 635 tests but failed two RAM regressions
+because its older base image lacked the previously committed ChunkStore budget
+fix; mounting that current source corrected the harness. The corrected focused
+resource/stream/evidence/prompt suite passes all 50 tests. Fresh immutable-image
+CI remains the release gate; no regression assertion was weakened.

@@ -60,7 +60,7 @@ def stream_chat(run):
                 answer_stream_var.reset(token)
 
         task = asyncio.create_task(work())
-        seq = 0
+        seq = -1
         try:
             while True:
                 try:
@@ -69,10 +69,12 @@ def stream_chat(run):
                     event = {"type": "heartbeat"}
                 activity = query_progress.get(request_id)
                 if activity:
-                    for step in list(activity.steps)[seq:]:
+                    for step in list(activity.steps):
+                        if step.seq <= seq:
+                            continue
                         yield "data: " + json.dumps({"type": "activity", "kind": step.kind,
                             "label": step.label, "detail": step.detail}) + "\n\n"
-                        seq += 1
+                        seq = step.seq
                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 if event["type"] in {"complete", "error"}:
                     break

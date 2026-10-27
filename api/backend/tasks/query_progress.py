@@ -71,9 +71,10 @@ class QueryProgress:
                 # report_step may fire before start() (or after purge) — create lazily.
                 act = QueryActivity(request_id=request_id, created_at=now, updated_at=now)
                 self._store[request_id] = act
+            seq = act.steps[-1].seq + 1 if act.steps else 0
             if len(act.steps) >= _STEP_CAP:
-                return
-            act.steps.append(QueryStep(seq=len(act.steps), ts=now, kind=kind,
+                act.steps.pop(0)
+            act.steps.append(QueryStep(seq=seq, ts=now, kind=kind,
                                        label=label, detail=detail))
             act.updated_at = now
 

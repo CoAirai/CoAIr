@@ -137,3 +137,23 @@ def test_midstream_budget_error_retains_payment_status():
         events = [json.loads(frame.removeprefix("data: ").strip()) async for frame in response.body_iterator]
         assert events[-1] == {"type": "error", "status": 402, "message": "AI budget exhausted"}
     asyncio.run(exercise())
+
+
+def test_long_review_keeps_final_activity_without_unbounded_history(monkeypatch):
+    from backend.tasks import query_progress as progress_module
+    from backend.services.chat_stream import stream_chat
+    monkeypatch.setattr(progress_module, "_STEP_CAP", 3)
+    async def exercise():
+        async def run(rid):
+            progress_module.query_progress.start(rid)
+            for index in range(12):
+                progress_module.query_progress.add(rid, "reading", "Reviewing sources", str(index))
+            progress_module.query_progress.add(rid, "answer", "Writing the answer")
+            activity = progress_module.query_progress.get(rid)
+            assert len(activity.steps) == 3
+            assert [s.seq for s in activity.steps] == [10, 11, 12]
+            return NS(model_dump=lambda **kw: {"assistant_text": "complete"})
+        response = stream_chat(run)
+        events = [json.loads(frame.removeprefix("data: ").strip()) async for frame in response.body_iterator]
+        assert any(e.get("kind") == "answer" and e["label"] == "Writing the answer" for e in events)
+    asyncio.run(exercise())
