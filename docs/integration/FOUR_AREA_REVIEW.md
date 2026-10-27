@@ -383,3 +383,49 @@ Real chat regression checks on this release passed: source-grounded responsibili
 **Qualification boundary:** both reports remain `partial`, with `uncovered_facets`, `master_event_no_hits` and `master_counter_evidence_gap`. The three-file sample and empty master-event index do not prove exhaustive retrieval over the native 7,289-file reference corpus. This continuation closes the reproduced clipping, occurrence attention, date-loss, OCR spillover and rejected-wording cases; it does not certify every corpus, OCR intake path or all RAG/Coair quality as equivalent. No customer/organization/role/payment schema or runtime dependency changed, and no production RAG, dental or DGX deployment was moved.
 
 Current reproducible artifacts are in `/opt/coair-integration/qualification/four-stage-review`: `results/current-qualification-summary.json`, the two `long-evidence-source-local-current-*.json`/`.docx` reports, their occurrence-review JSON and stage logs, `coverage-metrics.json`, and `source-local-repair-review.json`. Intermediate downloaded Word copies from this continuation can be recreated from retained JSON and were removed after verifying current Word output; application originals and saved job checkpoints remain intact. Temporary source overlays/test containers were removed after retaining test logs.
+
+## Dependency, output-budget and DGX readiness audit (2026-10-27)
+
+Measured on AWS before changes: 7,818 MiB physical RAM, 3,778 MiB available,
+1,385 MiB swap in use. Coair integration API RSS/container working set was about
+929 MiB; web 83 MiB and Qdrant 24 MiB. This is an idle snapshot, not a peak-load
+certification. The API has no container RAM cap; DuckDB is separately budgeted
+at 1 GB/one thread. Physical memory, concurrent OCR/report work and other services
+still matter. Removing a container cap does not make memory unlimited.
+
+The existing Python closure passes `pip check` on amd64. Both Node builds use
+`npm ci` and committed locks. No broad library upgrade is warranted. ARM64
+binary-only dependency resolution fails at the pinned hdbscan 0.8.44; the existing
+API Dockerfile already has a disposable compiler stage for this situation.
+Native ARM64 build/testing is required before calling that closure portable.
+A dedicated ARM64 CI workflow now performs this check using the same Dockerfile,
+plus installed-lock, vector adapter, OCR executable, Word/Excel and model-output
+checks. DuckDB FTS is installed during image build rather than relying on a
+runtime extension download. No alternate unpinned DGX requirements were added.
+
+Chronology retains 12K-character extraction windows, 16,384 output tokens per
+extraction call, 12-event synthesis batches at 32,768 output tokens and verifier
+batches of 30 claims at 8,192 tokens. These are finite per-call budgets, not a
+whole-report length/event/document cap. The stored model capability table is an
+application configuration, not a fresh provider capability certification.
+
+A reproduced OCR gap was fixed: multimodal generation previously returned text
+without rejecting `MAX_TOKENS` or other incomplete finish reasons. It now applies
+the task's output cap and request timeout, records actual paid usage, then rejects
+incomplete/empty output. Selective OCR can retain its existing local fallback;
+truncated model text cannot silently replace the page. Four mocked provider
+regressions cover successful, capped, blocked and empty output, including usage
+accounting. This does not add an unbounded continuation loop.
+
+Tailscale reports `spark-9631` / `100.91.121.116` offline (last seen three days
+ago). Device-side build, GPU/physical memory measurement and end-to-end acceptance
+remain pending. The older CoAIr-fixes DGX installation uses vLLM; this branch's
+primary text provider policy accepts Gemini/ZAI and otherwise selects Gemini.
+Copying the old launcher would therefore silently change its intended execution
+mode. New `deploy/spark/compose.yml` explicitly qualifies this branch on ARM64
+with its current Gemini workflow, isolated volumes and no production DB/payment
+endpoints. It does not claim local-model support or migrate customer accounts.
+Full local-vLLM support requires a separately validated provider adapter, actual
+model context/output capabilities, structured-output tests and report-quality
+comparison. The cloud-backed device application and fully local inference are
+different acceptance milestones.

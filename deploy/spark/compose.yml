@@ -1,0 +1,96 @@
+# Isolated ARM64 qualification using this branch's proven cloud model path.
+name: coair-spark-qualification
+services:
+  api:
+    image: coair-spark-api:${COAIR_COMMIT_SHA:?Set the tested commit}
+    platform: linux/arm64
+    build:
+      context: ../../api
+      dockerfile: Dockerfile
+      args:
+        COAIR_COMMIT_SHA: ${COAIR_COMMIT_SHA}
+    env_file: ./api.env
+    environment:
+      PORT: "8000"
+      APP_MODE: api
+      COAIR_INTEGRATION: "1"
+      LLM_PRIMARY_PROVIDER: gemini
+      GEMINI_INGESTION_MODEL: gemini-2.5-flash-lite
+      GEMINI_MODEL_LITE: gemini-2.5-flash-lite
+      EMBEDDING_PROVIDER: fastembed
+      VECTOR_STORE_BACKEND: qdrant
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${SPARK_QDRANT_KEY:?Set a dedicated test key}
+      CHRONOLOGY_PIPELINE_VERSION: v2
+      CHRONOLOGY_V3_DEMO_ENABLED: "false"
+      EVENT_INDEX_ENABLED: "false"
+      SKIP_STARTUP_OBJECT_SYNC: "true"
+      COAIR_DUCKDB_MEMORY_LIMIT: 1GB
+      COAIR_DUCKDB_THREADS: "1"
+      INGEST_MAX_CONCURRENCY: "1"
+      OCR_MAX_WORKERS: "1"
+      DATABASE_URL: ""
+      SUPABASE_DB_URL: ""
+      SUPABASE_URL: ""
+      SUPABASE_ANON_KEY: ""
+      SUPABASE_SERVICE_ROLE_KEY: ""
+      EVENT_DATABASE_URL: ""
+      S3_BUCKET_NAME: ""
+      AWS_S3_BUCKET: ""
+      GCS_BUCKET_NAME: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_PUBLISHABLE_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      RESEND_API_KEY: ""
+      COAIR_EMAIL_RELAY_URL: ""
+    volumes:
+      - storage:/app/storage
+      - data:/app/data
+    depends_on:
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8000/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+    logging: &logs
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+  web:
+    image: coair-spark-web:${COAIR_COMMIT_SHA}
+    platform: linux/arm64
+    build:
+      context: ../..
+      dockerfile: deploy/integration/Dockerfile.web
+      args:
+        PUBLIC_ORIGIN: ${SPARK_PUBLIC_ORIGIN:?Set the browser origin}
+    environment:
+      COAIR_API_ORIGIN: http://api:8000
+    ports:
+      - '${SPARK_BIND_ADDRESS:-127.0.0.1}:${SPARK_HTTP_PORT:-3200}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/auth/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    logging: *logs
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    platform: linux/arm64
+    environment:
+      QDRANT__SERVICE__API_KEY: ${SPARK_QDRANT_KEY}
+    volumes:
+      - qdrant:/qdrant/storage
+    restart: unless-stopped
+    logging: *logs
+volumes:
+  storage: {}
+  data: {}
+  qdrant: {}

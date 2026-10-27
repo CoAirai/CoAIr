@@ -1219,8 +1219,13 @@ def generate_multimodal_text(
     model = _model_for_task(task_type)
     if model not in LLM_PRICING:
         raise ValueError(f"No pricing configured for model: {model}")
+    profile = get_task_profile(task_type)
+    max_tokens = clamp_output_tokens(model, max_tokens, profile)
     started = time.time()
-    client = genai.Client(api_key=_google_api_key())
+    client = genai.Client(
+        api_key=_google_api_key(),
+        http_options=types.HttpOptions(timeout=profile.timeout_seconds * 1000),
+    )
     response = client.models.generate_content(
         model=model,
         contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)],
@@ -1233,6 +1238,9 @@ def generate_multimodal_text(
             ),
         ),
     )
+    reason = getattr((getattr(response, "candidates", None) or [None])[0],
+                     "finish_reason", "STOP")
+    finish_reason = str(getattr(reason, "name", reason) or "STOP").upper().rsplit(".", 1)[-1]
     meta = getattr(response, "usage_metadata", None)
     prompt_tokens = int(getattr(meta, "prompt_token_count", 0) or estimate_tokens(prompt))
     candidates = int(getattr(meta, "candidates_token_count", 0) or estimate_tokens(response.text or ""))
@@ -1248,9 +1256,7 @@ def generate_multimodal_text(
         cache_hit=False, provider="gemini", reasoning_tokens=thoughts,
         cached_tokens=cached,
         task_type=task_type,
-        finish_reason=str(getattr(
-            (getattr(response, "candidates", None) or [None])[0], "finish_reason", "STOP"
-        )),
+        finish_reason=finish_reason,
     )
     record_usage(prompt_tokens, completion_tokens, usage.cost_estimate)
     _attribute_to_current_user(
@@ -1259,7 +1265,13 @@ def generate_multimodal_text(
         usage_source="provider" if meta else "estimated", task_type=task_type,
     )
     _record_run_usage(usage)
-    return LLMResponse(text=(response.text or "").strip(), usage=usage, raw=response)
+    # Charge the actual provider work, but never index truncated OCR as complete.
+    if finish_reason not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+        raise LLMIncompleteResponseError(f"model_finish_{finish_reason.lower()}")
+    if not (response.text or "").strip():
+        raise LLMIncompleteResponseError("model_output_empty")
+    return LLMResponse(text=response.text.strip(), usage=usage, raw=response,
+                       finish_reason=finish_reason)
 
 
 def generate_response_json(

@@ -1,0 +1,43 @@
+name: DGX ARM64 runtime qualification
+on:
+  push:
+    branches: [codex/long-document-evidence]
+    paths: ['api/**', 'deploy/spark/**', 'deploy/integration/Dockerfile.web', '.github/workflows/spark-runtime.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the locked runtime natively on ARM64
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          platforms: linux/arm64
+          load: true
+          tags: coair-arm64:qualification
+          cache-from: type=gha,scope=spark-api
+          cache-to: type=gha,mode=max,scope=spark-api
+      - name: Validate installed dependencies, OCR, exports and provider limits
+        run: |
+          docker run --rm --entrypoint sh \
+            -e JWT_SECRET=arm64-offline-test-only \
+            -e GOOGLE_API_KEY=arm64-offline-test-only \
+            -v "$PWD/api/tests:/app/tests:ro" \
+            -v "$PWD/api/requirements-test.txt:/app/requirements-test.txt:ro" \
+            coair-arm64:qualification -c \
+            'pip install --quiet -r requirements-test.txt && pip check && tesseract --list-langs && python -m pytest tests/test_dependency_lock.py tests/test_multimodal_output_limits.py tests/test_duckdb_resource_budget.py tests/test_vector_runtime.py tests/test_answer_docx.py tests/test_answer_xlsx.py tests/test_markdown_blocks.py -q'
+      - name: Build the current web UI on ARM64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/integration/Dockerfile.web
+          platforms: linux/arm64
+          build-args: PUBLIC_ORIGIN=http://127.0.0.1:3200
+          cache-from: type=gha,scope=spark-web
+          cache-to: type=gha,mode=max,scope=spark-web
