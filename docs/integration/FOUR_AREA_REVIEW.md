@@ -280,3 +280,21 @@ Live reference RAG graph inspection returned 77 nodes and 1,304 edge records (da
 - Source commit `0fae0f96d4ac4245e8c67def34856d23f501e927`, integration CI/deploy [40503820605](https://github.com/CoAirai/CoAIr/actions/runs/40503820605): successful. **575 API tests plus 13 subtests**, **3 real PostgreSQL adapter tests**, locked dependency resolution and `pip check`, existing web build/test step and guarded deployment passed. The API immutable image matches this commit.
 - Real public API report on the three existing Edinburgh test documents: job `c0063aee68e94429b1e7`, **57.75 seconds**, 13 entries including the overview, 8 evidence passages / 15,813 characters, 39,087-byte Word file with real footnotes. Observed queued/planning → extraction → synthesis → verification → ready progression. Coverage remained **partial** with `uncovered_facets`, correctly reflecting the sample evidence. This is a small live-provider functional check, not a 600,000-character live-provider benchmark; large-pack/100-event preservation is covered by the controlled regression fixtures above. No comparison to previous runs on different evidence is claimed.
 - Post-deployment selected-document chat probes: the utility-role answer returned in **9.40 seconds** with one citation; the unsupported-total-cost question returned a clear denial in **4.65 seconds** with one citation and no invented amount. Both cited the selected project file; temporary QA conversations were deleted. The public payload did not expose a route value in these probes, so a route/call-count conclusion is not inferred. Normal caches and the small sample apply.
+
+## UK spreadsheet dates and auth test isolation — 27 October 2026
+
+Two items from the remaining-work recheck, based on integration `4da17dc`. No production configuration, stores or deployed services were changed.
+
+### Spreadsheet day/month order
+
+`parse_mixed_datetime` previously decided each slash/dash value on its own and tried month-first first, so `03/04/2010` became 4 March and `12/01/2011` became 1 December while `25/03/2010` stayed 25 March in the same column. It now infers one order per column: day-first when any value has a first number above 12, month-first when any has a second number above 12, otherwise the configured default. Values that are unambiguous on their own (`25/03/2010`, `09/18/2027`) are always read their own way, including in a conflicting column. The default for fully ambiguous columns is day-first (UK/Gulf data); `SPREADSHEET_AMBIGUOUS_DATE_ORDER=month_first` restores US reading for a deployment. Dotted, ISO, month-name, `YYYY/MM/DD` and epoch forms are unchanged. A per-project setting is not implemented; the parser accepts an explicit `default_dayfirst` for a caller that later has one.
+
+This changes how newly converted or re-analysed spreadsheets read ambiguous dates. Tables already converted and stored keep their stored dates until re-imported; no automatic re-ingestion was performed.
+
+`tests/test_spreadsheet_date_order.py` (13 tests) covers UK, US, single-value, fully ambiguous default and override, conflicting columns, dash/two-digit-year/time forms, unchanged other formats and blanks; it is added to the CI gate. The existing manpower date test still passes.
+
+### Shared rate limiter between tests
+
+`tests/conftest.py` gives every test a fresh in-process `platform_guard` limiter, as `test_org_api.py` and `test_commerce_api.py` already did per module. Limits still apply within a test; production behaviour is unchanged. `test_ops_api.py::test_password_reset_and_invite` now follows the current invitation flow (no temporary password, sign-in refused while invited, resend code, activate with token + code + password, then sign in) instead of weakening account-state checks.
+
+Local result for auth flow, ops API, superadmin role and Supabase username mapping: **27 passed**; the same run with `--noconftest` reproduces the recorded **12 pass / 15 fail**. These four modules are added to the CI gate. Across the full CI selection on a local Windows/Python 3.14 environment (missing some LlamaIndex packages and with CRLF prompt checkouts), the fixture changed only those 15 tests from failing to passing; the 58 other local failures and 24 collection errors are identical with and without it and are environment-specific. CI on the locked Linux image is the release gate.

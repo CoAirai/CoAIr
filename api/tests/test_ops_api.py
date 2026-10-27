@@ -228,10 +228,28 @@ def test_password_reset_and_invite(client, acme, stores):
         "email": "surveyor@acme.example", "display_name": "Site Surveyor",
     })
     assert invited.status_code == 201
-    password = invited.json()["temporary_password"]
-    assert _auth(client, "surveyor@acme.example", password)["Authorization"].startswith(
-        "Bearer "
+    assert invited.json()["activation_required"] is True
+    assert invited.json()["temporary_password"] == ""
+    pending = client.post(
+        "/api/auth/login",
+        json={"username": "surveyor@acme.example", "password": ""},
     )
+    assert pending.status_code in (401, 403)
+
+    resent = client.post(
+        "/api/auth/invite/resend-code", json={"email": "surveyor@acme.example"}
+    ).json()
+    assert resent["debug_invite_token"] and resent["debug_code"]
+    activated = client.post("/api/auth/invite/activate", json={
+        "token": resent["debug_invite_token"],
+        "challenge_id": resent["challenge_id"],
+        "code": resent["debug_code"],
+        "password": "surveyor-pass1",
+    })
+    assert activated.status_code == 200, activated.text
+    assert _auth(client, "surveyor@acme.example", "surveyor-pass1")[
+        "Authorization"
+    ].startswith("Bearer ")
 
 
 def test_mfa_challenge_for_company_owner(client, acme, stores):

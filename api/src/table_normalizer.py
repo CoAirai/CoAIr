@@ -57,7 +57,44 @@ def _cell_to_str(val) -> str:
     return str(val).strip().lower()
 
 
-def parse_mixed_datetime(series: pd.Series) -> pd.Series:
+_NUMERIC_DATE_RE = re.compile(r"^(?P<a>\d{1,2})[/-](?P<b>\d{1,2})[/-](?P<c>\d{2,4})(?:\s+.*)?$")
+
+
+def ambiguous_date_default_dayfirst() -> bool:
+    """Order for columns whose slash/dash dates never show a day above 12.
+
+    UK and Gulf project data is day-first, so that is the default. Set
+    SPREADSHEET_AMBIGUOUS_DATE_ORDER=month_first for US-only deployments.
+    """
+    import os
+
+    value = os.getenv("SPREADSHEET_AMBIGUOUS_DATE_ORDER", "day_first").strip().lower()
+    return value not in {"month_first", "monthfirst", "mdy", "us"}
+
+
+def _column_dayfirst(values, default_dayfirst: bool) -> bool:
+    """Infer one day/month order for a column from its unambiguous values."""
+    day_first_seen = False
+    month_first_seen = False
+    for value in values:
+        if value is None:
+            continue
+        match = _NUMERIC_DATE_RE.match(str(value).strip())
+        if not match:
+            continue
+        first, second = int(match.group("a")), int(match.group("b"))
+        if first > 12 >= second:
+            day_first_seen = True
+        elif second > 12 >= first:
+            month_first_seen = True
+    if day_first_seen and not month_first_seen:
+        return True
+    if month_first_seen and not day_first_seen:
+        return False
+    return default_dayfirst
+
+
+def parse_mixed_datetime(series: pd.Series, default_dayfirst: Optional[bool] = None) -> pd.Series:
     """
     Parse mixed date formats safely without enforcing a single locale.
 
@@ -65,19 +102,28 @@ def parse_mixed_datetime(series: pd.Series) -> pd.Series:
     - 2.01.2025              (day-first dotted)
     - 2027-06-21 0:00:00     (ISO datetime)
     - 09/18/2027             (US month/day)
+    - 25/03/2010             (UK day/month)
     - 01-Jan-2025            (DD-MMM-YYYY)
     - 01/Jan/2025            (DD/MMM/YYYY)
     - 2025/01/15             (YYYY/MM/DD)
     - 01 January 2025        (DD Month YYYY)
     - 1737849600              (epoch seconds)
+
+    Slash/dash numeric dates such as 03/04/2010 are read with one order per
+    column: day-first if any value has a day above 12, month-first if any has
+    a month position above 12, otherwise ``default_dayfirst``.
     """
     if series is None or len(series) == 0:
         return pd.to_datetime(series, errors="coerce")
+
+    if default_dayfirst is None:
+        default_dayfirst = ambiguous_date_default_dayfirst()
 
     # Normalize textual null-like values before parsing.
     text = series.astype(str).str.strip().replace({
         "": None, "nan": None, "NaN": None, "None": None, "NaT": None,
     })
+    column_dayfirst = _column_dayfirst(text.tolist(), default_dayfirst)
 
     def _parse_one(value):
         if value is None:
@@ -118,17 +164,21 @@ def parse_mixed_datetime(series: pd.Series) -> pd.Series:
             except (ValueError, OverflowError):
                 pass
 
-        # First attempt month-first/ISO-friendly parse.
+        token_match = _NUMERIC_DATE_RE.match(s)
+        if token_match:
+            first, second = int(token_match.group("a")), int(token_match.group("b"))
+            if first > 12:
+                dayfirst = True
+            elif second > 12:
+                dayfirst = False
+            else:
+                dayfirst = column_dayfirst
+            return pd.to_datetime(s, errors="coerce", dayfirst=dayfirst)
+
+        # ISO and other textual forms.
         parsed = pd.to_datetime(s, errors="coerce", dayfirst=False)
         if not pd.isna(parsed):
             return parsed
-
-        # If first token is >12, this must be day-first for slash/dash forms.
-        token_match = re.match(r"^(?P<a>\d{1,2})[/-](?P<b>\d{1,2})[/-](?P<c>\d{2,4})(?:\s+.*)?$", s)
-        if token_match:
-            first = int(token_match.group("a"))
-            if first > 12:
-                return pd.to_datetime(s, errors="coerce", dayfirst=True)
 
         # Final fallback.
         return pd.to_datetime(s, errors="coerce", dayfirst=True)
