@@ -439,6 +439,12 @@ def _generate_chronology_v2(
                 "verification", verification_hash, "ready",
                 {"decisions": verification}, "",
             )
+    from .chronology_claim_repair import repair_rejected_claims
+    response, verification, claim_repair_stats = repair_rejected_claims(
+        chronology=response, verification=verification, evidence=evidence, prepared=prepared,
+        cache_context=job_id or f"project:{project_id}", load_step=load_step, save_step=save_step,
+        on_repair=lambda: stage("claim_repair", .86),
+    )
     by_id = {e.source_id: e for e in evidence}
     entries: List[ChronologyEntry] = []
     removed = 0
@@ -472,6 +478,7 @@ def _generate_chronology_v2(
         " ".join(str(c.get("text") or "") for c in raw.get("claims", [])),
     ))
     original_event_indexes = {id(raw): index for index, raw in enumerate(response.get("entries", []))}
+    retained_event_count = 0
     for index, raw in enumerate(ordered_raw, 2):
         claims = []
         supported_indexes = []
@@ -494,6 +501,7 @@ def _generate_chronology_v2(
                 supported_indexes.append(claim_index)
             else:
                 removed += 1
+        retained_event_count += bool(claims)
         groups = [(raw, claims)]
         if raw.get("event_date") and (
             not verification.get(f"date:{event_index}", False)
@@ -555,9 +563,11 @@ def _generate_chronology_v2(
     )
     assessment.pack["selection"] = selection_stats
     assessment.pack["extraction_batches_reused"] = int(extraction_stats.get("batches_reused", 0))
+    assessment.pack["claim_repair"] = claim_repair_stats
 
     discovery_reasons = list(event_discovery_audit.get("partial_reasons", []))
-    final_reasons = list(dict.fromkeys([*assessment.reasons, *discovery_reasons, *ledger["partial_reasons"]]))
+    repair_reasons = ["claim_repair_incomplete"] if claim_repair_stats["unresolved"] else []
+    final_reasons = list(dict.fromkeys([*assessment.reasons, *discovery_reasons, *ledger["partial_reasons"], *repair_reasons]))
     return {
         "entries": [asdict(e) for e in entries],
         "evidence": [asdict(e) for e in evidence],
@@ -565,7 +575,8 @@ def _generate_chronology_v2(
         "removed_claims": removed, "audit": {
             **asdict(audit), "candidate_clusters": len(candidates),
             "synthesized_events": len(response.get("entries", [])),
-            "verifier_removed_events": len(response.get("entries", [])) - (len(entries) - 1),
+            "verifier_removed_events": len(response.get("entries", [])) - retained_event_count,
+            "split_event_entries": (len(entries) - 1) - retained_event_count,
             "issued_events": len(entries) - 1,
         }, "docx": blob, "research_audit": {"event_discovery": event_discovery_audit, "evidence_ledger": ledger},
         "model": _model_for_task("report_structured"), "pipeline_version": PIPELINE_VERSION,

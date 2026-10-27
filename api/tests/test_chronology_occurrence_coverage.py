@@ -141,6 +141,8 @@ def test_verified_target_is_dated_and_unrelated_background_is_retained_undated(m
         source_doc_ids=['d1'], preparation={'prepared': {'english_query': 'Scope changes'}})
     events = [e for e in result['entries'] if e['event_type'] != 'overview']
     assert len(events) == 2
+    assert result['audit']['verifier_removed_events'] == 0
+    assert result['audit']['split_event_entries'] == 1
     dated = next(e for e in events if e['event_date'])
     undated = next(e for e in events if not e['event_date'])
     assert dated['event_date'] == '2008-12-05'
