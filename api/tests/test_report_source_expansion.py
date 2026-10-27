@@ -109,3 +109,32 @@ def test_a_preview_without_provable_project_ownership_is_not_used(retrieval):
     audit={}
     assert retrieve_evidence('p',['notice'],stats=audit)==[]
     assert audit['unresolved_owners']==1
+
+
+def test_automatic_search_hydrates_a_legacy_vector_id_from_the_owned_canonical_mirror(retrieval,monkeypatch):
+    con,hits=retrieval
+    owned=SimpleNamespace(doc_id='canonical',project_id='p',file_name='notice.pdf')
+    registry=SimpleNamespace(get=lambda key:owned if key=='canonical' else None,get_all=lambda **kw:[owned])
+    monkeypatch.setattr('src.document_registry.get_document_registry',lambda:registry)
+    text='Original source. '*120+' The instruction was cancelled.'
+    con.execute('INSERT INTO chunks VALUES (?,?,?,?,?,?)',['p','canonical','notice.pdf',2,text,'c1'])
+    hits.append(dict(doc_id='old-vector-id',file_name='notice.pdf',page_number=2,text_snippet=text[:500]))
+    evidence=retrieve_evidence('p',['instruction'])
+    assert {e.doc_id for e in evidence}=={'canonical'}
+    assert any('instruction was cancelled' in e.excerpt for e in evidence)
+    # A guessed filename must never bless unverified preview text at a missing page.
+    hits[0]['page_number']=100
+    hits[0]['text_snippet']='UNVERIFIED PREVIEW'
+    assert retrieve_evidence('p',['instruction'])==[]
+
+
+def test_expanded_table_chunks_never_inherit_another_sheets_row_locator(retrieval):
+    con,hits=retrieval
+    for chunk,text in [('a','Sheet A: original quantity 12.'),('b','Sheet B: original quantity 99.')]:
+        con.execute('INSERT INTO chunks VALUES (?,?,?,?,?,?)',['p','d1','quantities.xlsx',1,text,chunk])
+    hits.append(dict(doc_id='d1',file_name='quantities.xlsx',page_number=1,chunk_id='a',text='Sheet A: original quantity 12.',sheet='A',row_from=2,row_to=3))
+    evidence=retrieve_evidence('p',['quantity'])
+    sheet_a=next(e for e in evidence if 'quantity 12' in e.excerpt)
+    sheet_b=next(e for e in evidence if 'quantity 99' in e.excerpt)
+    assert sheet_a.sheet=='A' and sheet_a.row_from==2
+    assert sheet_b.sheet=='' and sheet_b.row_from is None
