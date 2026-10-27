@@ -64,7 +64,7 @@ def test_failed_lane_is_recorded_and_other_lane_still_returns_evidence(retrieval
     con,hits=retrieval
     def fail(*a,**k):raise TimeoutError('private provider diagnostics must not enter the ledger')
     monkeypatch.setattr('src.document_rag.get_document_rag',lambda:SimpleNamespace(query=fail))
-    monkeypatch.setattr('src.lexical_index.get_lexical_index',lambda:SimpleNamespace(search_chunks=lambda *a,**k:[dict(doc_id='d1',file_name='f.pdf',page_number=1,text='Original instruction')]))
+    monkeypatch.setattr('src.lexical_index.get_lexical_index',lambda:SimpleNamespace(search_chunks=lambda *a,**k:[dict(doc_id='d1',file_name='f.pdf',page_number=1,text='Original instruction',project_id='p')]))
     audit={}
     evidence=retrieve_evidence('p',['instruction'],stats=audit)
     assert evidence
@@ -89,3 +89,23 @@ def test_legacy_fragment_alias_requires_unique_project_registry_ownership(retrie
     duplicate=SimpleNamespace(doc_id='other-local',project_id='p',file_name='notice.pdf')
     registry.get_all=lambda **kw:[owned,duplicate]
     assert retrieve_evidence('p',['notice'],doc_ids=['canonical'])==[]
+
+
+def test_unresolved_page_never_substitutes_page_one_as_ground_truth(retrieval):
+    con,hits=retrieval
+    con.execute('INSERT INTO chunks VALUES (?,?,?,?,?,?)',['p','d1','notice.pdf',1,'UNRELATED PAGE ONE','c1'])
+    hits.append(dict(doc_id='d1',file_name='notice.pdf',page_number='unknown',text='The actual quoted instruction.'))
+    audit={}
+    evidence=retrieve_evidence('p',['instruction'],stats=audit)
+    assert len(evidence)==1 and evidence[0].excerpt=='The actual quoted instruction.'
+    assert evidence[0].page is None
+    assert audit['unresolved_locators']==1
+
+
+def test_a_preview_without_provable_project_ownership_is_not_used(retrieval):
+    con,hits=retrieval
+    con.execute('INSERT INTO chunks VALUES (?,?,?,?,?,?)',['foreign','foreign-id','same.pdf',1,'PRIVATE FOREIGN TEXT','c1'])
+    hits.append(dict(doc_id='foreign-id',file_name='same.pdf',page_number=1,text_snippet='PRIVATE FOREIGN TEXT'))
+    audit={}
+    assert retrieve_evidence('p',['notice'],stats=audit)==[]
+    assert audit['unresolved_owners']==1

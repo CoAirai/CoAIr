@@ -634,7 +634,7 @@ def extract_batches(
     def run(batch: List[EvidenceItem], key: str, output: List[Dict], depth: int = 0) -> None:
         from .llm_client import _model_for_task
         input_hash = _hash({
-            "evidence": [asdict(item) for item in batch],
+            "evidence": evidence_markdown(batch),
             "topic": prepared.english_query, "parties": prepared.parties,
             "model": _model_for_task("chronology_extract"),
             "jargon": jargon_dictionary_version(), "policy": "reusable-extraction-v1",

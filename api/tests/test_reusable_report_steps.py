@@ -39,6 +39,9 @@ def test_extraction_cache_invalidates_on_query_and_revalidates_source_quotes(mon
     stats={}
     chronology_v2.extract_batches(evidence,prepared,stats=stats,**kwargs)
     assert len(calls)==1 and stats['batches_reused']==1
+    from dataclasses import replace
+    chronology_v2.extract_batches([replace(evidence[0],score=0.5)],prepared,**kwargs)
+    assert len(calls)==1  # Ranking metadata is not part of the extraction prompt.
     changed=chronology_v2.PreparedChronologyQuery('costs','costs',(),(),(),(),(),('q',))
     chronology_v2.extract_batches(evidence,changed,**kwargs)
     assert len(calls)==2

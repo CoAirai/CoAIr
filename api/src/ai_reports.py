@@ -85,7 +85,7 @@ def _to_evidence(project_id: str, source: Dict) -> EvidenceItem | None:
     try:
         page = int(source.get("page_number") or 1)
     except Exception:
-        page = 1
+        page = None
     kind = "email" if file_name.lower().endswith((".eml", ".msg")) else (
         "excel" if file_name.lower().endswith((".xlsx", ".xls", ".csv")) else "document"
     )
@@ -220,7 +220,7 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
     audit["hydration_ms"] = round((perf_counter()-hydration_started)*1000, 2)
     audit["evidence_passages"] = len(by_id)
     audit["evidence_characters"] = sum(len(item.excerpt) for item in by_id.values())
-    return sorted(by_id.values(), key=lambda x: x.score, reverse=True)
+    return sorted(by_id.values(), key=lambda x: (-x.score, x.doc_id, x.page or 0, x.source_id))
 
 
 def _evidence_payload(evidence: Sequence[EvidenceItem]) -> str:

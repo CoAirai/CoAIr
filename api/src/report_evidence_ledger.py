@@ -48,6 +48,10 @@ def evidence_ledger(evidence, *, scope, retrieval_rounds=(), repair=None):
         reasons.append('retrieval_lane_failed')
     if any(r.get('unhydrated_previews') or r.get('mirror_read_failed') for r in retrieval_rounds):
         reasons.append('source_text_incomplete')
+    if any(r.get('unresolved_locators') for r in retrieval_rounds):
+        reasons.append('source_locator_incomplete')
+    if any(r.get('unresolved_owners') for r in retrieval_rounds):
+        reasons.append('source_ownership_unresolved')
     return {
         'policy':'source-coverage-v1','scope':scope,
         'exhaustive_corpus_read':False,

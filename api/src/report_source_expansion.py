@@ -12,6 +12,13 @@ WINDOW_CHARS = 3500
 WINDOW_OVERLAP = 200
 
 
+def _page(source):
+    try:
+        return max(1, int(source.get('page_number') or 1))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def source_windows(source):
     text = str(source.get('text') or source.get('text_snippet') or source.get('highlight_text') or '').strip()
     for offset in range(0, len(text), WINDOW_CHARS - WINDOW_OVERLAP):
@@ -23,7 +30,7 @@ def source_windows(source):
 def expand_report_sources(project_id, sources, *, con, registry, doc_ids=(), stats=None):
     stats = stats if stats is not None else {}
     stats.update({'seed_passages':len(sources), 'expanded_pages':0,
-                  'unhydrated_previews':0, 'scope_rejections':0})
+                  'unhydrated_previews':0, 'scope_rejections':0, 'unresolved_locators':0, 'unresolved_owners':0})
     allowed = set(doc_ids)
     groups = defaultdict(list)
     owned = registry.get_all(project_id=project_id) if registry else []
@@ -53,7 +60,7 @@ def expand_report_sources(project_id, sources, *, con, registry, doc_ids=(), sta
         # Merge overlapping page ranges. Repeated research questions and lanes
         # must not cause the same source page to be read again.
         ranges = []
-        for page in sorted({max(1,int(s.get('page_number') or 1)) for s in seeds}):
+        for page in sorted({_page(s) for s in seeds if _page(s) is not None}):
             lo,hi=max(1,page-1),page+1
             if ranges and lo <= ranges[-1][1]+1:
                 ranges[-1]=(ranges[-1][0],max(hi,ranges[-1][1]))
@@ -61,8 +68,8 @@ def expand_report_sources(project_id, sources, *, con, registry, doc_ids=(), sta
                 ranges.append((lo,hi))
         score=max(float(s.get('score') or 0) for s in seeds)
         page_scores={page:max(float(s.get('score') or 0) for s in seeds
-                             if int(s.get('page_number') or 1)==page)
-                     for page in {int(s.get('page_number') or 1) for s in seeds}}
+                             if _page(s)==page)
+                     for page in {_page(s) for s in seeds if _page(s) is not None}}
         found_pages=set()
         for lo,hi in ranges:
             rows=[]
@@ -87,8 +94,24 @@ def expand_report_sources(project_id, sources, *, con, registry, doc_ids=(), sta
                     'score':page_scores.get(int(page or 1),score*0.85), 'project_id':project_id,
                 })
         stats['expanded_pages'] += len(found_pages)
+        owner = registry.get(canonical) if registry else None
+        ownership_proven = (bool(found_pages) or (owner and owner.project_id == project_id)
+                            or any(seed.get('project_id') == project_id for seed in seeds))
+        if not ownership_proven and con is not None and raw_id:
+            try:
+                ownership_proven = bool(con.execute(
+                    'SELECT 1 FROM chunks WHERE project_id=? AND doc_id=? LIMIT 1',
+                    [project_id, raw_id],
+                ).fetchone())
+            except Exception:
+                stats['mirror_read_failed'] = True
         for seed in seeds:
-            if int(seed.get('page_number') or 1) in found_pages:
+            if not ownership_proven:
+                stats['unresolved_owners'] += 1
+                continue
+            if _page(seed) is None:
+                stats['unresolved_locators'] += 1
+            if _page(seed) in found_pages:
                 continue
             if not seed.get('text'):
                 stats['unhydrated_previews'] += 1
