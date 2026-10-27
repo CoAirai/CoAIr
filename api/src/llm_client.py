@@ -48,6 +48,33 @@ class LLMIncompleteResponseError(RuntimeError):
     """The provider stopped before producing a complete response."""
 
 
+def _response_finish_reason(response) -> str:
+    """Normalize native Gemini and OpenAI-compatible/Anthropic stop metadata."""
+    reason = None
+    for payload in (response, getattr(response, "raw", None)):
+        if payload is None:
+            continue
+        def field(value, *names):
+            for name in names:
+                result = value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+                if result is not None:
+                    return result
+            return None
+        candidates = field(payload, "candidates")
+        choices = field(payload, "choices")
+        reason = (field(candidates[0], "finish_reason", "finishReason") if candidates else None)
+        if reason is None and choices:
+            reason = field(choices[0], "finish_reason")
+        if reason is None:
+            reason = field(payload, "stop_reason", "finish_reason")
+        if reason is not None:
+            break
+    normalized = str(getattr(reason, "name", reason) or "STOP").upper().rsplit(".", 1)[-1]
+    return {"LENGTH": "MAX_TOKENS", "END_TURN": "STOP", "STOP_SEQUENCE": "STOP"}.get(
+        normalized, normalized,
+    )
+
+
 class LLMInvalidStructuredOutputError(RuntimeError):
     """A structured response failed syntactic or schema validation."""
 
@@ -978,14 +1005,7 @@ def generate_text(
                 f"${cost:.6f} | {elapsed_ms:.0f}ms"
             )
 
-            finish_reason = ""
-            try:
-                value = response.candidates[0].finish_reason
-                finish_reason = str(getattr(value, "name", value) or "").upper()
-                if "." in finish_reason:
-                    finish_reason = finish_reason.rsplit(".", 1)[-1]
-            except Exception:
-                pass
+            finish_reason = _response_finish_reason(response)
             usage.finish_reason = finish_reason or "STOP"
 
             cacheable = bool(text)
@@ -1238,9 +1258,7 @@ def generate_multimodal_text(
             ),
         ),
     )
-    reason = getattr((getattr(response, "candidates", None) or [None])[0],
-                     "finish_reason", "STOP")
-    finish_reason = str(getattr(reason, "name", reason) or "STOP").upper().rsplit(".", 1)[-1]
+    finish_reason = _response_finish_reason(response)
     meta = getattr(response, "usage_metadata", None)
     prompt_tokens = int(getattr(meta, "prompt_token_count", 0) or estimate_tokens(prompt))
     candidates = int(getattr(meta, "candidates_token_count", 0) or estimate_tokens(response.text or ""))

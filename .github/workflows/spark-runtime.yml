@@ -4,6 +4,9 @@ on:
     branches: [codex/long-document-evidence]
     paths: ['api/**', 'deploy/spark/**', 'deploy/integration/Dockerfile.web', '.github/workflows/spark-runtime.yml']
   workflow_dispatch:
+concurrency:
+  group: spark-runtime-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

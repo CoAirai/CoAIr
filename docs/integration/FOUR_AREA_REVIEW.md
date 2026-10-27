@@ -440,3 +440,11 @@ explicit environment, two existing policy assertions expect 2.5 while the code's
 default is 3.5; Spark qualification now pins the staging ingestion model rather
 than changing the global default or weakening those assertions. The compose
 configuration also validates successfully without exposing resolved secrets.
+
+The output audit found the same truncation risk in the optional ZAI-compatible
+path: its OpenAI `choices[].finish_reason=length` metadata was not read by the
+Gemini-only finish check. A shared normalizer now reads native Gemini, wrapped
+Gemini, OpenAI-compatible and Anthropic stop metadata. Incomplete/filtered text
+is charged but never cached or returned as complete. Regression coverage checks
+provider envelopes and a full compatible-provider generation path, without
+changing routing, prompts or extending research loops.
