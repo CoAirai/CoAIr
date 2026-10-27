@@ -71,6 +71,13 @@ _TOOLS_DOC = """Available tools (prefer survey → read):
 Respond with JSON: {"thought": "<brief reasoning>", "action": "<tool name>", "action_input": "<string>"}"""
 
 
+FINISH_HANDOFF = (
+    "When research is complete, choose finish with an empty action_input; "
+    "a separate answer writer will use the full findings. "
+    "Do not draft the final answer from these incomplete observation previews."
+)
+
+
 class ReActAgent:
     """Reuses the router's handlers as tools. Construct with the live router."""
 
@@ -124,7 +131,7 @@ class ReActAgent:
                 ainput = json.dumps(ainput, ensure_ascii=False)
 
             if thought:
-                _emit("thinking", thought[:200])
+                _emit("thinking", "Choosing the next project research step")
 
             if act in ("finish", "final", "answer", "done"):
                 final_answer = ainput.strip()
@@ -158,13 +165,13 @@ class ReActAgent:
                 sql = extra.get("sql")
                 result_data = extra.get("result_data")
                 result_columns = extra.get("result_columns")
-            scratchpad.append({"action": act, "input": ainput, "observation": obs[:1500]})
+            scratchpad.append({"action": act, "input": ainput, "observation": obs})
 
             if self._budget_exhausted(llm_call_budget):
                 logger.info("[ReActAgent] hard budget reached — synthesizing from current observations")
                 break
 
-        if final_answer is None or not final_answer:
+        if scratchpad or final_answer is None or not final_answer:
             final_answer = self._final_synthesis(query, scratchpad)
 
         return {
@@ -191,7 +198,7 @@ class ReActAgent:
         history = ""
         for s in scratchpad:
             history += (f"\nAction: {s['action']}({s['input']})\n"
-                        f"Observation: {s['observation']}\n")
+                        f"Observation preview (may be incomplete): {s['observation'][:1500]}\n")
         already = ""
         if seen_files:
             already = "\nAlready read (do NOT read these again): " + ", ".join(seen_files[:30]) + "\n"
@@ -203,6 +210,7 @@ class ReActAgent:
             f"{already}\n"
             "Decide the next single action as strict JSON."
         )
+        prompt += "\n" + FINISH_HANDOFF
         try:
             resp = llm_client.generate_json(
                 prompt, system=build_system_prompt(_DECIDE_SYSTEM), model=GEMINI_MODEL,
@@ -285,23 +293,23 @@ class ReActAgent:
     # ── final synthesis (single LLM call over observations) ─────
     def _final_synthesis(self, query: str, scratchpad: List[Dict[str, str]]) -> str:
         _emit("analysing", "composing the answer…")
-        context = ""
-        for s in scratchpad:
-            context += f"\n[{s['action']}] {s['observation']}\n"
-        if not context.strip():
+        if not any(s.get("observation", "").strip() for s in scratchpad):
             return ("I couldn't gather enough information to answer that. "
                     "Please try rephrasing the question.")
-        prompt = (
-            f"Answer the user's question using ONLY the findings below. Be specific, "
-            f"cite document names where relevant, and say plainly if something is "
-            f"missing.\n\nQuestion: {query}\n\nFindings:{context}"
-        )
+        def render_prompt(context):
+            prompt = (
+                f"Answer the user's question using ONLY the findings below. Be specific, "
+                f"cite document names where relevant, and say plainly if something is "
+                f"missing.\n\nQuestion: {query}\n\nFindings:{context}"
+            )
+            return prompt
         try:
-            resp = llm_client.generate_text(
-                prompt,
+            from .chat_evidence import synthesize_sources
+            resp = synthesize_sources(query,
+                [{"source_label": f"[{s['action']} findings]", "text": s['observation']}
+                 for s in scratchpad if s.get('observation')],
+                render_prompt=render_prompt,
                 system=build_system_prompt("You synthesize a final answer from multi-step findings."),
-                max_tokens=2048,
-                task_type="answer_synthesis",
             )
             _record(resp)
             return resp.text.strip()
@@ -408,10 +416,11 @@ class ReActAgent:
         return False
 
     @staticmethod
-    def _excerpts(sources: List[Dict[str, Any]], max_chunks: int = 6) -> str:
+    def _excerpts(sources: List[Dict[str, Any]], max_chunks: Optional[int] = None) -> str:
         parts = []
-        for i, s in enumerate((sources or [])[:max_chunks], 1):
-            text = (s.get("text_snippet") or s.get("highlight_text") or "").strip()
+        selected = (sources or []) if max_chunks is None else (sources or [])[:max_chunks]
+        for i, s in enumerate(selected, 1):
+            text = (s.get("text") or s.get("text_snippet") or s.get("highlight_text") or "").strip()
             if not text:
                 continue
             parts.append(f"[{i}] {s.get('file_name', 'Unknown')} "

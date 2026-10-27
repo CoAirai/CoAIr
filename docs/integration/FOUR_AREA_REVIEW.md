@@ -556,3 +556,37 @@ because its older base image lacked the previously committed ChunkStore budget
 fix; mounting that current source corrected the harness. The corrected focused
 resource/stream/evidence/prompt suite passes all 50 tests. Fresh immutable-image
 CI remains the release gate; no regression assertion was weakened.
+
+### Controller previews must not become the final evidence record
+
+The final agent-path audit found separate inherited truncations: ReAct stored
+only 1,500 characters per tool observation, the plan combiner sent only 3,000
+characters of all results, both excerpt helpers defaulted to the first six
+retrieved passages, and their prose calls overrode the task profile with 2,048 /
+1,024 output tokens. Those could lose facts before the final model even saw them.
+
+ReAct now retains full tool findings for the answer writer while its controller
+still receives bounded, explicitly incomplete previews. After tool work, final
+prose is handed to the writer instead of adopting a JSON controller draft. The
+reviewed `FINISH_HANDOFF` addition asks the controller to finish without writing
+that draft. Raw controller `thought` text is replaced in public activity by an
+operation label. The plan combiner and final agent writer use the same bounded
+source-review/section-writing path and task-profile output budget. Retrieved
+passages are not silently dropped after the sixth or reduced to a short snippet;
+explicit callers may still request a smaller preview. Derived research findings
+are labelled as findings, not invented original PDF references; existing owned
+source IDs/citation collections remain attached by the original routing code.
+
+The original agent system/decide/final prompt fingerprints remain unchanged;
+final prose wording is preserved in its renderer, and the additional handoff is
+protected separately. Prompt protection initially caught the intentional refactor;
+the original protected expressions were restored rather than updating old hashes
+or removing checks. The corrected focused suite passes 92 tests plus four subtests,
+including controller preview bounds, retained late tool facts, writer handoff,
+source identity, the plan's post-3K fact and passages beyond the sixth.
+
+A real synthetic ReAct/provider probe placed the planned date, actual date and
+GBP 25 cost after the old observation cut. All eight date/qualification/source/
+table/stream checks passed. The final answer arrived in eight real public deltas:
+first delta 14.157 s, complete 14.908 s including controller calls. This is a
+controlled tool fixture, not a replacement for a full-corpus latency/recall study.

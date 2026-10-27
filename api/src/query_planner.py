@@ -663,12 +663,13 @@ class PlanExecutor:
         }
 
     @staticmethod
-    def _excerpts_from_sources(sources: List[Dict[str, Any]], max_chunks: int = 6) -> str:
+    def _excerpts_from_sources(sources: List[Dict[str, Any]], max_chunks: Optional[int] = None) -> str:
         """Deterministic raw-excerpt join (no LLM) for retrieve-only document
         steps, so COMBINE has the chunk text to synthesize from."""
         parts = []
-        for i, s in enumerate((sources or [])[:max_chunks], 1):
-            text = (s.get("text_snippet") or s.get("highlight_text") or "").strip()
+        selected = (sources or []) if max_chunks is None else (sources or [])[:max_chunks]
+        for i, s in enumerate(selected, 1):
+            text = (s.get("text") or s.get("text_snippet") or s.get("highlight_text") or "").strip()
             if not text:
                 continue
             parts.append(f"[{i}] {s.get('file_name', 'Unknown')} "
@@ -702,32 +703,35 @@ class PlanExecutor:
 
         combined_input = "\n\n".join(parts)
 
-        prompt = safe_render_prompt(
-            "You are a construction project analyst synthesizing data from multiple sources.\n\n"
-            "ORIGINAL QUESTION: {original_query}\n\n"
-            "ANALYSIS RESULTS:\n{results}\n\n"
-            "INSTRUCTIONS: {instruction}\n\n"
-            "Synthesize into a clear, professional answer:\n"
-            "1. Directly answer the question with specific numbers and facts\n"
-            "2. Cross-reference data between steps — highlight correlations or discrepancies\n"
-            "3. For equipment + manpower data: note if high equipment hours align with high headcount\n"
-            "4. For data + document: compare actual values against contractual requirements\n"
-            "5. Do NOT invent information not present in the results\n"
-            "6. Conclude with an actionable insight when the data supports it",
-            user_query=original_query,
-            original_query=original_query,
-            results=combined_input[:3000],
-            instruction=instruction,
-        )
+        def render_prompt(results):
+            return safe_render_prompt(
+                "You are a construction project analyst synthesizing data from multiple sources.\n\n"
+                "ORIGINAL QUESTION: {original_query}\n\n"
+                "ANALYSIS RESULTS:\n{results}\n\n"
+                "INSTRUCTIONS: {instruction}\n\n"
+                "Synthesize into a clear, professional answer:\n"
+                "1. Directly answer the question with specific numbers and facts\n"
+                "2. Cross-reference data between steps — highlight correlations or discrepancies\n"
+                "3. For equipment + manpower data: note if high equipment hours align with high headcount\n"
+                "4. For data + document: compare actual values against contractual requirements\n"
+                "5. Do NOT invent information not present in the results\n"
+                "6. Conclude with an actionable insight when the data supports it",
+                user_query=original_query,
+                original_query=original_query,
+                results=results,
+                instruction=instruction,
+            )
         system = build_system_prompt(
             "You are a senior construction project analyst. "
             "Synthesize findings with domain expertise."
         )
 
         try:
-            resp = llm_client.generate_text(
-                prompt, system=system, max_tokens=1024, provider=provider,
-                task_type="answer_synthesis",
+            from .chat_evidence import synthesize_sources
+            resp = synthesize_sources(original_query,
+                [{"source_label": f"[Research step {i} findings]", "text": part}
+                 for i, part in enumerate(parts, 1)],
+                render_prompt=render_prompt, system=system, provider=provider,
             )
 
             from .telemetry import get_current_trace

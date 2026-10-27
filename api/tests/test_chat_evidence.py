@@ -79,3 +79,75 @@ def test_auth_failure_never_splits_or_restarts(monkeypatch):
     with pytest.raises(PermissionError):
         chat_evidence.synthesize_sources("question", [{"text": "source"}], render_prompt=lambda c: c)
     assert len(seen) == 1
+
+
+def test_agent_keeps_full_tool_evidence_and_hands_off_final_prose(monkeypatch):
+    from src import react_agent
+    agent = react_agent.ReActAgent(NS())
+    actions = iter([{"action": "document_search", "action_input": "search", "thought": "private reasoning"},
+                    {"action": "finish", "action_input": "incomplete controller draft"}])
+    monkeypatch.setattr(agent, "_decide", lambda *a: next(actions))
+    monkeypatch.setattr(agent, "_corpus_map", lambda *a: "metadata")
+    monkeypatch.setattr(agent, "_budget_exhausted", lambda *a: False)
+    source = {"doc_id": "owned", "file_name": "owned.pdf"}
+    full = "background " * 500 + "LATE FACT: actual cost GBP 25."
+    monkeypatch.setattr(agent, "_run_tool", lambda *a: (full, [source], {}))
+    seen = []
+    monkeypatch.setattr(agent, "_final_synthesis", lambda q, scratchpad:
+                        (seen.extend(scratchpad) or "final checked answer"))
+    events = []
+    monkeypatch.setattr(react_agent, "_emit", lambda *a: events.append(a))
+    result = agent.run("question", max_iterations=3)
+    assert result["answer"] == "final checked answer"
+    assert seen[0]["observation"] == full
+    assert result["sources"][0]["doc_id"] == "owned"
+    assert "private reasoning" not in str(events)
+
+
+def test_controller_sees_only_bounded_previews_not_full_tool_evidence(monkeypatch):
+    from src import react_agent
+    seen = []
+    monkeypatch.setattr(react_agent, "_record", lambda *a: None)
+    monkeypatch.setattr(llm_client, "generate_json", lambda prompt, **kw:
+                        (seen.append(prompt) or NS(text='{"action":"finish","action_input":""}')))
+    agent = react_agent.ReActAgent(NS())
+    agent._decide("question", [{"action":"document_search", "input":"query",
+                               "observation":"prefix "*1000+"LATE SECRET MARKER"}])
+    assert "LATE SECRET MARKER" not in seen[0]
+    assert "Observation preview (may be incomplete)" in seen[0]
+    assert "separate answer writer" in seen[0]
+
+
+def test_agent_final_writer_receives_late_evidence_and_task_budget(monkeypatch):
+    from src import react_agent
+    from src.model_profiles import get_task_profile
+    monkeypatch.setattr(react_agent, "_record", lambda *a: None)
+    seen = []
+    monkeypatch.setattr(llm_client, "generate_text", lambda prompt, **kw:
+                        (seen.append((prompt,kw)) or NS(text="final answer")))
+    result = react_agent.ReActAgent(NS())._final_synthesis("question", [
+        {"action":"document_search", "observation":"padding "*700+"LATE FACT"}])
+    assert result == "final answer" and "LATE FACT" in seen[0][0]
+    assert seen[0][1].get("max_tokens", get_task_profile("answer_synthesis").max_output_tokens) == 8192
+
+
+def test_plan_combiner_does_not_clip_findings_at_3000_characters(monkeypatch):
+    from src.query_planner import PlanExecutor
+    seen = []
+    monkeypatch.setattr(llm_client, "generate_text", lambda prompt, **kw:
+                        (seen.append(prompt) or NS(text="final answer")))
+    result = PlanExecutor.__new__(PlanExecutor)._execute_combine_step("question", "compare", [0],
+        {0: {"answer":"padding "*700+"LATE PLAN FACT", "sources":[{"doc_id":"owned"}]}})
+    assert "LATE PLAN FACT" in seen[0]
+    assert result["sources"] == [{"doc_id":"owned"}]
+
+
+def test_retrieved_passages_are_not_dropped_after_the_sixth_chunk():
+    from src.query_planner import PlanExecutor
+    from src.react_agent import ReActAgent
+    sources = [{"file_name":f"owned-{i}.pdf", "page_number":i,
+                "text":f"FULL FACT {i}", "text_snippet":"short preview"} for i in range(12)]
+    for render in (PlanExecutor._excerpts_from_sources, ReActAgent._excerpts):
+        text = render(sources)
+        assert "FULL FACT 11" in text and "owned-11.pdf" in text
+        assert text.count("FULL FACT") == 12

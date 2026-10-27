@@ -28,6 +28,8 @@ class ReviewedQuotes(BaseModel):
 
 
 def _label(index, source):
+    if source.get("source_label") and "file_name" not in source and "doc_id" not in source:
+        return str(source["source_label"])
     return f"[Source {index}: {source.get('file_name', 'Unknown')}, p.{source.get('page_number', '?')}]"
 
 
