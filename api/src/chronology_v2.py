@@ -24,6 +24,7 @@ from .report_errors import classify_report_error, diagnostic_summary
 
 PIPELINE_VERSION = "chronology-v2"
 EVIDENCE_BATCH_CHARS = 80_000
+EXTRACTION_WINDOW_CHARS = 12_000
 # How many candidate documents the preview lists for the analyst. Presentation
 # only — what the report reads is decided by evidence_pack.select_pack.
 MAX_PREVIEW_DOCUMENTS = 20
@@ -70,8 +71,13 @@ class EventModel(BaseModel):
     cluster_id: str = ""
     event_date: str = ""
     date_precision: str = "unknown"
-    date_source: str = "unresolved"
-    date_evidence: str = ""
+    date_source: str = Field(
+        default="unresolved", json_schema_extra={"enum": sorted(ALLOWED_DATE_SOURCES)},
+        description="Source of the quoted event date; never use metadata or text as a value.",
+    )
+    date_evidence: str = Field(
+        default="", description="Verbatim source wording including the year needed to prove event_date.",
+    )
     claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_EVENT_CLAIMS)
     parties: List[str] = Field(default_factory=list, max_length=20)
     event_type: str = "event"
@@ -220,7 +226,9 @@ def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
         str(source_id) for claim in event.get("claims", [])
         for source_id in claim.get("source_ids", [])
     }
-    return any(date_evidence.casefold() in by_id.get(source_id, "") for source_id in source_ids)
+    # OCR and PDF line wrapping may change whitespace, never the quoted words.
+    quote = " ".join(date_evidence.casefold().split())
+    return any(quote in " ".join(by_id.get(source_id, "").split()) for source_id in source_ids)
 
 
 def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
@@ -692,7 +700,14 @@ def extract_batches(
     # chosen evidence, so use stable source/page order for coherent reads and
     # content-addressed reuse without discarding a lower-ranked passage.
     ordered = sorted(evidence, key=lambda item: (item.file_name, item.page or 0, item.doc_id, item.source_id))
-    batches = evidence_batches(ordered)
+    # A short document must not disappear inside a larger document's context.
+    # Read each document independently in small windows; this is a per-call
+    # budget, never a cap on the number of documents or report events.
+    documents: Dict[str, List[EvidenceItem]] = {}
+    for item in ordered:
+        documents.setdefault(item.doc_id, []).append(item)
+    batches = [batch for document in documents.values()
+               for batch in evidence_batches(document, max_chars=EXTRACTION_WINDOW_CHARS)]
     counters["batches_total"] = len(batches)
     def read_one(index, batch):
         output: List[Dict] = []
@@ -912,7 +927,17 @@ def synthesize(
             input_hash, prompt, schema_name="chronology_v2_event_batch",
             validation_model=EventSynthesisModel, semantic_validator=batch_valid,
         )
-        return list(output.get("entries", []))
+        entries = list(output.get("entries", []))
+        proven = {str(event["cluster_id"]): event for event in batch
+                  if event.get("event_date") and _date_proven(event, batch_evidence)}
+        for event in entries:
+            original = proven.get(str(event.get("cluster_id")))
+            if original:
+                # Drafting may reword a claim, but cannot erase or replace a
+                # proven candidate date. Final citation/date checks still run.
+                for field in ("event_date", "date_precision", "date_source", "date_evidence"):
+                    event[field] = original[field]
+        return entries
 
     # These drafts use independent evidence batches. Keep provider concurrency
     # bounded and collect in batch order; every claim is still verified below.

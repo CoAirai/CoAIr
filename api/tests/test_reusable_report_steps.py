@@ -62,7 +62,7 @@ def test_same_evidence_in_a_different_retrieval_order_reuses_one_extraction(monk
     evidence=[EvidenceItem('s1','d1','a.pdf',page=1,excerpt='Engineer issued notice 17.'),EvidenceItem('s2','d2','b.pdf',page=2,excerpt='Contractor received notice 18.')]
     def extract(**kwargs):
         calls.append([e.source_id for e in kwargs['batch']])
-        return [{'claims':[{'text':'Engineer issued notice 17.','source_ids':['s1']}]}]
+        return [{'claims':[{'text':kwargs['batch'][0].excerpt,'source_ids':[kwargs['batch'][0].source_id]}]}]
     monkeypatch.setattr(chronology_v2,'extract_batch',extract)
     def load(key,value):return saved.get(value)
     def save(key,value,status,output,error):saved[value]={'status':status,'output':output}
@@ -70,5 +70,5 @@ def test_same_evidence_in_a_different_retrieval_order_reuses_one_extraction(monk
     chronology_v2.extract_batches(evidence,prepared,load_step=load,save_step=save)
     stats={}
     chronology_v2.extract_batches(list(reversed(evidence)),prepared,load_step=load,save_step=save,stats=stats)
-    assert calls==[['s1','s2']]
-    assert stats['batches_reused']==1
+    assert sorted(calls)==[['s1'],['s2']]
+    assert stats['batches_reused']==2
