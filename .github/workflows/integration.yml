@@ -108,10 +108,15 @@ jobs:
   deploy:
     needs: build
     if: >-
-      github.ref == 'refs/heads/integration/rag-agent-parity' &&
+      (github.ref == 'refs/heads/integration/rag-agent-parity' ||
+       (github.ref == 'refs/heads/codex/long-document-evidence' &&
+        vars.INTEGRATION_QUALIFICATION_COMMIT == github.sha)) &&
       github.event_name != 'pull_request' &&
       vars.INTEGRATION_DEPLOY_ENABLED == 'true'
     environment: integration
+    concurrency:
+      group: coair-integration-release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
