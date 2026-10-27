@@ -125,3 +125,15 @@ def test_disconnect_does_not_discard_the_running_accounted_turn():
         await asyncio.wait_for(finished.wait(), timeout=2)
         await asyncio.sleep(.05)
     asyncio.run(exercise())
+
+
+def test_midstream_budget_error_retains_payment_status():
+    from backend.services.chat_stream import stream_chat
+    from src.usage_tracker import BudgetExceededError
+    async def exercise():
+        async def run(rid):
+            raise BudgetExceededError("AI budget exhausted")
+        response = stream_chat(run)
+        events = [json.loads(frame.removeprefix("data: ").strip()) async for frame in response.body_iterator]
+        assert events[-1] == {"type": "error", "status": 402, "message": "AI budget exhausted"}
+    asyncio.run(exercise())

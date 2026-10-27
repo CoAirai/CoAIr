@@ -45,8 +45,16 @@ def stream_chat(run):
                 response = await run(request_id)
                 await queue.put({"type": "complete", "response": response.model_dump(mode="json")})
             except Exception as exc:
+                from src.user_store import UserQuotaExceededError
+                from src.billing_store import CreditBalanceExceededError
+                from src.usage_tracker import BudgetExceededError
+                from src.provider_credentials import ProviderCredentialError
                 status = exc.status_code if isinstance(exc, HTTPException) else 500
                 detail = exc.detail if isinstance(exc, HTTPException) else "Unable to complete the answer."
+                if isinstance(exc, (UserQuotaExceededError, CreditBalanceExceededError, BudgetExceededError)):
+                    status, detail = 402, str(exc)
+                elif isinstance(exc, ProviderCredentialError):
+                    status, detail = 503, "The dedicated AI service credential is unavailable."
                 await queue.put({"type": "error", "status": status, "message": detail})
             finally:
                 answer_stream_var.reset(token)
