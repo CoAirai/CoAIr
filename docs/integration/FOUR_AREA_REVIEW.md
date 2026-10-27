@@ -448,3 +448,35 @@ Gemini, OpenAI-compatible and Anthropic stop metadata. Incomplete/filtered text
 is charged but never cached or returned as complete. Regression coverage checks
 provider envelopes and a full compatible-provider generation path, without
 changing routing, prompts or extending research loops.
+
+### Qualified source and remaining device acceptance
+
+Runtime source `54e030e0bdf8606f0c77b85c4a47b2d07f3835e2` passed:
+
+- [Full integration CI](https://github.com/CoAirai/CoAIr/actions/runs/40579212698):
+  625 API tests, 13 subtests, three PostgreSQL adapter tests, installed dependency
+  consistency and the existing Next.js build. Deployment was skipped because
+  this feature commit was not pinned for a staging release.
+- [Native ARM64 CI](https://github.com/CoAirai/CoAIr/actions/runs/40579212473):
+  API image built successfully with the existing pinned closure, `pip check`
+  clean, Tesseract language discovery successful, 83 runtime/limit/vector/Word/
+  Excel/markdown tests passed, and the ARM64 Next.js image build succeeded.
+- Independent source-overlay validation on the AWS host: the same 625 API tests
+  and 13 subtests passed in a disposable container (169.57 s, one CPU, 1.5 GiB
+  test-container cap). That cap applied only to the disposable test process.
+- Registry manifest inspection confirms `qdrant/qdrant:v1.15.4` includes Linux
+  ARM64. The dedicated Spark compose file validates. Owned temporary test
+  overlays were removed; production volumes and existing application history
+  were not mounted or changed.
+
+The pinned hdbscan dependency's absence from the binary-only cross-resolution
+therefore did not prevent a real native ARM64 build. No package-version loosening
+was needed. These checks establish CPU/ARM64 application portability, not DGX
+GPU/local-model equivalence. Device acceptance remains open while Spark is
+offline: build/start the isolated stack there, check available unified memory
+alongside its existing model, run concurrent real workloads, verify citations,
+Word/Excel and chronology coverage, and compare cold/cached report timings.
+The supplied Spark compose deliberately uses the current cloud model path;
+fully local vLLM inference remains a separate provider integration and quality
+qualification. Existing account, organization, role and payment schemas and
+production AWS/RAG/DGX deployments were not changed in this audit.
