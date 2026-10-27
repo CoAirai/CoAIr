@@ -8,7 +8,7 @@ import re
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
@@ -577,6 +577,70 @@ def evidence_batches(evidence: Sequence[EvidenceItem], max_chars: int = EVIDENCE
     return batches
 
 
+def occurrence_windows(item: EvidenceItem) -> List[EvidenceItem]:
+    """Keep each explicit programme target with its preceding task wording.
+
+    Source IDs continue to identify the original cited page. The exact window
+    text participates in the extraction hash, so distinct rows cannot share a
+    cached extraction just because they cite the same page.
+    """
+    targets = list(re.finditer(
+        r"(?im)^[ \t]*Complete(?:[ \t]+by[ \t]+[^\n]+|[ \t]+\d+[ \t]+weeks?[ \t]+after[^\n]*)(?:\n|$)",
+        item.excerpt,
+    ))
+    if len(targets) < 2:
+        return [item]
+    windows = []
+    start = 0
+    for index, target in enumerate(targets):
+        end = len(item.excerpt) if index == len(targets) - 1 else target.end()
+        windows.append(replace(item, excerpt=item.excerpt[start:end]))
+        start = end
+    return windows
+
+
+def _restore_programme_target_dates(entries: List[Dict], batch: Sequence[EvidenceItem]) -> List[Dict]:
+    """Recover quoted schedule dates, preserving month precision for end/mid.
+
+    Only an explicit target row AND the event's own claim may supply this date.
+    This never borrows a document date or fills a missing year. The independent
+    verifier still checks the temporal link of every claim in the final event.
+    """
+    by_id = {item.source_id: item for item in batch}
+    names = "January February March April May June July August September October November December".split()
+    months = {alias.lower(): i for i, name in enumerate(names, 1) for alias in (name, name[:3])}
+    month_pattern = "|".join(sorted(months, key=len, reverse=True))
+    pattern = re.compile(
+        rf"(?i)\b(?:(\d{{1,2}})(?:st|nd|rd|th)?\s+|(?:end|mid)(?:\s+of)?\s+)?({month_pattern})\s+(\d{{4}})\b"
+    )
+    for event in entries:
+        if event.get("event_date"):
+            continue
+        proposals = {}
+        for claim in event.get("claims", []):
+            for source_id in claim.get("source_ids", []):
+                source = by_id.get(source_id)
+                if source is None:
+                    continue
+                targets = re.findall(r"(?im)^[ \t]*Complete[ \t]+by[ \t]+([^\n]+)", source.excerpt)
+                if len(targets) != 1:
+                    continue
+                match = pattern.search(targets[0])
+                if not match or " ".join(match.group().lower().split()) not in " ".join(claim["text"].lower().split()):
+                    continue
+                day, month, year = match.groups()
+                month_number = months[month.lower()]
+                proposed = {**event, "event_date": f"{year}-{month_number:02d}" + (f"-{int(day):02d}" if day else ""),
+                            "date_precision": "exact" if day else "month", "date_source": "content_body",
+                            "date_evidence": match.group()}
+                if _date_proven(proposed, batch):
+                    proposals[proposed["event_date"]] = proposed
+        if len(proposals) == 1:
+            proposed = next(iter(proposals.values()))
+            event.update({key: proposed[key] for key in ("event_date", "date_precision", "date_source", "date_evidence")})
+    return entries
+
+
 def extract_batch(
     *, batch: Sequence[EvidenceItem], prepared: PreparedChronologyQuery,
     cache_context: str,
@@ -596,7 +660,7 @@ def extract_batch(
         thinking_level="low", max_tokens=16_384, prompt_version=prompts["version"],
         cache_key="chronology-extract", cache_context=cache_context, ttl_s=0,
     )
-    return _prune_source_invalid_events(response.raw, batch)
+    return _restore_programme_target_dates(_prune_source_invalid_events(response.raw, batch), batch)
 
 
 def extract_batches(
@@ -645,7 +709,7 @@ def extract_batches(
             "evidence": evidence_markdown(batch),
             "topic": prepared.english_query, "parties": prepared.parties,
             "model": _model_for_task("chronology_extract"),
-            "jargon": jargon_dictionary_version(), "policy": "reusable-extraction-v1",
+            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v2",
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
         })
@@ -700,14 +764,19 @@ def extract_batches(
     # chosen evidence, so use stable source/page order for coherent reads and
     # content-addressed reuse without discarding a lower-ranked passage.
     ordered = sorted(evidence, key=lambda item: (item.file_name, item.page or 0, item.doc_id, item.source_id))
-    # A short document must not disappear inside a larger document's context.
-    # Read each document independently in small windows; this is a per-call
+    # A source page must not disappear inside a larger document's context.
+    # Read each page independently in small windows; this is a per-call
     # budget, never a cap on the number of documents or report events.
-    documents: Dict[str, List[EvidenceItem]] = {}
+    documents: Dict[Tuple[str, int | None], List[EvidenceItem]] = {}
     for item in ordered:
-        documents.setdefault(item.doc_id, []).append(item)
-    batches = [batch for document in documents.values()
-               for batch in evidence_batches(document, max_chars=EXTRACTION_WINDOW_CHARS)]
+        documents.setdefault((item.doc_id, item.page), []).append(item)
+    batches = []
+    for document in documents.values():
+        for batch in evidence_batches(document, max_chars=EXTRACTION_WINDOW_CHARS):
+            if any(len(occurrence_windows(item)) > 1 for item in batch):
+                batches.extend([window] for item in batch for window in occurrence_windows(item))
+            else:
+                batches.append(batch)
     counters["batches_total"] = len(batches)
     def read_one(index, batch):
         output: List[Dict] = []
@@ -984,6 +1053,13 @@ def verify_claims(
                 "source_ids": sorted({sid for c in event.get("claims", []) for sid in c.get("source_ids", [])}),
             })
         for claim_index, claim in enumerate(event.get("claims", [])):
+            if event.get("event_date") and len(event.get("claims", [])) > 1:
+                claims.append({
+                    "claim_ref": f"date:{event_index}:{claim_index}", "verification_kind": "event_date",
+                    "event_date": event["event_date"], "date_precision": event.get("date_precision"),
+                    "date_source": event.get("date_source"), "date_evidence": event.get("date_evidence"),
+                    "text": claim.get("text", ""), "source_ids": claim.get("source_ids", []),
+                })
             claims.append({"claim_ref": f"event:{event_index}:{claim_index}", **claim})
     if not claims:
         raise ValueError("insufficient_evidence")

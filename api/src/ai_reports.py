@@ -412,7 +412,7 @@ def _generate_chronology_v2(
         load_step=load_step, save_step=save_step,
     )
     verification_hash = hashlib.sha256(json.dumps(
-        {"chronology": response, "policy": "claim-and-event-date-v1"}, sort_keys=True, ensure_ascii=False,
+        {"chronology": response, "policy": "claim-and-event-date-v2"}, sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     stage("verification", .82)
     verification_step = load_step("verification", verification_hash) if load_step else None
@@ -474,6 +474,7 @@ def _generate_chronology_v2(
     original_event_indexes = {id(raw): index for index, raw in enumerate(response.get("entries", []))}
     for index, raw in enumerate(ordered_raw, 2):
         claims = []
+        supported_indexes = []
         event_index = original_event_indexes[id(raw)]
         for claim_index, item in enumerate(raw.get("claims", [])):
             claim = VerifiedClaim(
@@ -490,28 +491,40 @@ def _generate_chronology_v2(
             )
             if claim.supported:
                 claims.append(claim)
+                supported_indexes.append(claim_index)
             else:
                 removed += 1
+        groups = [(raw, claims)]
         if raw.get("event_date") and not verification.get(f"date:{event_index}", False):
-            raw = {**raw, "event_date": "", "date_precision": "unknown",
-                   "date_source": "unresolved", "date_evidence": ""}
-        if raw.get("date_precision") == "inferred" and claims:
-            claims[0].is_inference = True
-            if not claims[0].inference_basis:
-                claims[0].inference_basis = ("The event date is not established by the cited record"
-                    if not raw.get("event_date") else "The cited record establishes only an approximate event date")
-        if not claims:
-            continue
-        raw = _enforce_event_date({**raw, "claims": [asdict(c) for c in claims]}, evidence)
-        entries.append(ChronologyEntry(
-            entry_ref=f"6.{issue_number}.{index}", event_date=str(raw.get("event_date") or ""),
-            date_precision=str(raw.get("date_precision") or "unknown"), claims=claims,
-            date_source=str(raw.get("date_source") or "unresolved"),
-            date_evidence=str(raw.get("date_evidence") or ""),
-            parties=[str(x) for x in raw.get("parties", [])],
-            event_type=str(raw.get("event_type") or "event"),
-            conflicting_positions=[str(x) for x in raw.get("conflicting_positions", [])],
-        ))
+            undated = {**raw, "event_date": "", "date_precision": "unknown",
+                       "date_source": "unresolved", "date_evidence": ""}
+            timed = [claim for claim, original_index in zip(claims, supported_indexes)
+                     if verification.get(f"date:{event_index}:{original_index}", False)]
+            if 0 < len(timed) < len(claims):
+                # Preserve the verified target/action date; keep background
+                # observations as a separate undated entry, without dropping it.
+                remaining = [claim for claim in claims if claim not in timed]
+                groups = [(raw, timed), (undated, remaining)]
+            else:
+                groups = [(undated, claims)]
+        for raw, claims in groups:
+            if raw.get("date_precision") == "inferred" and claims:
+                claims[0].is_inference = True
+                if not claims[0].inference_basis:
+                    claims[0].inference_basis = ("The event date is not established by the cited record"
+                        if not raw.get("event_date") else "The cited record establishes only an approximate event date")
+            if not claims:
+                continue
+            raw = _enforce_event_date({**raw, "claims": [asdict(c) for c in claims]}, evidence)
+            entries.append(ChronologyEntry(
+                entry_ref=f"6.{issue_number}.{index}", event_date=str(raw.get("event_date") or ""),
+                date_precision=str(raw.get("date_precision") or "unknown"), claims=claims,
+                date_source=str(raw.get("date_source") or "unresolved"),
+                date_evidence=str(raw.get("date_evidence") or ""),
+                parties=[str(x) for x in raw.get("parties", [])],
+                event_type=str(raw.get("event_type") or "event"),
+                conflicting_positions=[str(x) for x in raw.get("conflicting_positions", [])],
+            ))
     if len(entries) < 2:
         raise ValueError("insufficient_evidence")
     entries[1:] = sorted(entries[1:], key=lambda entry: entry.event_date or "9999-99-99")

@@ -327,3 +327,21 @@ Next controlled corrections, with separate before/after checks:
 4. Repeat identical-preparation reports and then qualify a genuinely large, project-isolated corpus. The three-file staging sample cannot certify thousands of documents, OCR intake, every source viewer path, or full RAG quality parity.
 
 Reproducible server artifacts remain under `/opt/coair-integration/qualification/four-stage-review`: `coverage-report-probe.py`, frozen `results/coverage-preparation.json`, `results/coverage-metrics.json`, corresponding `long-evidence-coverage-*.json`/`.docx` files and stage logs. Final jobs: `249aa63294bf4df48499` and `d7f7bb666f5c4d409494`. The pre-order repeat failure is retained rather than presented as a successful cache benchmark. Qualification-only source expansions are removed after retaining their diagnostic test logs.
+
+
+### Continued occurrence/date corrections — 27 October 2026
+
+The first continuation CI run (`40559276452`) correctly blocked deployment: 593 tests passed and the accepted-prompt checksum test failed because the chronology instructions were intentionally changed. The guard remains in place. Prompt acceptance is reviewed against actual Edinburgh evidence and the new source/date regressions before recording a new checksum; this failure is not treated as a successful release.
+
+Implemented changes:
+
+- The provider JSON schema lists only supported date provenance values. PDF/OCR whitespace wrapping can no longer erase an otherwise exact quoted date. The actual source words and year remain mandatory; metadata dates and invented years remain forbidden.
+- Independent extraction uses page-scoped windows with a 12,000-character per-call budget. A document count or event-count cap is not introduced. Explicit `Complete by ...` programme rows are divided with their preceding task wording; every original character is retained. This makes each target receive attention without restarting whole-corpus research.
+- Exact schedule wording can restore a missing target date only when the event's own claim repeats that date and the same cited window has one explicit target. End/mid-month targets retain month precision. Different proposed dates stay unresolved. Final independent verification still applies.
+- Drafting preserves dates already proven against the cited candidate. The verifier separately assesses the date link for individual claims in mixed dated/background events. When the combined date is rejected but a proper subset is independently dated, the renderer keeps that subset dated and preserves the remaining supported background in an undated entry. No factual claim is discarded to rescue a date.
+- Changed prompt, schema, source windows and extraction policy invalidate the previous candidate cache. Unchanged new windows remain reusable for the same user/project/version, including after adding another document. Drafting and verification remain job-local; account, payment, role, database and dependency schemas are unchanged.
+
+Focused validation passes 95 tests plus 9 subtests, including source windows, cache scope, recursive failure handling, full Word delivery, individually verified dates and long-evidence regressions. The recursion fixtures now place multiple chunks on the same page so they still exercise a real split after page isolation.
+
+
+Pre-release prompt acceptance: isolated provider qualification uses the real three-file Edinburgh evidence and the production extraction/synthesis/independent-verification/Word functions, with production databases unmounted. The final reviewed run completed in 79.34 seconds, producing 23 entries including overview and 12 dated entries. All nine source-reviewed checks passed: phased transition, planned June memorandum, MUDFA programme targets, scope transfer, post-V31 incorporation, mobilisation review, January changes and February misalignment. These checks establish retention of the reviewed occurrences, not exhaustive material-event recall. `occurrence-provider-final.json`, `.docx` and `occurrence-provider-acceptance.json` retain the results. The accepted prompt checksum is updated only after this output review; historical source manifests remain historical. Authenticated staging and repeat/cache checks follow the full CI release.

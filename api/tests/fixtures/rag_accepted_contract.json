@@ -223,7 +223,7 @@
       "prompt": "chronology_v2.yaml",
       "status": "reviewed_difference",
       "rag_sha256": "02edf702dcb54e69c5d377b50b31e3362204ac730087513b7a7f796237d4103e",
-      "coair_sha256": "274e88f810f0807c90caf98432b9838becca5fcc47495ad718f480bec0ac1123"
+      "coair_sha256": "7af23349e88a61b8dd3a0274ab7da2ded8940283770a160956600aafa64fd963"
     }
   ],
   "approved_differences": {
@@ -232,7 +232,7 @@
     "document_rag:DocumentRAG.query_named_docs_with_provider.prompt": "Selected, project-scoped source context injection",
     "prompt_files:chronology_v3.yaml": "Inactive V3 counter-evidence/provenance improvements; V2 remains the qualified runtime",
     "chronology_v2:verify_claims.prompt": "Independent event-date decisions prevent retrospective quantities from inheriting document dates; factual claims remain separately verified. Evidence: FOUR_AREA_REVIEW.md.",
-    "prompt_files:chronology_v2.yaml": "Remove only the extraction quota of 18 events; preserve date, provenance and four-claim rules. Long-evidence regression coverage and live report qualification: FOUR_AREA_REVIEW.md.",
+    "prompt_files:chronology_v2.yaml": "Remove extraction event quota; enumerate distinct on-topic occurrences and named workstreams, preserve planned/actual distinction, and use the actual date provenance enum. Date, source and four-claim guards remain. Reviewed real three-file Edinburgh Word output: nine source-reviewed occurrences retained with their dates; 95 focused tests plus 9 subtests. Evidence: FOUR_AREA_REVIEW.md and occurrence-provider-acceptance.json on the qualification host.",
     "chronology_v2:synthesize.overview_prompt": "Identical overview wording over a bounded evidence subset, with hierarchical reduction for long reports. Full event drafting remains independent and lossless; see long-evidence window regressions."
   }
 }

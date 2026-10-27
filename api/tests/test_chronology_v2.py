@@ -340,7 +340,7 @@ def test_extraction_checkpoint_is_reused(monkeypatch):
 
 
 def test_broken_extraction_batch_is_recursively_split(monkeypatch):
-    evidence = [EvidenceItem(f"s{i}", "d", "a.pdf", page=i, excerpt="event") for i in range(4)]
+    evidence = [EvidenceItem(f"s{i}", "d", "a.pdf", page=1, excerpt="event") for i in range(4)]
     prepared = PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",))
 
     def extract(**kwargs):
@@ -355,7 +355,7 @@ def test_broken_extraction_batch_is_recursively_split(monkeypatch):
 
 def test_provider_configuration_error_does_not_trigger_batch_split(monkeypatch):
     evidence = [
-        EvidenceItem(f"s{i}", "d", "a.pdf", page=i, excerpt="event")
+        EvidenceItem(f"s{i}", "d", "a.pdf", page=1, excerpt="event")
         for i in range(4)
     ]
     prepared = PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",))
@@ -494,7 +494,7 @@ def test_a_failing_half_does_not_discard_the_other_half(monkeypatch):
     exception left the frame before the second half was attempted, so half the
     evidence was dropped without a trace whenever a batch had to be split.
     """
-    evidence = [EvidenceItem(f"s{i}", "d", "a.pdf", page=i, excerpt="event") for i in range(4)]
+    evidence = [EvidenceItem(f"s{i}", "d", "a.pdf", page=1, excerpt="event") for i in range(4)]
     prepared = PreparedChronologyQuery("q", "q", (), (), (), (), (), ("q",))
     seen = []
 
@@ -502,8 +502,8 @@ def test_a_failing_half_does_not_discard_the_other_half(monkeypatch):
         batch = kwargs["batch"]
         if len(batch) > 1:
             raise llm_client.LLMInvalidStructuredOutputError("model_output_invalid")
-        seen.append(batch[0].page)
-        if batch[0].page < 2:                      # the whole "a" side fails
+        seen.append(int(batch[0].source_id[1:]))
+        if int(batch[0].source_id[1:]) < 2:                      # the whole "a" side fails
             raise llm_client.LLMIncompleteResponseError("model_output_incomplete")
         return [{"event_date": f"2025-01-0{batch[0].page}", "claims": []}]
 
