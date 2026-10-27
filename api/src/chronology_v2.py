@@ -630,8 +630,8 @@ def occurrence_windows(item: EvidenceItem) -> List[EvidenceItem]:
 def _restore_programme_target_dates(entries: List[Dict], batch: Sequence[EvidenceItem]) -> List[Dict]:
     """Recover quoted schedule dates, preserving month precision for end/mid.
 
-    Only an explicit target row AND the event's own claim may supply this date.
-    This never borrows a document date or fills a missing year. The independent
+    The event's own claim and cited source must repeat the date wording.
+    This never borrows discovery metadata or fills a missing year. The independent
     verifier still checks the temporal link of every claim in the final event.
     """
     by_id = {item.source_id: item for item in batch}
@@ -651,18 +651,20 @@ def _restore_programme_target_dates(entries: List[Dict], batch: Sequence[Evidenc
                 if source is None:
                     continue
                 targets = re.findall(r"(?im)^[ \t]*Complete[ \t]+by[ \t]+([^\n]+)", source.excerpt)
-                if len(targets) != 1:
-                    continue
-                match = pattern.search(targets[0])
-                if not match or " ".join(match.group().lower().split()) not in " ".join(claim["text"].lower().split()):
-                    continue
-                day, month, year = match.groups()
-                month_number = months[month.lower()]
-                proposed = {**event, "event_date": f"{year}-{month_number:02d}" + (f"-{int(day):02d}" if day else ""),
-                            "date_precision": "exact" if day else "month", "date_source": "content_body",
-                            "date_evidence": match.group()}
-                if _date_proven(proposed, batch):
-                    proposals[proposed["event_date"]] = proposed
+                # A planned agreement may state a month in prose rather than
+                # a Complete-by row. Admit only wording repeated by the claim
+                # and proved verbatim in its own cited source; never fill a year.
+                matches = list(pattern.finditer(targets[0] if len(targets) == 1 else claim["text"]))
+                for match in matches:
+                    if " ".join(match.group().lower().split()) not in " ".join(claim["text"].lower().split()):
+                        continue
+                    day, month, year = match.groups()
+                    month_number = months[month.lower()]
+                    proposed = {**event, "event_date": f"{year}-{month_number:02d}" + (f"-{int(day):02d}" if day else ""),
+                                "date_precision": "exact" if day else "month", "date_source": "content_body",
+                                "date_evidence": match.group()}
+                    if _date_proven(proposed, [source]):
+                        proposals[proposed["event_date"]] = proposed
         if len(proposals) == 1:
             proposed = next(iter(proposals.values()))
             event.update({key: proposed[key] for key in ("event_date", "date_precision", "date_source", "date_evidence")})
@@ -737,7 +739,7 @@ def extract_batches(
             "evidence": evidence_markdown(batch),
             "topic": prepared.english_query, "parties": prepared.parties,
             "model": _model_for_task("chronology_extract"),
-            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v3",
+            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v4",
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
         })

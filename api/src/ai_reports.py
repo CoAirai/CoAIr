@@ -495,7 +495,11 @@ def _generate_chronology_v2(
             else:
                 removed += 1
         groups = [(raw, claims)]
-        if raw.get("event_date") and not verification.get(f"date:{event_index}", False):
+        if raw.get("event_date") and (
+            not verification.get(f"date:{event_index}", False)
+            or any(verification.get(f"date:{event_index}:{original_index}") is False
+                   for original_index in supported_indexes)
+        ):
             undated = {**raw, "event_date": "", "date_precision": "unknown",
                        "date_source": "unresolved", "date_evidence": ""}
             timed = [claim for claim, original_index in zip(claims, supported_indexes)

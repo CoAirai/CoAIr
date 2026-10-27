@@ -1,5 +1,6 @@
 """Regressions from live reports that lost programme targets and proven dates."""
 import json
+import pytest
 from types import SimpleNamespace
 
 from src import chronology_v2 as pipeline
@@ -119,7 +120,8 @@ def test_target_date_recovery_uses_its_own_claim_and_never_fills_missing_year():
     assert not pipeline._restore_programme_target_dates([missing], [no_year])[0].get('event_date')
 
 
-def test_verified_target_is_dated_and_unrelated_background_is_retained_undated(monkeypatch):
+@pytest.mark.parametrize("whole_event_approved", [False, True])
+def test_verified_target_is_dated_and_unrelated_background_is_retained_undated(monkeypatch, whole_event_approved):
     from src import ai_reports
     target = {'text': 'Scope changes were scheduled for completion by 5 December 2008.', 'source_ids': ['s1']}
     background = {'text': 'Subcontractor information was missing.', 'source_ids': ['s1']}
@@ -132,7 +134,7 @@ def test_verified_target_is_dated_and_unrelated_background_is_retained_undated(m
     monkeypatch.setattr(pipeline, 'synthesize', lambda **k: {'overview_claims': [background], 'entries': [event]})
     monkeypatch.setattr(pipeline, 'verify_claims', lambda **k: {
         'overview:0': True, 'event:0:0': True, 'event:0:1': True,
-        'date:0': False, 'date:0:0': True, 'date:0:1': False,
+        'date:0': whole_event_approved, 'date:0:0': True, 'date:0:1': False,
     })
     monkeypatch.setattr(ai_reports, '_model_for_task', lambda *a: 'test')
     result = ai_reports._generate_chronology_v2(project_id='p', project_name='Review', topic='Scope changes',
@@ -181,3 +183,12 @@ def test_ambiguous_ocr_day_does_not_survive_in_factual_narrative():
     confirming = EvidenceItem('s2', 'd2', 'register.pdf', excerpt='Programme letter dated 11 April 2007.')
     confirmed = {**claim, 'source_ids': ['s1', 's2']}
     assert pipeline._claims_are_source_valid({'entries': [{'claims': [confirmed]}]}, [source, confirming])
+
+
+def test_prose_target_month_is_recovered_from_its_own_source_and_claim_only():
+    source = EvidenceItem('s1', 'd1', 'agreement.pdf', excerpt='A Memorandum of Agreement is to be formally executed in June 2007.')
+    event = {'claims': [{'text': 'A Memorandum of Agreement was planned for June 2007.', 'source_ids': ['s1']}]}
+    result = pipeline._restore_programme_target_dates([event], [source])[0]
+    assert result['event_date'] == '2007-06' and result['date_precision'] == 'month'
+    foreign_year = {'claims': [{'text': 'A Memorandum of Agreement was planned for June 2008.', 'source_ids': ['s1']}]}
+    assert not pipeline._restore_programme_target_dates([foreign_year], [source])[0].get('event_date')
