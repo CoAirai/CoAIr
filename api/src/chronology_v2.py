@@ -163,10 +163,17 @@ def _claims_are_source_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> b
             numbers = [number.rstrip(".,") for number in re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)]
             if any(number not in source_text for number in numbers):
                 return False
-            if re.search(r"\b\d{1,2}(?:st|nd|rd|th)\s+\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+\s+\d{4}\b", " ".join(source_text.split())):
+            ambiguous_days = re.findall(
+                r"\b(\d{1,2})(?:st|nd|rd|th)\s+(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s+(\d{4})\b",
+                " ".join(source_text.split()),
+            )
+            if ambiguous_days:
                 # An ambiguous OCR day must not survive as a factual date in
                 # the narrative after its event-date field has been cleared.
                 for date in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s+(\d{4})\b", text):
+                    if not any(int(date[1]) in (int(first), int(second)) and date[2][:3] == month[:3] and date[3] == year
+                               for first, second, month, year in ambiguous_days):
+                        continue
                     parsed = None
                     for fmt in ("%d %B %Y", "%d %b %Y"):
                         try:
@@ -654,16 +661,15 @@ def _restore_programme_target_dates(entries: List[Dict], batch: Sequence[Evidenc
                 # A planned agreement may state a month in prose rather than
                 # a Complete-by row. Admit only wording repeated by the claim
                 # and proved verbatim in its own cited source; never fill a year.
-                matches = list(pattern.finditer(targets[0] if len(targets) == 1 else claim["text"]))
+                matches = list(pattern.finditer(targets[0] if len(targets) == 1 else source.excerpt))
                 for match in matches:
-                    if " ".join(match.group().lower().split()) not in " ".join(claim["text"].lower().split()):
-                        continue
                     day, month, year = match.groups()
                     month_number = months[month.lower()]
                     proposed = {**event, "event_date": f"{year}-{month_number:02d}" + (f"-{int(day):02d}" if day else ""),
                                 "date_precision": "exact" if day else "month", "date_source": "content_body",
                                 "date_evidence": match.group()}
-                    if _date_proven(proposed, [source]):
+                    if (_date_matches_quote(proposed["event_date"], proposed["date_precision"], claim["text"])
+                            and _date_proven(proposed, [source])):
                         proposals[proposed["event_date"]] = proposed
         if len(proposals) == 1:
             proposed = next(iter(proposals.values()))
@@ -739,7 +745,7 @@ def extract_batches(
             "evidence": evidence_markdown(batch),
             "topic": prepared.english_query, "parties": prepared.parties,
             "model": _model_for_task("chronology_extract"),
-            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v4",
+            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v5",
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
         })

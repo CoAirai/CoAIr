@@ -192,3 +192,14 @@ def test_prose_target_month_is_recovered_from_its_own_source_and_claim_only():
     assert result['event_date'] == '2007-06' and result['date_precision'] == 'month'
     foreign_year = {'claims': [{'text': 'A Memorandum of Agreement was planned for June 2008.', 'source_ids': ['s1']}]}
     assert not pipeline._restore_programme_target_dates([foreign_year], [source])[0].get('event_date')
+
+
+def test_ocr_ambiguity_does_not_discard_a_different_proven_date_on_the_same_page():
+    source = EvidenceItem('s1', 'd1', 'agreement.pdf', excerpt=(
+        'The parties agreed a phased transition on 15th\nMarch 2007. Letter dated 1st\n11\nApril 2007.'
+    ))
+    claim = {'text': 'The parties agreed a phased transition on 15 March 2007.', 'source_ids': ['s1']}
+    assert pipeline._claims_are_source_valid({'entries': [{'claims': [claim]}]}, [source])
+    restored = pipeline._restore_programme_target_dates([{'claims': [claim]}], [source])[0]
+    assert restored['event_date'] == '2007-03-15'
+    assert restored['date_evidence'] == '15th\nMarch 2007'
