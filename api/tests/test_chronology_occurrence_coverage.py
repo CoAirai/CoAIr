@@ -170,3 +170,14 @@ def test_conflicting_ocr_day_tokens_do_not_prove_a_trailing_date():
     assert pipeline._enforce_event_date(event, [source])['event_date'] == ''
     event.update(event_date='2007-04', date_precision='month', date_evidence='April 2007')
     assert pipeline._enforce_event_date(event, [source])['event_date'] == '2007-04'
+
+
+def test_ambiguous_ocr_day_does_not_survive_in_factual_narrative():
+    source = EvidenceItem('s1', 'd1', 'letter.pdf', excerpt='Programme letter dated 1st\n11\nApril 2007.')
+    claim = {'text': 'The programme letter was dated 11 April 2007.', 'source_ids': ['s1']}
+    assert not pipeline._claims_are_source_valid({'entries': [{'claims': [claim]}]}, [source])
+    generic = {**claim, 'text': 'The programme letter was submitted.'}
+    assert pipeline._claims_are_source_valid({'entries': [{'claims': [generic]}]}, [source])
+    confirming = EvidenceItem('s2', 'd2', 'register.pdf', excerpt='Programme letter dated 11 April 2007.')
+    confirmed = {**claim, 'source_ids': ['s1', 's2']}
+    assert pipeline._claims_are_source_valid({'entries': [{'claims': [confirmed]}]}, [source, confirming])

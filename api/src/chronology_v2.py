@@ -163,6 +163,22 @@ def _claims_are_source_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> b
             numbers = [number.rstrip(".,") for number in re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)]
             if any(number not in source_text for number in numbers):
                 return False
+            if re.search(r"\b\d{1,2}(?:st|nd|rd|th)\s+\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+\s+\d{4}\b", " ".join(source_text.split())):
+                # An ambiguous OCR day must not survive as a factual date in
+                # the narrative after its event-date field has been cleared.
+                for date in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s+(\d{4})\b", text):
+                    parsed = None
+                    for fmt in ("%d %B %Y", "%d %b %Y"):
+                        try:
+                            parsed = datetime.strptime(" ".join(date.groups()), fmt)
+                            break
+                        except ValueError:
+                            pass
+                    if parsed is not None and not _date_proven({
+                        "event_date": parsed.strftime("%Y-%m-%d"), "date_precision": "exact",
+                        "date_source": "content_body", "date_evidence": date.group(), "claims": [claim],
+                    }, evidence):
+                        return False
             quotations = re.findall(r'["“]([^"”]{3,})["”]', str(claim.get("text") or ""))
             if any(quote.casefold().strip() not in source_text for quote in quotations):
                 return False
