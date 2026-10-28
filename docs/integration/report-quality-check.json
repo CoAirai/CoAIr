@@ -1,0 +1,121 @@
+{
+  "kind": "fresh post-retrieval comparison; not full native-runtime or full-corpus retrieval qualification",
+  "rag": {
+    "label": "rag-pipeline",
+    "scope": "fresh post-retrieval generation, same fixed evidence pack",
+    "model": "gemini-3.6-flash",
+    "seconds": 80.4,
+    "reference_entries": 26,
+    "generated_entries": 26,
+    "reference_date_source_pairs_matched": 19,
+    "reference_event_count": 25,
+    "all_source_ids_valid": true,
+    "unresolved_footnotes": 0,
+    "audit": {
+      "footnote_references": 43,
+      "footnote_records": 43,
+      "unique_source_ids": 24,
+      "unresolved_source_ids": [],
+      "candidate_clusters": 25,
+      "synthesized_events": 25,
+      "verifier_removed_events": 0,
+      "issued_events": 25
+    },
+    "partial_reasons": [
+      "uncovered_facets"
+    ],
+    "stages": [
+      {
+        "stage": "research_plan",
+        "seconds": 1.17
+      },
+      {
+        "stage": "evidence_pack",
+        "seconds": 1.17
+      },
+      {
+        "stage": "evidence_extraction",
+        "seconds": 1.17
+      },
+      {
+        "stage": "aggregation",
+        "seconds": 26.18
+      },
+      {
+        "stage": "synthesis",
+        "seconds": 26.18
+      },
+      {
+        "stage": "verification",
+        "seconds": 65.47
+      },
+      {
+        "stage": "word",
+        "seconds": 80.25
+      }
+    ],
+    "run_id": "3f5798eaf17b4ad887e0",
+    "evidence_passages": 129,
+    "evidence_hash": "0d08cbde86f42600de2d3b553fe32bd43ce50e684fd2602dce3d5d8cb0133df5"
+  },
+  "coair": {
+    "label": "coair",
+    "scope": "fresh post-retrieval generation, same fixed evidence pack",
+    "model": "gemini-3.6-flash",
+    "seconds": 86.11,
+    "reference_entries": 26,
+    "generated_entries": 28,
+    "reference_date_source_pairs_matched": 18,
+    "reference_event_count": 25,
+    "all_source_ids_valid": true,
+    "unresolved_footnotes": 0,
+    "audit": {
+      "footnote_references": 44,
+      "footnote_records": 44,
+      "unique_source_ids": 27,
+      "unresolved_source_ids": [],
+      "candidate_clusters": 27,
+      "synthesized_events": 27,
+      "verifier_removed_events": 0,
+      "issued_events": 27
+    },
+    "partial_reasons": [
+      "uncovered_facets"
+    ],
+    "stages": [
+      {
+        "stage": "research_plan",
+        "seconds": 0.82
+      },
+      {
+        "stage": "evidence_pack",
+        "seconds": 0.82
+      },
+      {
+        "stage": "evidence_extraction",
+        "seconds": 0.82
+      },
+      {
+        "stage": "aggregation",
+        "seconds": 35.58
+      },
+      {
+        "stage": "synthesis",
+        "seconds": 35.58
+      },
+      {
+        "stage": "verification",
+        "seconds": 66.87
+      },
+      {
+        "stage": "word",
+        "seconds": 86.03
+      }
+    ],
+    "run_id": "041aeebfadf946d8bc35",
+    "evidence_passages": 129,
+    "evidence_hash": "0d08cbde86f42600de2d3b553fe32bd43ce50e684fd2602dce3d5d8cb0133df5"
+  },
+  "repeats_per_pipeline": 1,
+  "same_evidence": true
+}

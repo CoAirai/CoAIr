@@ -17,6 +17,7 @@ from pydantic import BaseModel, field_validator
 # ── Query Types ──────────────────────────────────────────────
 
 class QueryType(Enum):
+    OFFTOPIC = "offtopic"
     DOCUMENT = "document"
     DATA = "data"
     HYBRID = "hybrid"

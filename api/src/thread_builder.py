@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
+from .project_context import get_current_project_id
 from .logger import logger
 
 
@@ -64,6 +65,12 @@ class ThreadBuilder:
             self._rag = get_document_rag()
         return self._rag
 
+    def _project_doc_ids(self):
+        project_id = get_current_project_id()
+        if not project_id:
+            return []
+        return sorted(self.graph._project_doc_ids(project_id) or [])
+
     def find_threads(self, party: str) -> List[CorrespondenceThread]:
         """
         Find all correspondence threads involving a given party.
@@ -79,18 +86,22 @@ class ThreadBuilder:
             logger.warning("[ThreadBuilder] Notices table not ready")
             return []
 
+        scope = self._project_doc_ids()
+        if not scope:
+            return []
         party_lower = party.lower().strip()
 
         try:
             result = self.graph._db.execute(
-                """
+                f"""
                 SELECT doc_id, date, sender, recipient, subject,
                        doc_type, file_name, actions
                 FROM notices
-                WHERE LOWER(sender) LIKE ? OR LOWER(recipient) LIKE ?
+                WHERE doc_id IN ({",".join("?" for _ in scope)})
+                  AND (LOWER(sender) LIKE ? OR LOWER(recipient) LIKE ?)
                 ORDER BY date ASC
                 """,
-                [f"%{party_lower}%", f"%{party_lower}%"],
+                scope + [f"%{party_lower}%", f"%{party_lower}%"],
             ).fetchall()
         except Exception as e:
             logger.warning(f"[ThreadBuilder] Query failed: {e}")
@@ -165,18 +176,22 @@ class ThreadBuilder:
 
         if not self.graph._notices_table_ready:
             return thread
+        scope = self._project_doc_ids()
+        if not scope:
+            return thread
 
         try:
             result = self.graph._db.execute(
-                """
+                f"""
                 SELECT doc_id, date, sender, recipient, subject,
                        doc_type, file_name, actions
                 FROM notices
-                WHERE (LOWER(sender) LIKE ? AND LOWER(recipient) LIKE ?)
-                   OR (LOWER(sender) LIKE ? AND LOWER(recipient) LIKE ?)
+                WHERE doc_id IN ({",".join("?" for _ in scope)}) AND (
+                      (LOWER(sender) LIKE ? AND LOWER(recipient) LIKE ?)
+                   OR (LOWER(sender) LIKE ? AND LOWER(recipient) LIKE ?))
                 ORDER BY date ASC
                 """,
-                [f"%{a_lower}%", f"%{b_lower}%", f"%{b_lower}%", f"%{a_lower}%"],
+                scope + [f"%{a_lower}%", f"%{b_lower}%", f"%{b_lower}%", f"%{a_lower}%"],
             ).fetchall()
         except Exception as e:
             logger.warning(f"[ThreadBuilder] Query failed: {e}")
@@ -214,9 +229,12 @@ class ThreadBuilder:
         if not self.graph._notices_table_ready:
             return []
 
+        scope = self._project_doc_ids()
+        if not scope:
+            return []
         try:
             # Get latest message per sender-recipient pair
-            result = self.graph._db.execute("""
+            result = self.graph._db.execute(f"""
                 WITH ranked AS (
                     SELECT doc_id, date, sender, recipient, subject,
                            doc_type, file_name, actions,
@@ -231,6 +249,7 @@ class ThreadBuilder:
                     FROM notices
                     WHERE sender IS NOT NULL AND recipient IS NOT NULL
                       AND sender != '' AND recipient != ''
+                      AND doc_id IN ({",".join("?" for _ in scope)})
                 )
                 SELECT doc_id, date, sender, recipient, subject,
                        doc_type, file_name, actions
@@ -238,7 +257,7 @@ class ThreadBuilder:
                 WHERE rn = 1
                 ORDER BY date DESC
                 LIMIT 20
-            """).fetchall()
+            """, scope).fetchall()
         except Exception as e:
             logger.warning(f"[ThreadBuilder] Unanswered query failed: {e}")
             return []
@@ -264,12 +283,14 @@ class ThreadBuilder:
 
     def _get_body_preview(self, file_name: str, max_chars: int = 300) -> str:
         """Get a body preview from RAG for a given file."""
-        if not file_name:
+        project_id = get_current_project_id()
+        if not file_name or not project_id:
             return ""
 
         try:
             for doc in self.rag.documents:
-                if doc.metadata.get("file_name") == file_name:
+                if (doc.metadata.get("project_id") == project_id
+                        and doc.metadata.get("file_name") == file_name):
                     text = doc.text.strip()
                     if len(text) > max_chars:
                         return text[:max_chars] + "..."

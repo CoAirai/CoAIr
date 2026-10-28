@@ -365,6 +365,8 @@ export type CoairConversationMessage = {
     content: string;
     timestamp?: string;
     response?: {
+        assistant_text?: string;
+        sql_artifact?: import("@/lib/chat/types").SqlArtifact | null;
         citations?: Array<{
             doc_id?: string;
             doc_name?: string;
@@ -469,6 +471,7 @@ export async function sendLiveChat(input: {
 }) {
     return coairFetch<{
         assistant_text: string;
+        sql_artifact?: import("@/lib/chat/types").SqlArtifact | null;
         citations?: Array<{
             doc_id?: string;
             doc_name?: string;

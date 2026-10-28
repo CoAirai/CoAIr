@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from dataclasses import asdict
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -34,12 +34,8 @@ class ChronologyGenerateRequest(BaseModel):
     date_to: str = ""
     parties: List[str] = Field(default_factory=list, max_length=30)
     preparation_id: str = Field(default="", max_length=64)
-    # No twenty-document ceiling: it was a stand-in for cost control that did
-    # not control cost, since a document here runs from 16 to 290,294
-    # characters. The evidence budget bounds the work; this bound only stops an
-    # absurd request. The analyst's selection is read in full within that budget,
-    # shared evenly across their chosen documents.
-    source_doc_ids: List[str] = Field(default_factory=list, max_length=500)
+    # Every selected document is processed across bounded evidence batches.
+    source_doc_ids: List[str] = Field(default_factory=list)
 
     @field_validator("topic")
     @classmethod
@@ -63,7 +59,7 @@ class ToolkitEvidenceRequest(BaseModel):
     title: str = Field(min_length=3, max_length=300)
     methodology: str = Field(min_length=3, max_length=300)
     findings: List[str] = Field(min_length=1, max_length=100)
-    source_doc_ids: List[str] = Field(default_factory=list, max_length=500)
+    source_doc_ids: List[str] = Field(default_factory=list)
 
 
 class ForensicDraftUpdate(BaseModel):
@@ -316,7 +312,7 @@ def list_reports(
         raise HTTPException(403, f"feature_not_available:{module}")
     return {"reports": [_public(j) for j in get_report_job_store().list_project(
         project.project_id, module=module,
-    )]}
+    ) if not (j.get("status") == "failed" and j.get("module") == "chronology")]}
 
 
 @router.get("/reports/{job_id}")
@@ -513,9 +509,10 @@ def update_forensic_draft(
 
 
 @router.get("/reports/{job_id}/document")
-def download_report(job_id: str, project: ProjectContext = Depends(get_current_project)):
+def download_report(job_id: str, project: ProjectContext = Depends(get_current_project),
+                    format: Literal["narrative", "table"] = "narrative"):
     job = get_report_job_store().get(job_id, project.project_id)
-    if job and job["status"] == "ready" and job["module"] == "chronology" and job.get("result"):
+    if format == "table" and job and job["status"] == "ready" and job["module"] == "chronology" and job.get("result"):
         from src.chronology_template_docx import build_event_chronology_docx
         try:
             blob = build_event_chronology_docx(

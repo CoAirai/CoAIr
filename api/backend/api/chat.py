@@ -1,8 +1,9 @@
 """POST /api/chat — main chat endpoint."""
 
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.models.requests import AnswerDocumentRequest, ChatRequest
+from backend.models.requests import AnswerDocumentRequest, AnswerSpreadsheetRequest, ChatRequest
 from backend.models.responses import ChatResponse, QueryProgressResponse, QueryActivityStep
 from backend.core.dependencies import get_query_router, get_conversation_store
 from backend.core.security import UserContext, get_current_user
@@ -94,3 +95,19 @@ async def chat_answer_document(
         total_rows=req.total_rows,
     )
     return docx_response(blob, answer_filename(req.question))
+
+
+@router.post("/chat/spreadsheet")
+async def chat_answer_spreadsheet(
+    req: AnswerSpreadsheetRequest,
+    _: UserContext = Depends(get_current_user),
+):
+    """Echo supplied rows as XLSX. No project lookup or SQL execution occurs."""
+    from fastapi.responses import Response
+    from src.answer_xlsx import build_answer_xlsx
+    try:
+        blob = await asyncio.to_thread(build_answer_xlsx, req.table_columns, req.table_rows)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return Response(blob, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="coair-table.xlsx"'})

@@ -15,14 +15,11 @@ WORKDIR /build
 # wheels in this disposable stage so the production image contains no compiler.
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt ./
-RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+COPY requirements.txt requirements.lock ./
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt -c requirements.lock
 
 
 FROM python:3.11-slim
-
-ARG COAIR_COMMIT_SHA=development
-ENV COAIR_COMMIT_SHA=${COAIR_COMMIT_SHA}
 
 WORKDIR /app
 
@@ -40,11 +37,12 @@ ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
 # Copy requirements first for caching. No torch — server query embedding uses
 # fastembed (ONNX), keeping the image small and RAM low enough for a 2 GB box.
-COPY requirements.txt ./
+COPY requirements.txt requirements.lock ./
 COPY --from=python-builder /wheels /wheels
 # Installed offline from the wheels built in the previous stage, so no compiler
 # and no package index reach the production image.
-RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt -c requirements.lock \
+    && pip check \
     && rm -rf /wheels
 # Pre-bake the fastembed bge model into the image so query-time embedding works
 # offline (no first-request download). Keep in sync with LOCAL_EMBEDDING_MODEL.
@@ -91,6 +89,10 @@ COPY storage/schemas/ ./storage/schemas/
 # which masks whatever the image put there. Files here are visible at runtime
 # because nothing mounts over /app/content.
 COPY content/ ./content/
+
+# Stamp the release after dependency/model layers so every commit can reuse them.
+ARG COAIR_COMMIT_SHA=development
+ENV COAIR_COMMIT_SHA=${COAIR_COMMIT_SHA}
 
 # Cloud Run injects PORT env variable (default 8080)
 ENV PORT=8080

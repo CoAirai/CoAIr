@@ -18,6 +18,7 @@ from .config import (
 )
 from .types import QueryType, RouterDecision, LLMUsage
 from .logger import logger, log_separator
+from .project_context import get_current_project_id
 
 
 # ── Keyword sets (English only) ───────────────────────────────
@@ -241,6 +242,8 @@ class QueryRouter:
         "DATA TABLES (SQL queryable):\n{table_inventory}\n\n"
         "SCHEMA & JARGON CONTEXT (matched to this query):\n{schema_context}\n\n"
         "CATEGORIES — pick exactly ONE:\n"
+        "- OFFTOPIC: Questions unrelated to the loaded project documents or data, such as "
+        "weather, general trivia, recipes, entertainment, or unrelated arithmetic.\n\n"
         "- FILE_LIST: Questions about what files/documents exist, file counts, listing, deletion.\n"
         "  Examples: \"how many documents\", \"list all files\", \"show uploaded files\"\n\n"
         "- DATA: ANY question answerable from the DATA TABLES above. This is the PRIMARY category.\n"
@@ -311,7 +314,7 @@ class QueryRouter:
         "{learned_examples}"
         "{mode_hint}"
         "User query: {user_query}\n\n"
-        "Respond with exactly ONE word: FILE_LIST, DATA, DOCUMENT, or HYBRID."
+        "Respond with exactly ONE word: OFFTOPIC, FILE_LIST, DATA, DOCUMENT, or HYBRID."
     )
 
     HYBRID_SYNTHESIS_PROMPT = (
@@ -429,7 +432,7 @@ class QueryRouter:
 
         project_id = get_current_project_id()
         registry = get_document_registry()
-        completed = registry.get_completed(project_id=project_id or None)
+        completed = registry.get_completed(project_id=project_id)
 
         # ── File inventory (grouped by type) ──
         emails = [r for r in completed if r.file_type == "email"]
@@ -674,6 +677,9 @@ class QueryRouter:
         # question: X"), and phrases in prior turns otherwise hijack the
         # thread/draft and listing shortcuts below.
         current_q = self._current_question(query)
+        offtopic = self._classify_obvious_offtopic(current_q)
+        if offtopic is not None:
+            return offtopic
 
         expanded_query = self.jargon.expand_query(current_q)
         if expanded_query != current_q:
@@ -1224,7 +1230,9 @@ class QueryRouter:
             # The document path returns a graceful "no matching documents" answer;
             # the SQL path will fabricate aggregates over irrelevant tables.
             qtype = QueryType.DOCUMENT
-            if "FILE_LIST" in result:
+            if "OFFTOPIC" in result:
+                qtype = QueryType.OFFTOPIC
+            elif "FILE_LIST" in result:
                 qtype = QueryType.FILE_LIST
             elif "HYBRID" in result:
                 qtype = QueryType.HYBRID
@@ -1331,6 +1339,43 @@ class QueryRouter:
         if not prior or prior.casefold() in topic.casefold():
             return topic
         return f"{prior} {topic}"
+
+    _OBVIOUS_OFFTOPIC_RE = re.compile(
+        r"(?:^(?:how is|what is|what's) (?:the )?weather"
+        r"(?: (?:in|for) .+| (?!affect|impact).+)?\??$|"
+        r"\bweather (?:today|tomorrow|forecast)\b|\b(?:recipe for|horoscope|"
+        r"football score|hava durumu|yemek tarifi|burç yorumu)\b)",
+        re.IGNORECASE,
+    )
+
+    _ARITHMETIC_RE = re.compile(
+        r"^\s*(?:what\s+is\s+|calculate\s+)?\d+(?:\.\d+)?\s*"
+        r"(?:[+*/x×-]|multiplied\s+by|divided\s+by)\s*\d+(?:\.\d+)?\s*\??\s*$",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _classify_obvious_offtopic(cls, query: str) -> Optional[RouterDecision]:
+        q = cls._current_question(query)
+        if cls._OBVIOUS_OFFTOPIC_RE.search(q) or cls._ARITHMETIC_RE.match(q):
+            return RouterDecision(
+                query_type=QueryType.OFFTOPIC,
+                confidence=1.0,
+                reasons=["Question is outside the loaded project corpus"],
+                used_llm=False,
+            )
+        return None
+
+    @staticmethod
+    def _build_offtopic_response() -> Dict[str, Any]:
+        return {
+            "query_type": QueryType.OFFTOPIC.value,
+            "answer": (
+                "I can help with questions about this project's uploaded "
+                "documents and data. Please ask a project-related question."
+            ),
+            "sources": [],
+        }
 
     def _is_greeting(self, query: str) -> bool:
         """Detect simple greetings that don't need routing.
@@ -1643,7 +1688,7 @@ class QueryRouter:
             logger.debug(f"[FilenameResolve] registry unavailable: {e}")
             return []
 
-        all_completed = reg.get_completed()
+        all_completed = reg.get_completed(project_id=get_current_project_id())
         if not all_completed:
             return []
 
@@ -1673,7 +1718,7 @@ class QueryRouter:
 
         # 1) Substring hit on filename — strongest signal (within candidate set)
         for tok in tokens:
-            for rec in reg.search_by_name(tok):
+            for rec in reg.search_by_name(tok, project_id=get_current_project_id()):
                 if rec.file_name in candidate_names:
                     hits[rec.file_name] = hits.get(rec.file_name, 0) + 100
 
@@ -1864,6 +1909,8 @@ class QueryRouter:
             from src.light_graph import get_light_graph
             graph = get_light_graph()
             meta_results = graph.search_by_topic(search_topic, limit=20) if _demo_only_sources else []
+            if doc_ids:
+                meta_results = [row for row in meta_results if row.get("doc_id") in doc_ids]
             if meta_results:
                 metadata_doc_ids = [r["doc_id"] for r in meta_results if r.get("doc_id")]
                 for r in meta_results:
@@ -1938,8 +1985,12 @@ class QueryRouter:
             conversation_history_var.reset(history_token)
             answer_question_var.reset(question_token)
 
-        # 3. Merge sources — metadata first, then RAG (deduplicated)
+        # 3. Prefer actual page evidence over a metadata-only discovery record.
         rag_sources = result.get("sources", [])
+        evidence_keys = {(source.get("file_name"), source.get("page_number"))
+                         for source in rag_sources}
+        metadata_sources = [source for source in metadata_sources
+                            if (source.get("file_name"), source.get("page_number")) not in evidence_keys]
         seen_keys = {
             (s.get("file_name"), s.get("page_number"))
             for s in metadata_sources
@@ -2011,22 +2062,16 @@ class QueryRouter:
         }
 
     def _allowed_data_tables(self) -> Optional[List[str]]:
-        """The DuckDB tables this request may touch.
+        """Keep request data access within the active project, including empty ones.
 
-        Project is the boundary: the analyzer's table registry is process-wide,
-        so scoping decides whose spreadsheets answer the question. The legacy
-        corpus tag is consulted only for the one pre-project account whose
-        catalog entries carry no project_id — otherwise a fail-closed empty
-        list. ``None`` (unrestricted) is reachable only by an unscoped script.
+        Legacy corpus tags are used only by unscoped maintenance scripts.
         """
         from .document_rag import _current_user_corpus
         from .project_context import get_current_project_id
 
         project_id = get_current_project_id()
         if project_id:
-            tables = self.data_analyzer.get_tables_for_project(project_id)
-            if tables:
-                return tables
+            return self.data_analyzer.get_tables_for_project(project_id)
         corpus = _current_user_corpus()
         if corpus:
             # Legacy account (e.g. 'edinburgh'): its tables predate projects.
@@ -2045,19 +2090,16 @@ class QueryRouter:
             allowed_tables = self.data_analyzer.get_tables_for_doc_ids(doc_ids)
         else:
             allowed_tables = self._allowed_data_tables()
-            # Empty list = nothing registered for this scope. Short out cleanly;
-            # the SQL path treats an empty allow-list as falsy and would
-            # otherwise fall through to every table in the process-wide DuckDB.
-            if allowed_tables == []:
-                logger.info("   No data tables registered for this scope → clean no-data.")
-                return {
-                    "query": query,
-                    "query_type": QueryType.DATA.value,
-                    "answer": "No data tables are available for your document set yet.",
-                    "sources": [],
-                    "sql": None,
-                    "confidence": 0.5,
-                }
+        project_tables = self._allowed_data_tables()
+        if project_tables is not None:
+            allowed_tables = [name for name in (allowed_tables or []) if name in project_tables]
+        if allowed_tables == []:
+            return {
+                "query": query,
+                "query_type": QueryType.DATA.value,
+                "answer": "No data tables are available for your document set yet.",
+                "sources": [], "sql": None, "confidence": 0.5,
+            }
 
         sheet_result = self._try_sheet_reader(query, allowed_tables)
         if sheet_result is not None:
@@ -2496,13 +2538,13 @@ class QueryRouter:
             graph = get_light_graph()
 
             # Hydrate registry from existing sources if empty
-            all_docs = registry.get_all()
-            if not all_docs:
+            all_docs = registry.get_all(project_id=get_current_project_id())
+            if not all_docs and not get_current_project_id():
                 self._hydrate_registry(registry)
-                all_docs = registry.get_all()
+                all_docs = registry.get_all(project_id=get_current_project_id())
 
             completed = [r for r in all_docs if r.status == "completed"]
-            graph_stats = graph.get_document_stats()
+            graph_stats = graph.get_document_stats() if not get_current_project_id() else {}
 
             lines = [f"**Document Library Overview:**\n"]
             lines.append(f"- **Total files:** {len(completed)}")
@@ -2553,10 +2595,10 @@ class QueryRouter:
         registry = get_document_registry()
 
         # Hydrate registry from existing sources if empty
-        all_docs = registry.get_all()
-        if not all_docs:
+        all_docs = registry.get_all(project_id=get_current_project_id())
+        if not all_docs and not get_current_project_id():
             self._hydrate_registry(registry)
-            all_docs = registry.get_all()
+            all_docs = registry.get_all(project_id=get_current_project_id())
 
         completed = [r for r in all_docs if r.status == "completed"]
 
@@ -2720,10 +2762,10 @@ class QueryRouter:
         registry = get_document_registry()
 
         # Hydrate if needed
-        all_docs = registry.get_all()
-        if not all_docs:
+        all_docs = registry.get_all(project_id=get_current_project_id())
+        if not all_docs and not get_current_project_id():
             self._hydrate_registry(registry)
-            all_docs = registry.get_all()
+            all_docs = registry.get_all(project_id=get_current_project_id())
 
         completed = [r for r in all_docs if r.status == "completed"]
         if not completed:
@@ -2789,6 +2831,10 @@ class QueryRouter:
         results: List[Dict[str, Any]] = []
         seen_doc_ids: set = set()
         registry = get_document_registry()
+
+        project_id = get_current_project_id()
+        if not project_id:
+            return []
 
         # 1. Light graph: notices (richest metadata)
         try:
@@ -2856,7 +2902,7 @@ class QueryRouter:
 
         # 3. Registry fallback: filename match
         try:
-            name_matches = registry.search_by_name(topic)
+            name_matches = registry.search_by_name(topic, project_id=project_id)
             for rec in name_matches:
                 if rec.doc_id in seen_doc_ids:
                     continue
@@ -2901,10 +2947,10 @@ class QueryRouter:
                     "MAX(CASE WHEN lower(file_name) LIKE ? THEN 1 ELSE 0 END) AS name_hit, "
                     "COUNT(*) AS hits "
                     "FROM chunks "
-                    "WHERE lower(file_name) LIKE ? OR lower(text) LIKE ? "
+                    "WHERE project_id = ? AND (lower(file_name) LIKE ? OR lower(text) LIKE ?) "
                     "GROUP BY doc_id, file_name "
                     "ORDER BY name_hit DESC, hits DESC LIMIT ?",
-                    [kw, kw, kw, limit],
+                    [kw, project_id, kw, kw, limit],
                 ).fetchall()
                 for doc_id, file_name, _name_hit, _hits in rows:
                     if not doc_id or doc_id in seen_doc_ids:
@@ -2949,7 +2995,7 @@ class QueryRouter:
                 except Exception:
                     notice_extractor = None
 
-                rag_result = self.document_rag.query(topic, top_k=10)
+                rag_result = self.document_rag.query(topic, top_k=10, project_id=project_id, synthesize=False)
                 for src in rag_result.get("sources", []):
                     file_name = src.get("file_name", "")
                     doc_id = src.get("doc_id", "")
@@ -3452,6 +3498,8 @@ class QueryRouter:
         doc_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Dispatch query to appropriate handler by type."""
+        if query_type == QueryType.OFFTOPIC:
+            return self._build_offtopic_response()
         if query_type == QueryType.FILE_LIST:
             return self._handle_file_list_query(query, doc_ids)
         elif query_type == QueryType.THREAD:
@@ -3471,6 +3519,9 @@ class QueryRouter:
     ) -> Dict[str, Dict[str, Any]]:
         """Dispatch query to dual-provider handlers by type."""
         from .config import LLM_PROVIDERS
+
+        if query_type == QueryType.OFFTOPIC:
+            return {p: self._build_offtopic_response() for p in LLM_PROVIDERS}
 
         allowed_tables = self.data_analyzer.get_tables_for_doc_ids(doc_ids) if doc_ids else None
 
@@ -3641,6 +3692,28 @@ class QueryRouter:
 
     # ── Main entry point ──────────────────────────────────────
 
+    @staticmethod
+    def _selected_text_context(doc_ids) -> bool:
+        """Only bypass routing for owned text documents with extracted context.
+
+        Spreadsheet and mixed selections must retain SQL/hybrid routing.
+        """
+        from .document_rag import answer_context_var
+        if not doc_ids or not answer_context_var.get():
+            return False
+        from .document_registry import get_document_registry
+        from .project_context import get_current_project_id
+        project = get_current_project_id()
+        if not project:
+            return False
+        registry = get_document_registry()
+        for doc_id in set(doc_ids):
+            rec = registry.get(doc_id)
+            if (not rec or rec.project_id != project
+                    or not rec.file_name.lower().endswith(('.pdf', '.docx', '.doc', '.txt', '.rtf'))):
+                return False
+        return True
+
     def route_and_execute(self, query: str, doc_ids: Optional[List[str]] = None, mode: str | None = None, email_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Classify and route query to appropriate handler.
         Complex queries are routed through the hybrid executor for multi-step planning.
@@ -3669,6 +3742,9 @@ class QueryRouter:
             except Exception:
                 pass
 
+            if self._classify_obvious_offtopic(query):
+                return self._build_offtopic_response()
+
             # Expand jargon
             expanded = self.jargon.expand_query(query)
             if expanded != query:
@@ -3681,9 +3757,10 @@ class QueryRouter:
             # that grounded context instead of re-classifying. (Only the DOCUMENT/
             # HYBRID synthesis path actually uses the injected context, so routing
             # elsewhere would waste it.) Mode-less: triggered by any selection.
-            if email_ids:
+            selected_context_files = email_ids or (doc_ids if self._selected_text_context(doc_ids) else None)
+            if selected_context_files:
                 logger.info(
-                    f"   {len(email_ids)} selected context file(s) "
+                    f"   {len(selected_context_files)} selected context file(s) "
                     f"-> forcing DOCUMENT (answer from injected context)"
                 )
                 trace.route = "DOCUMENT_SELECTED_CONTEXT"
@@ -3905,15 +3982,21 @@ class QueryRouter:
                 trace.route = "GREETING"
                 return self._build_greeting_response()
 
+            if self._classify_obvious_offtopic(query):
+                from .config import LLM_PROVIDERS
+                return {"query": query, "query_type": QueryType.OFFTOPIC.value,
+                        "answers": {p: self._build_offtopic_response() for p in LLM_PROVIDERS}}
+
             expanded = self.jargon.expand_query(query)
             if expanded != query:
                 logger.info(f"   Jargon expanded: {expanded[:100]}...")
 
             # Selected context files: bypass classification.
             # See route_and_execute for rationale. Mode-less: any selection.
-            if email_ids:
+            selected_context_files = email_ids or (doc_ids if self._selected_text_context(doc_ids) else None)
+            if selected_context_files:
                 logger.info(
-                    f"   {len(email_ids)} selected context file(s) "
+                    f"   {len(selected_context_files)} selected context file(s) "
                     f"-> forcing DOCUMENT (answer from injected context)"
                 )
                 trace.route = "DOCUMENT_SELECTED_CONTEXT_DUAL"
@@ -3925,7 +4008,7 @@ class QueryRouter:
                     "routing": {
                         "decision": QueryType.DOCUMENT.value,
                         "confidence": 1.0,
-                        "reasons": [f"Selected-context bypass with {len(email_ids)} file(s)"],
+                        "reasons": [f"Selected-context bypass with {len(selected_context_files)} file(s)"],
                         "used_llm": False,
                     },
                 }

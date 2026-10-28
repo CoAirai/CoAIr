@@ -1,0 +1,32 @@
+{
+  "files": {
+    "src/router.py": "9da47d55b0241af355363b829b5f65683bc23207475acc09880a7ec0c4f93e48",
+    "src/react_agent.py": "c517c087669875a51d30c20afbd9cfca53cbcb62a631bff36d6b9884c48fd56c",
+    "src/query_planner.py": "578382189d3d7a430b6dde642742ee2e2819b2d251bb452341a8f3b6e931057e",
+    "src/document_agent.py": "a93852ed076b82322132b7848e429fd1535705c043b4ab1af8c843277222e070",
+    "src/hybrid_executor.py": "ea7c3d86ff2d0ac78ee695514a3ac3b97ddc7c4b9902010b168dfa0eeddc7cdd",
+    "src/document_rag.py": "dddf18a65829019c481c7a6f6d64207b167faba621563e591e0d7c03109b793c",
+    "src/llm_client.py": "c1818e49ec04ec509f4fafbc45f2910ad390b48b9066319bcda95e7f1f00f314",
+    "src/chunk_store.py": "b564509b50b7855749a89151be57fc3133cadb4be4f0688923642910b2e964cd",
+    "src/lexical_index.py": "d2eb5430ea35a5a5b2b536262841e9a3497048e114ede890a8dd6512cc43204f",
+    "src/ai_reports.py": "1274fe144579851d89d2f3b50cd46f2dbff9e4153d693ca313c7cb3a0e1387e3",
+    "src/chronology_v2.py": "b5b81ee24f2843577a2faa43389d97ce9078c90d33b50fd10f3fef9bd08d848c",
+    "src/chronology_v3.py": "42f216d6ad521932d70e15559ef6f223f948d839b2a383be3df096c297e60b4d",
+    "src/report_docx.py": "d9800c77c80ad892faac5d57c048ebdeda5f54cd3b8c69cad6d206f27faab963",
+    "backend/services/chat_orchestrator.py": "9cf741c43c56be15f6836e266bded5ee6fef5678b29f2a69d45bba473aa7a4bd"
+  },
+  "policy": {
+    "LLM_PROVIDER": "gemini",
+    "GEMINI_MODEL": "gemini-3.6-flash",
+    "GEMINI_MODEL_LITE": "gemini-2.5-flash-lite",
+    "EMBEDDING_PROVIDER": "fastembed",
+    "CHRONOLOGY_PIPELINE_VERSION": "v2",
+    "CHRONOLOGY_V3_DEMO_ENABLED": "false",
+    "AUTHORED_CHRONOLOGY_ENABLED": "false"
+  },
+  "captured_date": "2026-10-24",
+  "source": "AWS63 mvp-api, read-only runtime files",
+  "image": "coair-chronology:20261021-clean-list",
+  "coair_base": "ca5302b9b1b8c75cb78bfe8fe2c57b8c119ed417",
+  "purpose": "Reference hashes and policy before any agent-porting changes; not an instruction to overwrite Coair files."
+}

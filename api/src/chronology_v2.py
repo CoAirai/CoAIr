@@ -6,6 +6,8 @@ import hashlib
 import json
 import re
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
@@ -31,6 +33,8 @@ VERIFICATION_BATCH_CLAIMS = 30
 ALLOWED_DATE_SOURCES = {
     "content_header", "content_body", "table_period", "unresolved",
 }
+MAX_EVENT_CLAIMS = 4
+MAX_OVERVIEW_CLAIMS = 5
 
 COVERAGE_FACETS: Dict[str, Tuple[str, ...]] = {
     "contractual_framework": ("contract", "agreement", "obligation", "clause", "scope"),
@@ -68,29 +72,29 @@ class EventModel(BaseModel):
     date_precision: str = "unknown"
     date_source: str = "unresolved"
     date_evidence: str = ""
-    claims: List[ClaimModel] = Field(min_length=1, max_length=2)
+    claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_EVENT_CLAIMS)
     parties: List[str] = Field(default_factory=list, max_length=20)
     event_type: str = "event"
     conflicting_positions: List[str] = Field(default_factory=list, max_length=10)
 
 
 class ExtractionModel(BaseModel):
-    entries: List[EventModel] = Field(default_factory=list, max_length=18)
+    entries: List[EventModel] = Field(default_factory=list)
 
 
 class ChronologyModel(BaseModel):
-    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
     entries: List[EventModel] = Field(default_factory=list)
 
 
 class DraftChronologyModel(BaseModel):
     """Compatibility name for callers that inspect the synthesis model."""
-    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
     entries: List[EventModel] = Field(default_factory=list)
 
 
 class OverviewModel(BaseModel):
-    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=3)
+    overview_claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_OVERVIEW_CLAIMS)
 
 
 class EventSynthesisModel(BaseModel):
@@ -150,13 +154,46 @@ def _claims_are_source_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> b
                 return False
             source_text = " ".join(by_id[sid] for sid in source_ids)
             text = str(claim.get("text") or "").casefold()
-            numbers = re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)
+            numbers = [number.rstrip(".,") for number in re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)]
             if any(number not in source_text for number in numbers):
                 return False
             quotations = re.findall(r'["“]([^"”]{3,})["”]', str(claim.get("text") or ""))
             if any(quote.casefold().strip() not in source_text for quote in quotations):
                 return False
     return True
+
+
+def _date_matches_quote(event_date: str, precision: str, quote: str) -> bool:
+    """Normalize only date wording actually present in the supplied quotation."""
+    names = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december")
+    months = {alias: i for i, name in enumerate(names, 1) for alias in (name, name[:3])}
+    months["sept"] = 9
+    candidates = set()
+    def add(year, month=1, day=1, depth=3):
+        try:
+            year = datetime.strptime(str(year), "%y").year if len(str(year)) == 2 else int(year)
+            value = datetime(year, int(month), int(day)).strftime("%Y-%m-%d")
+            candidates.add(value[:{1:4, 2:7, 3:10}[depth]])
+        except ValueError:
+            pass
+    for year, month, day in re.findall(r"\b(\d{4})-(\d{2})-(\d{2})\b", quote):
+        add(year, month, day)
+    for day, month, year in re.findall(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})\b", quote):
+        add(year, month, day)
+    for day, month, year in re.findall(r"\b(\d{1,2})(?:st|nd|rd|th)?[\s-]+([A-Za-z]+)\.?[,]?[\s-]+(\d{4}|\d{2})\b", quote):
+        if month.lower() in months:
+            add(year, months[month.lower()], day)
+    for month, day, year in re.findall(r"\b([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?[,]?\s+(\d{4})\b", quote):
+        if month.lower() in months:
+            add(year, months[month.lower()], day)
+    for month, year in re.findall(r"\b([A-Za-z]+)\.?\s+(\d{4})\b", quote):
+        if month.lower() in months:
+            add(year, months[month.lower()], depth=2)
+    for year, month in re.findall(r"\b(\d{4})-(\d{2})\b", quote):
+        add(year, month, depth=2)
+    if precision == "year":
+        return bool(re.search(r"(?<!\d)" + re.escape(event_date) + r"(?!\d)", quote))
+    return any(value.startswith(event_date) for value in candidates)
 
 
 def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
@@ -175,16 +212,15 @@ def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
     if date_source not in ALLOWED_DATE_SOURCES - {"unresolved"}:
         return False
     pattern = patterns.get(precision)
-    if not pattern or not re.fullmatch(pattern, event_date) or not date_evidence:
+    if (not pattern or not re.fullmatch(pattern, event_date) or not date_evidence
+            or not _date_matches_quote(event_date, precision, date_evidence)):
         return False
     by_id = {item.source_id: item.excerpt.casefold() for item in evidence}
     source_ids = {
         str(source_id) for claim in event.get("claims", [])
         for source_id in claim.get("source_ids", [])
     }
-    return date_evidence.casefold() in " ".join(
-        by_id.get(source_id, "") for source_id in source_ids
-    )
+    return any(date_evidence.casefold() in by_id.get(source_id, "") for source_id in source_ids)
 
 
 def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
@@ -199,6 +235,8 @@ def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
             "date_precision": "unknown", "date_source": "unresolved",
             "date_evidence": "",
         })
+    elif str(value.get("date_precision") or "").casefold() == "day":
+        value["date_precision"] = "exact"
     return value
 
 
@@ -291,15 +329,8 @@ def _project_domain_hint(project_id: str) -> str:
     resolve is not an error — the glossary then falls back to the generic
     sense, which is what it did before this existed.
     """
-    pid = str(project_id or "").strip()
-    if not pid:
-        return ""
-    try:
-        from .project_store import get_project_store
-        project = get_project_store().get_project(pid)
-    except Exception:  # noqa: BLE001 - the hint is an optimisation, never a gate
-        return ""
-    return str((project or {}).get("name") or "").strip()
+    from .jargon_manager import project_domain_hint
+    return project_domain_hint(project_id)
 
 
 def prepare_chronology_query(
@@ -424,7 +455,7 @@ def source_preview(
     # the top places to whatever was longest.
     from .evidence_pack import select_pack
 
-    selection = select_pack(evidence, facets=COVERAGE_FACETS)
+    selection = select_pack(evidence, facets=COVERAGE_FACETS, max_chars=None)
     selected_ids = {item.source_id for item in selection.evidence}
 
     docs: Dict[str, Dict] = {}
@@ -527,7 +558,9 @@ def evidence_batches(evidence: Sequence[EvidenceItem], max_chars: int = EVIDENCE
     current: List[EvidenceItem] = []
     size = 0
     for item in evidence:
-        item_size = len(item.excerpt) + 160
+        item_size = len(evidence_markdown([item])) + 1
+        if item_size > max_chars:
+            raise ValueError("evidence_passage_exceeds_batch_budget")
         if current and size + item_size > max_chars:
             batches.append(current); current = []; size = 0
         current.append(item); size += item_size
@@ -573,7 +606,8 @@ def extract_batches(
     Only a non-structured failure (auth, network, budget) aborts the run — those
     are systemic and retrying smaller pieces cannot help.
     """
-    results: List[Dict] = []
+    from threading import Lock
+    counter_lock = Lock()
     counters = stats if stats is not None else {}
     counters.setdefault("batches_total", 0)
     counters.setdefault("batches_failed", 0)
@@ -597,7 +631,7 @@ def extract_batches(
         if save_step:
             save_step(key, input_hash, "failed", None, error_code)
 
-    def run(batch: List[EvidenceItem], key: str, depth: int = 0) -> None:
+    def run(batch: List[EvidenceItem], key: str, output: List[Dict], depth: int = 0) -> None:
         input_hash = _hash({
             "evidence": [asdict(item) for item in batch],
             "prompt": chronology_prompt_hash(),
@@ -605,7 +639,7 @@ def extract_batches(
         })
         previous = load_step(key, input_hash) if load_step else None
         if previous and previous.get("status") == "ready":
-            results.extend((previous.get("output") or {}).get("entries", [])); return
+            output.extend((previous.get("output") or {}).get("entries", [])); return
         if save_step:
             save_step(key, input_hash, "processing", None, "")
         try:
@@ -618,7 +652,7 @@ def extract_batches(
             )
             if save_step:
                 save_step(key, input_hash, "ready", {"entries": entries}, "")
-            results.extend(entries)
+            output.extend(entries)
         except Exception as exc:
             if not _is_structured_output_error(exc):
                 raise
@@ -630,16 +664,24 @@ def extract_batches(
                 # no step key ending in "b" has ever been recorded in
                 # production. run() now only raises for systemic errors, which
                 # should abort the whole run anyway.
-                run(batch[:middle], key + "a", depth + 1)
-                run(batch[middle:], key + "b", depth + 1)
+                run(batch[:middle], key + "a", output, depth + 1)
+                run(batch[middle:], key + "b", output, depth + 1)
                 return
-            fail(batch, key, input_hash, exc)
+            with counter_lock:
+                fail(batch, key, input_hash, exc)
 
     batches = evidence_batches(evidence)
     counters["batches_total"] = len(batches)
-    for index, batch in enumerate(batches, 1):
-        run(list(batch), f"extract:{index}")
-    return results
+    def read_one(index, batch):
+        output: List[Dict] = []
+        run(list(batch), f"extract:{index}", output)
+        return output
+
+    # Match the existing synthesis concurrency; preserve input order on merge.
+    with ThreadPoolExecutor(max_workers=min(3, max(1, len(batches)))) as pool:
+        futures = [pool.submit(copy_context().run, read_one, index, batch)
+                   for index, batch in enumerate(batches, 1)]
+        return [event for future in futures for event in future.result()]
 
 
 def _event_key(raw: Dict) -> Tuple[str, str]:
@@ -690,6 +732,7 @@ def _candidate_source_ids(event: Dict) -> set[str]:
 
 def _synthesis_batches(
     events: Sequence[Dict], evidence: Sequence[EvidenceItem], *, max_chars: int = 180_000,
+    max_events: int | None = SYNTHESIS_BATCH_EVENTS,
 ) -> List[List[Dict]]:
     by_id = {item.source_id: item for item in evidence}
     batches: List[List[Dict]] = []
@@ -704,7 +747,7 @@ def _synthesis_batches(
             for source_id in added_ids if source_id in by_id
         )
         if current and (
-            len(current) >= SYNTHESIS_BATCH_EVENTS or size + added_size > max_chars
+            (max_events is not None and len(current) >= max_events) or size + added_size > max_chars
         ):
             batches.append(current); current = []; current_ids = set(); size = 0
             added_ids = event_ids
@@ -790,25 +833,36 @@ def synthesize(
             save_step(step_key, input_hash, "ready", output, "")
         return output
 
-    overview_hash = _hash({
-        "clusters": ordered, "evidence": [asdict(item) for item in selected],
-        "prompt": chronology_prompt_hash(), "schema": OverviewModel.model_json_schema(),
-    })
-    overview_prompt = (
-        f"{base}\n\nCreate only the sourced overview; do not return dated events.\n\n"
-        f"EVENT CLUSTERS:\n{json.dumps(ordered, ensure_ascii=False)}\n\n"
-        f"EVIDENCE BEGIN\n{evidence_markdown(selected)}\nEVIDENCE END"
-    )
-    overview = call_step(
-        "synthesis:overview", overview_hash, overview_prompt,
-        schema_name="chronology_v2_overview", validation_model=OverviewModel,
-        semantic_validator=lambda value: _claims_are_source_valid(
-            {"overview_claims": value.get("overview_claims", []), "entries": []}, selected,
-        ),
-    )
+    def synthesize_overview(events: List[Dict], level: int = 0) -> Dict:
+        # Only the overview is reduced. Every event is still written separately
+        # below; summary compression must never become event omission.
+        chunks = _synthesis_batches(events, evidence, max_chars=120_000, max_events=None)
+        if len(chunks) > 1:
+            summaries = []
+            for number, chunk in enumerate(chunks, 1):
+                part = overview_call(chunk, f"synthesis:overview:{level}:{number}")
+                summaries.extend({"claims": [claim]} for claim in part.get("overview_claims", []))
+            if len(summaries) >= len(events):
+                raise ValueError("overview_reduction_did_not_converge")
+            return synthesize_overview(summaries, level + 1)
+        return overview_call(events, "synthesis:overview" if level == 0 else f"synthesis:overview:reduce:{level}")
 
-    entries: List[Dict] = []
-    for batch_number, batch in enumerate(_synthesis_batches(ordered, evidence), 1):
+    def overview_call(events: List[Dict], step_key: str) -> Dict:
+        ids = {sid for event in events for sid in _candidate_source_ids(event)}
+        context = [item for item in selected if item.source_id in ids]
+        input_hash = _hash({
+            "clusters": events, "evidence": [asdict(item) for item in context],
+            "prompt": chronology_prompt_hash(), "schema": OverviewModel.model_json_schema(),
+        })
+        overview_prompt = (
+            f"{base}\n\nCreate only the sourced overview; do not return dated events.\n\n"
+            f"EVENT CLUSTERS:\n{json.dumps(events, ensure_ascii=False)}\n\n"
+            f"EVIDENCE BEGIN\n{evidence_markdown(context)}\nEVIDENCE END"
+        )
+        return call_step(step_key, input_hash, overview_prompt, schema_name="chronology_v2_overview",
+                         validation_model=OverviewModel)
+
+    def synthesize_batch(batch_number: int, batch: List[Dict]) -> List[Dict]:
         expected_ids = {str(item["cluster_id"]) for item in batch}
         batch_ids = {source_id for event in batch for source_id in _candidate_source_ids(event)}
         batch_evidence = [item for item in evidence if item.source_id in batch_ids]
@@ -818,7 +872,6 @@ def synthesize(
             returned = [str(item.get("cluster_id") or "") for item in values]
             return (
                 len(returned) == len(expected) and set(returned) == expected
-                and _claims_are_source_valid({"entries": values}, batch_evidence)
             )
 
         input_hash = _hash({
@@ -837,7 +890,20 @@ def synthesize(
             input_hash, prompt, schema_name="chronology_v2_event_batch",
             validation_model=EventSynthesisModel, semantic_validator=batch_valid,
         )
-        entries.extend(output.get("entries", []))
+        return list(output.get("entries", []))
+
+    # These drafts use independent evidence batches. Keep provider concurrency
+    # bounded and collect in batch order; every claim is still verified below.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        overview_future = pool.submit(
+            copy_context().run, synthesize_overview, ordered,
+        )
+        event_futures = [
+            pool.submit(copy_context().run, synthesize_batch, number, batch)
+            for number, batch in enumerate(_synthesis_batches(ordered, evidence), 1)
+        ]
+        overview = overview_future.result()
+        entries = [entry for future in event_futures for entry in future.result()]
 
     draft = {
         "overview_claims": overview.get("overview_claims", []),
@@ -845,6 +911,8 @@ def synthesize(
             str(item.get("event_date") or "9999-99-99"), str(item.get("cluster_id") or ""),
         )),
     }
+    # Keep source-supported claims before the independent verifier; one invalid
+    # claim must not reject a usable batch before this safety pass can run.
     return _prune_source_invalid_claims(draft, selected)
 
 
@@ -860,6 +928,14 @@ def verify_claims(
     for index, claim in enumerate(chronology.get("overview_claims", [])):
         claims.append({"claim_ref": f"overview:{index}", **claim})
     for event_index, event in enumerate(chronology.get("entries", [])):
+        if event.get("event_date"):
+            claims.append({
+                "claim_ref": f"date:{event_index}", "verification_kind": "event_date",
+                "event_date": event["event_date"], "date_precision": event.get("date_precision"),
+                "date_source": event.get("date_source"), "date_evidence": event.get("date_evidence"),
+                "text": " ".join(str(c.get("text") or "") for c in event.get("claims", [])),
+                "source_ids": sorted({sid for c in event.get("claims", []) for sid in c.get("source_ids", [])}),
+            })
         for claim_index, claim in enumerate(event.get("claims", [])):
             claims.append({"claim_ref": f"event:{event_index}:{claim_index}", **claim})
     if not claims:
@@ -889,6 +965,11 @@ def verify_claims(
                 f"TOPIC: {prepared.english_query}\n{prompts['verifier']}\n\n"
                 f"CLAIMS:\n{json.dumps(batch, ensure_ascii=False)}\n\n"
                 f"EVIDENCE BEGIN\n{evidence_markdown(cited)}\nEVIDENCE END\n\n"
+                "For verification_kind=event_date, approve only if the quoted date normalizes to event_date "
+                "and explicitly dates ALL the event's assertions. A date on a cover, design programme or "
+                "retrospective witness statement does not date subsequent works or quantities. If any "
+                "assertion has no proven temporal link, reject the date decision; the factual claims "
+                "are judged separately and may remain as undated evidence. "
                 "Return exactly one decision for every claim_ref. Use reason_code values such as "
                 "supported, missing_source, number_not_found, quotation_not_found, date_conflict, "
                 "unattributed_position or unsupported_causation."

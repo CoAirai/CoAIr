@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Icon from "@/components/Icon";
+import SourceTable from "@/components/Chat/SourceTable";
 import { useAuth } from "@/context/AuthContext";
 import {
     fileKindLabel,
@@ -231,7 +232,8 @@ const SourcePdfPreview = ({
                                     className="w-full rounded"
                                 />
                             )}
-                            {!loading && !error && !hasImage && (
+                            {!loading && !error && live?.type === "table" && <SourceTable content={live} />}
+                            {!loading && !error && !hasImage && live?.type !== "table" && (
                                 <>
                                     <div className="text-[11px] uppercase tracking-[0.18em] text-soft-400">
                                         Page {page}

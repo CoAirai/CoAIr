@@ -531,6 +531,15 @@ class DataAnalyzerSQL:
         self._jargon = None
         logger.info("SQL Data Analyzer initialized (DuckDB)")
 
+    def _project_tables(self, allowed_tables: Optional[List[str]] = None):
+        """Intersect every request allowlist with the active project before use."""
+        project_id = _active_project()
+        if not project_id:
+            return allowed_tables
+        project_tables = self.get_tables_for_project(project_id)
+        return [name for name in project_tables
+                if allowed_tables is None or name in allowed_tables]
+
     def _execute_checked(self, sql: str, allowed_tables: Optional[List[str]] = None):
         """Run generated SQL behind the table-reference guard.
 
@@ -551,6 +560,7 @@ class DataAnalyzerSQL:
         read_csv_auto/read_parquet.
         """
         from .prompt_security import TABLE_FUNCTION, find_table_violation
+        allowed_tables = self._project_tables(allowed_tables)
         allowed = allowed_tables if allowed_tables is not None \
             else list(self.tables.keys())
         violation = find_table_violation(sql, allowed)
@@ -2301,6 +2311,10 @@ class DataAnalyzerSQL:
         Uses lazy summary for small results.
         If allowed_tables is provided, only consider those tables.
         """
+        allowed_tables = self._project_tables(allowed_tables)
+        if allowed_tables == [] or (table_name is not None and allowed_tables is not None and table_name not in allowed_tables):
+            return {"answer": "No data tables are available for this project and document selection.",
+                    "sources": [], "sql": None, "result_data": None}
         log_separator("SQL Data Query")
         logger.info(f"Question: {question[:100]}...")
 
@@ -2352,8 +2366,8 @@ class DataAnalyzerSQL:
                 table_name = None
             if table_name is None:
                 space = self.tables
-                if allowed_tables:
-                    space = {k: v for k, v in self.tables.items() if k in allowed_tables} or self.tables
+                if allowed_tables is not None:
+                    space = {k: v for k, v in self.tables.items() if k in allowed_tables}
                 if space:
                     table_name = max(space.keys(),
                                      key=lambda n: self.tables.get(n, {}).get("row_count", 0))
@@ -2525,6 +2539,10 @@ class DataAnalyzerSQL:
                             table_name: Optional[str] = None,
                             allowed_tables: Optional[List[str]] = None) -> Dict[str, Any]:
         """Query data using a specific LLM provider for SQL gen and summary."""
+        allowed_tables = self._project_tables(allowed_tables)
+        if allowed_tables == [] or (table_name is not None and allowed_tables is not None and table_name not in allowed_tables):
+            return {"answer": "No data tables are available for this project and document selection.",
+                    "sources": [], "sql": None, "result_data": None}
         log_separator(f"SQL Data Query ({provider})")
         logger.info(f"[{provider}] Question: {question[:100]}...")
 
@@ -2689,7 +2707,10 @@ class DataAnalyzerSQL:
         """Get DuckDB table names belonging to the given doc_ids."""
         from .document_rag import generate_doc_id
         matching = []
+        project_id = _active_project()
         for table_name, info in self.tables.items():
+            if project_id and info.get('project_id') != project_id:
+                continue
             source_file = info.get('source_file', info.get('file_path', ''))
             if source_file:
                 table_doc_id = generate_doc_id(source_file)
@@ -2803,6 +2824,7 @@ class DataAnalyzerSQL:
 
         Defensive: returns None on any problem so callers fall back to per-table.
         """
+        allowed_tables = self._project_tables(allowed_tables)
         try:
             names = []
             for name, info in self.tables.items():
@@ -2872,6 +2894,7 @@ class DataAnalyzerSQL:
         grouped/combined views (e.g. mis-quoting space-containing columns). Falls
         back to the standard single-table query path when no schema applies.
         """
+        allowed_tables = self._project_tables(allowed_tables)
         try:
             tname = self.select_table(question, allowed_tables=allowed_tables)
             schema = ""
@@ -2896,6 +2919,7 @@ class DataAnalyzerSQL:
         Select the best table for a question.
         Strategy: LLM-based selection with heuristic fallback.
         """
+        allowed_tables = self._project_tables(allowed_tables)
         search_space = self.tables
         if allowed_tables is not None:
             search_space = {k: v for k, v in self.tables.items() if k in allowed_tables}
@@ -2982,6 +3006,7 @@ class DataAnalyzerSQL:
         Used for multi-table queries that may need data from several sources.
         Filters out _clean/_raw view duplicates to avoid querying same data twice.
         """
+        allowed_tables = self._project_tables(allowed_tables)
         search_space = self.tables
         if allowed_tables is not None:
             search_space = {k: v for k, v in self.tables.items() if k in allowed_tables}

@@ -883,6 +883,7 @@ def generate_text(
     last_error = None
     thinking_degraded = False
     retry_count = max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
+    original_prompt = prompt
     for attempt in range(1 + retry_count):
         try:
             if chronology_budget_active_var.get():
@@ -1080,6 +1081,15 @@ def generate_text(
                 break
 
             if attempt < retry_count:
+                if isinstance(e, LLMInvalidStructuredOutputError) and response_schema:
+                    # Reuse the existing retry budget, with the exact cardinality
+                    # constraints omitted by some providers' schema dialects.
+                    prompt = original_prompt + (
+                        "\n\nThe previous output failed validation. Regenerate valid JSON using the "
+                        "same supplied evidence. Follow every required field and minItems/maxItems "
+                        "constraint below. Preserve source-supported substance; do not invent facts "
+                        "or silently discard evidence to fit.\n" + json.dumps(response_schema, ensure_ascii=False)
+                    )
                 # Longer backoff for rate limit errors
                 _is_rate_limit = False
                 try:
@@ -1343,8 +1353,20 @@ def _structured_text_validator(
             validation_model.model_validate(value)
         elif not _schema_accepts(value, schema):
             return False
-        return semantic_validator(value) if semantic_validator is not None else True
-    except Exception:
+        valid = semantic_validator(value) if semantic_validator is not None else True
+        if not valid:
+            logger.warning(f"[StructuredOutput] semantic rejection model={getattr(validation_model, '__name__', 'schema')}")
+        return valid
+    except Exception as exc:
+        # Log field paths and error types only; source text and provider output
+        # may contain private project data and must not be copied into logs.
+        from pydantic import ValidationError
+        fields = [{"location": error["loc"], "type": error["type"]}
+                  for error in exc.errors(include_input=False)[:8]] if isinstance(exc, ValidationError) else []
+        logger.warning(
+            f"[StructuredOutput] schema rejection model={getattr(validation_model, '__name__', 'schema')} "
+            f"error={type(exc).__name__} fields={fields}"
+        )
         return False
 
 

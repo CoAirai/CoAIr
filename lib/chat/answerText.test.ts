@@ -9,7 +9,7 @@ import {
 } from "./answerText";
 
 function partsOf(block: AnswerBlock): AnswerPart[] {
-    return block.type === "table" ? [] : block.parts;
+    return block.type === "table" || block.type === "code" ? [] : block.parts;
 }
 
 function cites(parts: AnswerPart[]) {
@@ -188,4 +188,21 @@ describe("citationForReference", () => {
             excerpt: "award",
         });
     });
+});
+
+
+describe("DGX compact headings", () => {
+    it("accepts compact multi-hash headings while preserving inline hashes and hashtags", () => {
+        expect(parseAnswer("###Summary")[0]).toEqual({type: "heading", parts: [{type:"text", text:"Summary"}]});
+        expect(parseAnswer("#hashtag and C# remain text")[0].type).toBe("paragraph");
+        expect(parseAnswer("#######invalid")[0].type).toBe("paragraph");
+    });
+});
+
+it("does not interpret headings and formulas in code fences", () => {
+    expect(parseAnswer("```text\n###Literal\n```" )).toEqual([{type:"code", text:"###Literal"}]);
+});
+
+it("neutralizes spreadsheet formulas in CSV while retaining numeric negatives", () => {
+    expect(tableCsv(["Value"], [["=HYPERLINK(1)"], ["-25.5"]])).toBe('"Value"\n"\'=HYPERLINK(1)"\n"-25.5"');
 });

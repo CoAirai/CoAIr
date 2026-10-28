@@ -10,6 +10,7 @@ Schema: chunks(chunk_id, doc_id, file_name, page_number, text)
 The lexical_index module builds a DuckDB FTS index over this table.
 """
 import hashlib
+import os
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -44,7 +45,10 @@ class ChunkStore:
                     inst = super().__new__(cls)
                     inst._db_lock = threading.RLock()
                     inst._con = None
-                    inst._dirty = True  # FTS index needs (re)build
+                    # Existing DuckDB FTS schemas are durable. A process restart
+                    # alone must not force the first user query to rebuild them.
+                    inst._dirty = False
+                    inst._dirty_generation = 0
                     inst._init_db()
                     cls._instance = inst
         return cls._instance
@@ -59,7 +63,13 @@ class ChunkStore:
         except Exception:
             pass
         try:
-            self._con = duckdb.connect(str(CHUNKS_DB))
+            settings = {}
+            if os.getenv("COAIR_DUCKDB_MEMORY_LIMIT"):
+                settings["memory_limit"] = os.environ["COAIR_DUCKDB_MEMORY_LIMIT"]
+            if os.getenv("COAIR_DUCKDB_THREADS"):
+                settings["threads"] = int(os.environ["COAIR_DUCKDB_THREADS"])
+            self._con = (duckdb.connect(str(CHUNKS_DB), config=settings) if settings
+                         else duckdb.connect(str(CHUNKS_DB)))
             self._con.execute(
                 "CREATE TABLE IF NOT EXISTS chunks ("
                 "chunk_id VARCHAR PRIMARY KEY, doc_id VARCHAR, "
@@ -69,6 +79,7 @@ class ChunkStore:
             cols = {r[1] for r in self._con.execute("PRAGMA table_info('chunks')").fetchall()}
             if "project_id" not in cols:
                 self._con.execute("ALTER TABLE chunks ADD COLUMN project_id VARCHAR DEFAULT ''")
+            self._dirty = self._read_fts_dirty()
             logger.info(f"[ChunkStore] Ready ({self.count()} chunks)")
         except Exception as e:
             logger.error(f"[ChunkStore] init failed: {e}")
@@ -101,9 +112,37 @@ class ChunkStore:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_document_index_project_doc "
             "ON document_index(project_id, doc_id)"
         )
+        self._con.execute(
+            "CREATE TABLE IF NOT EXISTS chunk_store_meta ("
+            "key VARCHAR PRIMARY KEY, value VARCHAR NOT NULL)"
+        )
+        # Existing databases predate the durable flag, so force one migration
+        # rebuild. mark_clean() flips this to 0 after the FTS checkpoint.
+        self._con.execute(
+            "INSERT OR IGNORE INTO chunk_store_meta VALUES ('fts_dirty', '1')"
+        )
+
+    def _read_fts_dirty(self) -> bool:
+        try:
+            row = self._con.execute(
+                "SELECT value FROM chunk_store_meta WHERE key='fts_dirty'"
+            ).fetchone()
+            return not row or row[0] != "0"
+        except Exception:
+            return True
+
+    def _set_fts_dirty(self, dirty: bool) -> None:
+        self._dirty = bool(dirty)
+        if dirty:
+            self._dirty_generation = getattr(self, "_dirty_generation", 0) + 1
+        self._con.execute(
+            "INSERT OR REPLACE INTO chunk_store_meta VALUES ('fts_dirty', ?)",
+            ["1" if dirty else "0"],
+        )
 
     def connection(self):
-        return self._con
+        # Independent result state prevents parallel readers stealing rows.
+        return self._con.cursor()
 
     # ── Writes ───────────────────────────────────────────────
     def add_chunks(self, rows: List[Dict]) -> int:
@@ -143,7 +182,7 @@ class ChunkStore:
                     logger.debug(f"[ChunkStore] insert skipped: {e}")
             inserted = self.count() - before
             if inserted:
-                self._dirty = True
+                self._set_fts_dirty(True)
                 self._persist()
         logger.info(f"[ChunkStore] +{inserted} chunks ({self.count()} total)")
         return inserted
@@ -169,7 +208,7 @@ class ChunkStore:
                 )
                 removed = before - self.count()
                 if removed or indexed_before:
-                    self._dirty = True
+                    self._set_fts_dirty(True)
                     self._persist()
                 return removed
             except Exception as e:
@@ -191,7 +230,8 @@ class ChunkStore:
     # ── Reads ────────────────────────────────────────────────
     def count(self) -> int:
         try:
-            return int(self._con.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+            with self.connection() as con:
+                return int(con.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
         except Exception:
             return 0
 
@@ -199,13 +239,30 @@ class ChunkStore:
         return self.count() == 0
 
     def mark_clean(self):
-        self._dirty = False
+        self._set_fts_dirty(False)
 
     def mark_dirty(self):
-        self._dirty = True
+        with self._db_lock:
+            self._set_fts_dirty(True)
+
+    def fts_revision(self) -> int:
+        with self._db_lock:
+            return getattr(self, "_dirty_generation", 0)
+
+    def mark_clean_if_unchanged(self, revision: int) -> bool:
+        with self._db_lock:
+            if getattr(self, "_dirty_generation", 0) != revision:
+                return False
+            self._set_fts_dirty(False)
+            return True
 
     def is_dirty(self) -> bool:
         return self._dirty
+
+    def checkpoint(self) -> None:
+        """Persist database-side indexes after a successful rebuild."""
+        with self._db_lock:
+            self._persist()
 
 
 def get_chunk_store() -> ChunkStore:

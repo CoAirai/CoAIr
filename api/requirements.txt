@@ -1,3 +1,6 @@
+# Resolve against the qualified runtime closure; avoid implicit SDK upgrades.
+-c requirements.lock
+
 # Core Framework
 llama-index>=0.10.0
 llama-index-llms-gemini>=0.1.0

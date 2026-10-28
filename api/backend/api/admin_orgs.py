@@ -54,6 +54,30 @@ class OrgUpdate(BaseModel):
     archived: Optional[bool] = None
 
 
+@router.patch("/admin/orgs/{org_id}")
+def update_organization(
+    org_id: str, req: OrgUpdate,
+    _admin: UserContext = Depends(require_admin),
+    store: OrgStore = Depends(get_org_store),
+):
+    if not store.get_org(org_id):
+        raise HTTPException(404, "organization_not_found")
+    fields = req.model_dump(exclude_unset=True)
+    archived = fields.pop("archived", None)
+    if any(value is None for value in fields.values()):
+        raise HTTPException(422, "organization_fields_cannot_be_null")
+    try:
+        if fields:
+            store.update_org(org_id, **fields)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if archived is True:
+        store.archive_org(org_id)
+    elif archived is False:
+        store.unarchive_org(org_id)
+    return store.get_org(org_id)
+
+
 class OrgMemberRequest(BaseModel):
     username: str = Field(min_length=1, max_length=120)
     role: Literal["owner", "member"] = "member"

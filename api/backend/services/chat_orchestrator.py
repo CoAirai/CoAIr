@@ -7,13 +7,45 @@ from typing import List, Optional
 
 from src.router import QueryRouter
 from src.conversation_store import ConversationStore, Message, format_chat_context
-from src.config import LLM_PROVIDERS, ENABLE_DUAL_PROVIDER, CHAT_MEMORY_MESSAGES, CHAT_MEMORY_MAX_CHARS
+from src.config import LLM_PROVIDERS, ENABLE_DUAL_PROVIDER, CHAT_MEMORY_MESSAGES
 
 from backend.services.response_builder import build_chat_response
 from backend.models.responses import ChatResponse, QuotaInfo
 
 
 class ChatOrchestrator:
+
+    _FOLLOWUP_PREFIX_RE = re.compile(
+        r"^(?:and|also|then|so|but|peki|ya|ayrıca|devam|what about|how about)\b",
+        re.IGNORECASE,
+    )
+    _FOLLOWUP_REFERENCE_RE = re.compile(
+        r"\b(?:it|its|this|that|these|those|they|them|their|former|latter|"
+        r"bunu|bunun|bundan|buna|onu|onun|onlar|bunlar)\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _needs_conversation_context(cls, query: str) -> bool:
+        """Keep history only for questions that explicitly depend on a prior turn."""
+        q = " ".join((query or "").split()).strip()
+        if not q:
+            return False
+        if re.search(r"\b(?:this project|the project|bu proje)\b", q, re.IGNORECASE):
+            return bool(cls._FOLLOWUP_PREFIX_RE.search(q))
+        return bool(
+            cls._FOLLOWUP_PREFIX_RE.search(q)
+            or cls._FOLLOWUP_REFERENCE_RE.search(q)
+        )
+
+    @classmethod
+    def _followup_context(cls, messages: list[Message], query: str) -> str:
+        if not cls._needs_conversation_context(query):
+            return ""
+        # One preceding user/assistant pair is enough to resolve references and
+        # prevents old, already-expanded answers from growing every new prompt.
+        return format_chat_context(messages[-2:], max_messages=2, max_chars=3000)
+
 
     @staticmethod
     def _serialize_response_sources(response: ChatResponse, query_type: str) -> list | None:
@@ -100,33 +132,33 @@ class ChatOrchestrator:
         # 2. Build context-augmented query from recent messages
         recent = store.get_recent_messages(conversation_id, CHAT_MEMORY_MESSAGES)
         context_msgs = recent[:-1] if recent else []
-        context = format_chat_context(
-            context_msgs, CHAT_MEMORY_MESSAGES, CHAT_MEMORY_MAX_CHARS
-        )
+        context = self._followup_context(context_msgs, query)
         augmented = f"{context}\n\nCurrent question: {query}" if context else query
 
         # Capture the user's EXPLICIT selection (before the conversation-scoped
         # fallback below) so we can inject the selected docs' full text directly.
         explicit_doc_ids = list(doc_ids) if doc_ids else []
 
+        answer_context_parts = []
+
         # 3. Build email context for correspondence mode (email files only)
         if email_ids:
             email_context = self._build_email_context(email_ids, project_id)
             if email_context:
-                augmented = f"{email_context}\n\n{augmented}"
+                answer_context_parts.append(email_context)
                 # Also scope doc_ids to selected emails for RAG
                 if not doc_ids:
                     doc_ids = email_ids
 
-        # 3b. Inject the full OCR/extracted text of explicitly selected NON-email
+        # 3b. Inject query-relevant passages of explicitly selected NON-email
         # documents (PDF/DOCX/TXT) directly into the prompt. Covers general doc
         # selection and PDF "conversations" picked in correspondence mode (those
         # are not .eml/.msg, so the email path skips them and they land here).
         doc_context = self._build_document_context(
-            list(dict.fromkeys((email_ids or []) + explicit_doc_ids)), project_id,
+            list(dict.fromkeys((email_ids or []) + explicit_doc_ids)), project_id, query=query,
         )
         if doc_context:
-            augmented = f"{doc_context}\n\n{augmented}"
+            answer_context_parts.append(doc_context)
 
         # Preserve ``query`` for routing/history while making its compact
         # glossary interpretation available to every downstream retrieval and
@@ -175,9 +207,13 @@ class ChatOrchestrator:
         if email_ids and self._is_draft_intent(query):
             support = self._build_draft_support_context(query, project_id=project_id)
             if support:
-                augmented = f"{augmented}\n\n{support}"
+                answer_context_parts.append(support)
 
         is_dual = ENABLE_DUAL_PROVIDER and len(LLM_PROVIDERS) >= 2
+        # Selected evidence belongs in synthesis, never glossary expansion,
+        # classification or the retrieval query. Keep Coair's history contract.
+        from src.document_rag import answer_context_var
+        context_token = answer_context_var.set("\n\n".join(answer_context_parts))
         try:
             if is_dual:
                 raw_result = await asyncio.to_thread(
@@ -233,6 +269,9 @@ class ChatOrchestrator:
                     },
                 }
 
+        finally:
+            answer_context_var.reset(context_token)
+
         # 4b. Corpus catch-all: for an 'edinburgh' user, drop any source whose file
         # isn't in their (chunk-store) corpus. Belt-and-suspenders over the handler
         # gates — kills demo leaks (light_graph notices / SQL tables) into the
@@ -286,6 +325,7 @@ class ChatOrchestrator:
             ),
             sql=response.sql_artifact.generated_sql if response.sql_artifact else None,
             result_data=response.sql_artifact.preview_rows if response.sql_artifact else None,
+            sql_artifact=response.sql_artifact.model_dump() if response.sql_artifact else None,
         )
         store.add_message(conversation_id, assistant_msg)
 
@@ -523,38 +563,34 @@ class ChatOrchestrator:
             logging.getLogger("app").warning(f"[Orchestrator] Email context build failed: {e}")
             return ""
 
-    # Per-document and total caps so a large selection never blows up the prompt
-    # (and the LLM cost). Mirrors the spirit of CHAT_MEMORY_MAX_CHARS.
-    _DOC_CONTEXT_PER_DOC_MAX = 8000
+    # A prompt window, not a document-reading limit: scan every selected page
+    # and retain the best passages. Normal project/selection-scoped retrieval
+    # remains available for evidence outside this supplemental window.
     _DOC_CONTEXT_TOTAL_MAX = 16000
 
-    def _build_document_context(self, doc_ids: List[str], project_id: str) -> str:
-        """Inject the full OCR/extracted text of explicitly selected NON-email
-        documents (PDF/DOCX/TXT) into the prompt.
-
-        When a user selects specific documents (general selection, chronological
-        view, or a PDF conversation in correspondence mode), ground the answer
-        directly in those files' text rather than relying only on RAG retrieval
-        scope. Full text is read from the chunk store (the persistent mirror of
-        post-OCR chunk text), ordered by page. Emails are skipped here — they are
-        handled by _build_email_context.
-        """
-        if not doc_ids:
+    def _build_document_context(self, doc_ids: List[str], project_id: str,
+                                query: str = "") -> str:
+        if not doc_ids or not project_id:
             return ""
-        try:
-            from src.document_registry import get_document_registry
-            from src.chunk_store import get_chunk_store
+        import heapq
+        from src.selected_passages import selected_passages
+        from src.document_registry import get_document_registry
+        from src.chunk_store import get_chunk_store
 
+        try:
             registry = get_document_registry()
             con = get_chunk_store().connection()
-        except Exception as e:
+        except Exception:
             import logging
-            logging.getLogger("app").warning(f"[Orchestrator] Document context init failed: {e}")
+            logging.getLogger("app").warning("Selected document window unavailable", exc_info=True)
             return ""
-
-        blocks: List[str] = []
-        total = 0
-        seen: set[str] = set()
+        terms = set(re.findall(r"[a-z0-9]{3,}", query.casefold()))
+        terms -= {"the", "and", "does", "what", "which", "document", "please", "from"}
+        # Only a small heap is retained, even for multi-megabyte selections.
+        best = []
+        sequence = 0
+        scanned = 0
+        seen = set()
         for doc_id in doc_ids:
             if not doc_id or doc_id in seen:
                 continue
@@ -562,47 +598,34 @@ class ChatOrchestrator:
             rec = registry.get(doc_id)
             if not rec or (getattr(rec, "project_id", "") or "") != project_id:
                 continue
-            file_name = rec.file_name or doc_id
-            fl = file_name.lower()
-            if fl.endswith((".eml", ".msg")) or getattr(rec, "file_type", "") == "email":
-                continue  # emails handled by _build_email_context
-
-            # Full extracted text from the chunk store, ordered by page. Fall back
-            # to a file_name lookup when the doc_id doesn't match (the same id
-            # mismatch _resolve_canonical_doc_id guards against on the read side).
-            text = ""
-            try:
-                rows = con.execute(
-                    "SELECT text FROM chunks WHERE project_id=? AND doc_id=? "
-                    "ORDER BY page_number",
-                    [project_id, doc_id],
-                ).fetchall()
-                if not rows and file_name:
-                    rows = con.execute(
-                        "SELECT text FROM chunks WHERE project_id=? AND file_name=? "
-                        "ORDER BY page_number",
-                        [project_id, file_name],
-                    ).fetchall()
-                text = "\n\n".join((r[0] or "") for r in rows).strip()
-            except Exception:
-                text = ""
-            if not text:
+            name = rec.file_name or doc_id
+            if name.lower().endswith((".eml", ".msg")) or getattr(rec, "file_type", "") == "email":
                 continue
-
-            if len(text) > self._DOC_CONTEXT_PER_DOC_MAX:
-                text = text[: self._DOC_CONTEXT_PER_DOC_MAX] + "\n…[truncated]"
-            block = f"--- DOCUMENT: {file_name} ---\n{text}\n--- END {file_name} ---"
-            if total + len(block) > self._DOC_CONTEXT_TOTAL_MAX:
-                break
-            blocks.append(block)
-            total += len(block)
-
+            for page, text in selected_passages(con, registry, project_id, doc_id, name):
+                scanned += 1
+                words = re.findall(r"[a-z0-9]{3,}", text.casefold())
+                hits = sum(word in terms for word in words)
+                distinct = len(terms.intersection(words))
+                score = distinct + min(hits, 20) / 100
+                block = f"--- DOCUMENT: {name} | ID: {doc_id} | Page: {page} ---\n{text}\n--- END ---"
+                candidate = (score, -sequence, block)
+                sequence += 1
+                if len(best) < 24:
+                    heapq.heappush(best, candidate)
+                elif candidate[:2] > best[0][:2]:
+                    heapq.heapreplace(best, candidate)
+        blocks = []
+        total = 0
+        for _, _, block in sorted(best, reverse=True):
+            if total + len(block) <= self._DOC_CONTEXT_TOTAL_MAX:
+                blocks.append(block)
+                total += len(block)
         if not blocks:
             return ""
-
-        header = (
-            f"SELECTED DOCUMENTS ({len(blocks)}) — treat the text below as the "
-            f"primary source of truth for the user's request. If the answer is "
-            f"not present in it, say so explicitly:"
+        return (
+            f"SELECTED DOCUMENT EXCERPTS ({len(blocks)} of {scanned} scanned passages): "
+            "query-relevant excerpts, not a complete reading. Use these together with "
+            "retrieved passages from the selected files. Absence here does not prove "
+            "that a document lacks information. State when the evidence is insufficient.\n\n"
+            + "\n\n".join(blocks)
         )
-        return header + "\n\n" + "\n\n".join(blocks)

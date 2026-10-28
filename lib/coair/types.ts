@@ -1,3 +1,5 @@
+import type { SqlArtifact } from "@/lib/chat/types";
+
 export type CoairUserPayload = {
     username: string;
     display_name: string;
@@ -74,4 +76,5 @@ export type CoairChatResponse = {
     ui_intent?: string;
     assistant_text: string;
     citations?: CoairCitation[];
+    sql_artifact?: SqlArtifact | null;
 };

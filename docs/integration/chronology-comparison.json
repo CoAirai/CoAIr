@@ -1,0 +1,1827 @@
+{
+  "review_date_local": "2026-10-25",
+  "timezone": "Europe/Istanbul",
+  "target_commit": "d5b321773a71147e2e277bd468df66ffaaa1e4e1",
+  "method": {
+    "order": [
+      [
+        "rag",
+        "mudfa"
+      ],
+      [
+        "coair",
+        "mudfa"
+      ],
+      [
+        "coair",
+        "gogar"
+      ],
+      [
+        "rag",
+        "gogar"
+      ],
+      [
+        "rag",
+        "utilities"
+      ],
+      [
+        "coair",
+        "utilities"
+      ]
+    ],
+    "images": {
+      "rag": "coair-chronology:20261021-clean-list",
+      "coair": "ghcr.io/coairai/coair-integration-api:d5b321773a71147e2e277bd468df66ffaaa1e4e1"
+    },
+    "corpus": {
+      "project_id": "0fb88a60b80648d5",
+      "chunks": 135451,
+      "files": 7289,
+      "text_characters": 240105771,
+      "snapshot_sha256": "6d2366738e62b43a7c2265df8576a1b1b55aedfc06cd1a67351c1216ca7ea3bb",
+      "source_native_duckdb": "1.5.5"
+    },
+    "scope": "Full native chronology planning/retrieval/selection/generation/Word; isolated native account/event stores; common readonly production Qdrant and files; no HTTP/UI timing",
+    "cpu": 1,
+    "memory_bytes": 3221225472,
+    "repeats_per_case_engine": 1,
+    "source_hashes": {
+      "ai_reports.py": "1274fe144579851d89d2f3b50cd46f2dbff9e4153d693ca313c7cb3a0e1387e3",
+      "chronology_v2.py": "b5b81ee24f2843577a2faa43389d97ce9078c90d33b50fd10f3fef9bd08d848c",
+      "chronology_discovery.py": "ad6baba5fd63f74da59b6c24fa0056a62902d4a0cf77c72472cdbf020ae33794",
+      "evidence_pack.py": "3ce81ceeeded001aebecb3a6adad18dfb991100fc868f987894308a56d9f1f24",
+      "document_rag.py": "dddf18a65829019c481c7a6f6d64207b167faba621563e591e0d7c03109b793c",
+      "lexical_index.py": "d2eb5430ea35a5a5b2b536262841e9a3497048e114ede890a8dd6512cc43204f"
+    },
+    "memory_note": "First RAG case limit raised during retrieval from 2 to 3 GiB; subsequent cases use 3 GiB from start. Not a controlled latency benchmark.",
+    "target_hashes": {
+      "ai_reports.py": "1bc5dd575d7b3fc01c6fd10f17c0edde144101f4e6a2cc7c3a7f4996abc110ed",
+      "chronology_v2.py": "8b9e9eddc17584bd23294394b14e3fa1f787eeaeeafcd130fce4ff500a5f38ce",
+      "chronology_discovery.py": "ad6baba5fd63f74da59b6c24fa0056a62902d4a0cf77c72472cdbf020ae33794",
+      "evidence_pack.py": "3ce81ceeeded001aebecb3a6adad18dfb991100fc868f987894308a56d9f1f24",
+      "document_rag.py": "a8908bdf531c317eaaba74f5f2f6f536c773e0a605f15a94f1afcde3a1b89872",
+      "lexical_index.py": "27482df5f6309ebe330243b9a20945d7a18f369a3444e0e65e968d7086d709e8"
+    },
+    "source_code_equal": {
+      "ai_reports.py": false,
+      "chronology_v2.py": false,
+      "chronology_discovery.py": true,
+      "evidence_pack.py": true,
+      "document_rag.py": false,
+      "lexical_index.py": false
+    },
+    "metadata_note": "Registry records scoped only inside QA clones by matching file names against project-owned chunks; 9 records. Native document_index included in the corpus export. Master-event stores start empty in both QA stores; event vector index disabled, native audit discovery falls back to ordinary retrieval.",
+    "latency_note": "One run per case/engine; first target FTS rebuild and differing warm-index state; no statistical speedup claim.",
+    "resource_probe": "RAG Gogar first attempt OOM at 3GiB before evidence selection; excluded. Subsequent runs cap native DuckDB memory at 1GiB and threads=1 in cloned stores. Earlier completed MUDFA and failed Coair Gogar used native automatic DB memory.",
+    "source_project_vectors_read_only": 156200,
+    "running_integration_api_memory_bytes": 2147483648,
+    "full_corpus_on_running_two_gib_api": "not qualified by these disposable three-GiB engine runs"
+  },
+  "runs": [
+    {
+      "engine": "rag",
+      "case": {
+        "id": "mudfa",
+        "topic": "Utility diversion works under MUDFA: contractual scope, mobilisation, recorded diversion difficulties and programme consequences",
+        "date_from": "",
+        "date_to": ""
+      },
+      "project_id": "0fb88a60b80648d5",
+      "model": "gemini-3.6-flash",
+      "prompt_hash": "cc787b383d90c08707e06b07d38aa69b58e05a3272a9ac972caeb8654e54e717",
+      "event_discovery_mode": "audit",
+      "initialization_seconds": 3.78,
+      "provider_response_cache": "disabled",
+      "run_id": "2b69b56e6da3431a9455",
+      "status": "completed",
+      "entries": 32,
+      "claims": 40,
+      "evidence_passages": 124,
+      "evidence_files": 33,
+      "invalid_source_ids": [],
+      "word": {
+        "paragraphs": 35,
+        "tables": 0,
+        "footnotes": 52,
+        "unresolved_footnotes": 0,
+        "sha256": "67221a166775757894d63bf1d202b2c1e49ed859c5393c8ec18010d9015aef27"
+      },
+      "coverage_status": "partial",
+      "partial_reasons": [
+        "uncovered_facets",
+        "master_event_no_hits"
+      ],
+      "audit": {
+        "footnote_references": 52,
+        "footnote_records": 52,
+        "unique_source_ids": 29,
+        "unresolved_source_ids": [],
+        "candidate_clusters": 33,
+        "synthesized_events": 33,
+        "verifier_removed_events": 2,
+        "issued_events": 31
+      },
+      "research_audit": {
+        "event_discovery": {
+          "mode": "audit",
+          "master_hits": 0,
+          "fallback_hits": 145,
+          "master_status": {
+            "states": {
+              "processing": 0,
+              "not_started": 0,
+              "queued": 0,
+              "failed": 0,
+              "stale": 0,
+              "partial": 0,
+              "ready": 0
+            },
+            "observation_count": 0,
+            "cluster_count": 0,
+            "complete": false,
+            "partial_reasons": []
+          },
+          "master_coverage": {
+            "delay/disruption": 0,
+            "notice/correspondence": 0,
+            "instruction/direction": 0,
+            "variation/change": 0,
+            "programme_update/data_date": 0,
+            "extension_of_time/claim": 0,
+            "meeting/decision/agreement": 0,
+            "dispute/adjudication": 0,
+            "party_position/response": 0
+          },
+          "missing_facets": [
+            "delay/disruption",
+            "notice/correspondence",
+            "instruction/direction",
+            "variation/change",
+            "programme_update/data_date",
+            "extension_of_time/claim",
+            "meeting/decision/agreement",
+            "dispute/adjudication",
+            "party_position/response"
+          ],
+          "incomplete_doc_ids": [],
+          "partial_reasons": [
+            "master_event_no_hits"
+          ],
+          "dense_event_index_used": false,
+          "counter_observation_hits": 0,
+          "search_degradations": [],
+          "event_index_gap_doc_ids": []
+        }
+      },
+      "pack": {
+        "documents": 33,
+        "fragments": 104,
+        "passages": 124,
+        "chars": 124830,
+        "batches_total": 2,
+        "batches_failed": 0,
+        "passages_dropped": 0,
+        "batch_errors": [],
+        "events": 31,
+        "selection": {
+          "candidates": 145,
+          "dropped_below_floor": 21,
+          "dropped_document_cap": 0,
+          "dropped_budget": 0,
+          "admitted_for_coverage": 0,
+          "stopped_early": "",
+          "relevance_floor": 0.35,
+          "distinct_dates": 66,
+          "selected_passages": 124,
+          "selected_chars": 124830,
+          "selected_documents": 33
+        }
+      },
+      "selected_doc_ids": [
+        "0223cd2c-4a17-4fb3-a692-901d71f9fa78",
+        "070a314f-c86b-4ddb-8a4c-2719ba59e3ee",
+        "0ec1b2aa-1ccc-47bc-82a3-eabc3205a111",
+        "0ee684d3-5b21-40dc-85e0-eba9a7484ef9",
+        "0eeacc0d7def9c5a",
+        "10d74c46-299a-4e06-8597-7d0f7c2bf7ce",
+        "14f02fb6-46f5-43cc-b4e2-aa2691ea9a7b",
+        "16b7759c-8f93-493c-8e37-bd9a5559509c",
+        "1b2f32c5-8b51-46ee-8e93-f0250cc4ad72",
+        "1c21d015-0669-442b-87e1-042f5b72243f",
+        "1e654a66-11b3-4b81-888e-bef97bf111f3",
+        "214c137d-62f4-4dc6-82c4-d761c744e1ac",
+        "21965827-0b90-4c67-83f1-a1fb3074974e",
+        "2365f1e1-7dd7-486d-b445-5eea1dbf4789",
+        "238a4406-f83f-4429-881d-62ae080be7ad",
+        "26fdc49c-14d0-4022-aac8-0d1a368d4ae6",
+        "281f388f-0906-4309-bee0-a8ccee9e8f24",
+        "2cb39a54-0ec2-46bb-9efb-ced55eeff3e4",
+        "2cbbd45e-9851-4883-b28c-df8eda51b62c",
+        "2e37b10d-8f01-411f-802b-645128cb204c",
+        "3152ebd9569db8d8",
+        "355cd3ae-673b-408c-be8b-26b387ccdd04",
+        "39f9f356-42d9-4dbc-8327-59503fda95d4",
+        "401f13fd-2e7d-4e7c-8c8c-8faef115f9f2",
+        "4092c243-6f71-4ee0-b1f1-87a5ce00f2c8",
+        "427ef53c-a4fc-4661-beb7-31535e876542",
+        "4349a202-9bae-4a5e-9dc1-055065ce2eec",
+        "45d776e1-a747-4087-a3bc-79588501c37b",
+        "462f2dd4-5541-4768-90d6-030bdc4b9e17",
+        "46614ba7-f110-4b0b-8a97-dcdb3c93cfaa",
+        "478b603c-42db-4da9-bf16-ae4e7cd06bbc",
+        "4b430014-f231-4f49-98f3-13cd65613338",
+        "4f4625bd-f8cc-4ea6-892c-fa81157cd2ef",
+        "4fc3f584-f36e-4ec3-9b4e-91faf4876f9c",
+        "53cc0b6e-1ab4-488c-b8d9-fd078d9587e2",
+        "568a3ffe-df1e-4bde-b4eb-afa1954e531a",
+        "58282b57-efc4-4972-8d39-84a4c45977d2",
+        "599d23c2-2084-4721-a5a2-e5e6861cbd5c",
+        "603ead7b4125b1fc",
+        "611491105a157cb6",
+        "622edd91-8456-4f31-9d5f-ba230b29abaa",
+        "62a8fc97-53e9-4912-b7ad-75c4a778d124",
+        "63d9f113641234ca",
+        "64ac28c6-89ab-43a1-addd-70976f9033d0",
+        "693b147e-9f17-4419-ba94-f576e3ea1ab5",
+        "6aec63c3-a8f2-498a-abae-9da6a8c67e1f",
+        "6b7c90bc-de12-4e55-afa9-369af50fa7f5",
+        "700da06a-c29a-4856-8bc7-f4dbc06a3229",
+        "739287c2-652f-4493-b398-b9877e69082c",
+        "742aad61-2d20-4e9f-a9ff-87b6c0b08806",
+        "75e24035-f17e-49f2-bf71-fe5d023c73e4",
+        "7dad76b2-6eab-421f-ac9c-985b8eda71cc",
+        "839a2f93-4685-4d00-ab5c-42d23bcd4e2e",
+        "87d8b260-2efb-43a7-84f7-373564406916",
+        "87fbd800-5a59-4e7a-8694-732784e49c9d",
+        "8802e5b4-c6c1-4fa4-bed1-355886f734a9",
+        "8b4736f8-45ea-4402-94cf-5d941755f1c9",
+        "8f3b843c-5650-4426-9852-3213634c3158",
+        "912fc61f-1a7f-40ae-8048-c6499675abd0",
+        "9228d1a8-153a-4244-a24f-80b1fce9c26d",
+        "92f1e5e1-17e9-462c-b2d7-d057c33ebb40",
+        "9302cc1078852a2f",
+        "93796139-7eb2-40cf-8f3c-ab3fcb7ce9cc",
+        "9416069e-35b9-44d1-a24f-5bfb8f4ee910",
+        "98106bcd-fdf7-465a-8db7-ee3f98d53956",
+        "9983a1ac-1f46-4875-967c-62fa71dbbfac",
+        "9be65ba1-632e-4878-843b-cc73261151a8",
+        "9ce7832b-e130-4ce4-9a9c-18c39a144c4e",
+        "9ffc95a7-069d-4031-9d6e-33309972d7d4",
+        "a0973c1b-8eca-432e-874f-3fdea2699ce0",
+        "a2b4d1d3-ac2a-44a7-bc48-21ad39140750",
+        "a637bc7a-ae53-4f7e-aabd-febac0d535f3",
+        "a86f70bf-46bc-42bc-9292-d99184acb18b",
+        "a877be18-28e8-4f85-910e-22ebc7363081",
+        "ab74e7b5-4ab1-4eb5-b787-1f833eeffae9",
+        "af391b6f-f8e6-4d3b-a763-1306d3d7bd2c",
+        "b7628c64-5944-4eff-aa86-ab8ac6b4525a",
+        "b7a2a496-ec66-436c-bc42-9298095dee12",
+        "b9bab2b0-60da-4eab-b158-b6c7598b74a1",
+        "ba948165-cf5a-4daa-9047-24a0025fff83",
+        "bd4b5022-88a8-4928-b81e-c078eb69fc09",
+        "be238b27-c615-4056-ad76-7b6b790ee87f",
+        "c234d28dc4b45744",
+        "c4391bc9-1878-4368-9bc6-571d82fc86f6",
+        "c4bf45c1-719d-48a7-9632-fb83a76fd908",
+        "c502c3e3-d0d0-4233-b74a-8fc91885417d",
+        "c613d817-b952-4eaa-b7d6-bbd395ad080a",
+        "ca4f607c-ffb8-4955-9ede-1519af5c19ef",
+        "d8986ab019661d3d",
+        "d8ef2ecfc8110f64",
+        "d8f45f2604541671",
+        "da5780f0-cd69-4ccc-b8b9-ce1562ed5d31",
+        "daba382b-ef02-4a99-aebc-956e8a1e7908",
+        "e0d3b765-eb37-4587-b15d-5f00bc7f3886",
+        "e4020747-98b6-46d5-9754-484af42bb0c6",
+        "e4981132-8da4-4f68-9ddb-dacb060cf2b1",
+        "e73542fc54b3b32c",
+        "e7ee01bc-e74a-42a0-9d82-7d35c78fa237",
+        "ee029afb-a2ad-415d-ab7f-115a322ae72d",
+        "f3e0e902-d88c-458d-b2fa-f27cc1e33f52",
+        "f71d0df6-6cf0-4d44-ab03-749edd836862",
+        "f7c5a265-01c3-474d-a0e1-252c61962933",
+        "fbecc5a6-743b-4a80-a161-0db97689566b",
+        "fe8c16db-f03b-4182-954c-7e015ae02b85"
+      ],
+      "research_questions": [
+        "MUDFA contract framework scope obligations works information",
+        "Framework contract for diversion of utilities in advance of tram construction, whose late and incomplete delivery was a central delay issue framework Products, services, and results to be delivered by the project or contract obligations NEC3 defined term describing the works to be provided and constraints on how they are provided",
+        "MUDFA mobilisation baseline programme schedule planned dates key milestones",
+        "Multi-Utilities Diversion Framework Agreement mobilisation Approved or selected reference programme used to measure planned dates, progress, and variance Time model of project work, logic, resources, and milestones; often synonymous with programme planned dates key milestones",
+        "utility diversion design access site clearance site handover interfaces",
+        "utility diversion design access site clearance site Controlled transfer of completed works, information, access, responsibility, and operational readiness interfaces",
+        "unidentified utilities unknown services diversion difficulties obstruction delay",
+        "unidentified utilities unknown services diversion difficulties Buried structure, service or material impeding excavation or piling, and a common source of delay claims A time effect in which work or completion occurs later than planned or contractually required",
+        "MUDFA instructions notices change orders variation requests scope changes",
+        "Multi-Utilities Diversion Framework Agreement instructions notices change orders Contractual change to the scope, quantity, quality, sequence, method, or conditions of the works requests Products, services, and results to be delivered by the project or contract changes",
+        "contemporaneous party positions progress reports correspondence meeting minutes MUDFA",
+        "contemporaneous party positions progress reports Letters, emails, notices, memoranda, and other communications exchanged or recorded on a project meeting minutes Multi-Utilities Diversion Framework Agreement",
+        "utility diversion work stoppage delay prolongation critical path impacts",
+        "utility diversion work stoppage A time effect in which work or completion occurs later than planned or contractually required The extended project duration during which additional time-related costs may be incurred Longest or driving logic-linked sequence determining the relevant project or milestone completion date impacts",
+        "MUDFA disputes claims adjudication mediation resolution notices of dispute",
+        "Multi-Utilities Diversion Framework Agreement disputes claims Expedited dispute-resolution process in which an adjudicator issues a decision, subject to the applicable contract and law Confidential facilitated negotiation in which a mediator assists parties to seek settlement resolution notices of dispute",
+        "MUDFA missing records record gaps conflicting utility diversion data",
+        "Multi-Utilities Diversion Framework Agreement missing records record gaps conflicting utility diversion data"
+      ],
+      "seconds": 255.11,
+      "stages": [
+        {
+          "stage": "research_plan",
+          "progress": 0.08,
+          "seconds": 0.05
+        },
+        {
+          "stage": "source_selection",
+          "progress": 0.14,
+          "seconds": 8.52
+        },
+        {
+          "stage": "evidence_pack",
+          "progress": 0.2,
+          "seconds": 8.52
+        },
+        {
+          "stage": "evidence_extraction",
+          "progress": 0.3,
+          "seconds": 121.05
+        },
+        {
+          "stage": "aggregation",
+          "progress": 0.58,
+          "seconds": 149.92
+        },
+        {
+          "stage": "synthesis",
+          "progress": 0.68,
+          "seconds": 149.92
+        },
+        {
+          "stage": "verification",
+          "progress": 0.82,
+          "seconds": 240.79
+        },
+        {
+          "stage": "word",
+          "progress": 0.9,
+          "seconds": 254.94
+        }
+      ],
+      "vector_mutations_attempted": 0,
+      "usage": {
+        "calls": 20,
+        "input_tokens": 175864,
+        "output_tokens": 16266,
+        "reasoning_tokens": 24742,
+        "cache_hits": 0
+      },
+      "artifact_prefix": "rag-mudfa",
+      "review": {
+        "engine": "rag",
+        "case": "mudfa",
+        "entries": 32,
+        "event_rows": 31,
+        "dated_event_rows": 23,
+        "undated_event_rows": 8,
+        "claims": 40,
+        "inference_claims": 18,
+        "source_anchors": 26,
+        "date_flags": [],
+        "all_sources_resolve": true,
+        "word_footnotes_resolve": true
+      },
+      "event_rows": 31
+    },
+    {
+      "engine": "coair",
+      "case": {
+        "id": "mudfa",
+        "topic": "Utility diversion works under MUDFA: contractual scope, mobilisation, recorded diversion difficulties and programme consequences",
+        "date_from": "",
+        "date_to": ""
+      },
+      "project_id": "0fb88a60b80648d5",
+      "model": "gemini-3.6-flash",
+      "prompt_hash": "cc787b383d90c08707e06b07d38aa69b58e05a3272a9ac972caeb8654e54e717",
+      "event_discovery_mode": "audit",
+      "initialization_seconds": 4.19,
+      "provider_response_cache": "disabled",
+      "run_id": "2f0db8c4d9624dfba81f",
+      "status": "completed",
+      "entries": 31,
+      "claims": 41,
+      "evidence_passages": 121,
+      "evidence_files": 34,
+      "invalid_source_ids": [],
+      "word": {
+        "paragraphs": 34,
+        "tables": 0,
+        "footnotes": 57,
+        "unresolved_footnotes": 0,
+        "sha256": "b03225164b56e2b89626bd6bb24694e6dd47bf1c2ca0a12cd6756a3b7f7031a6"
+      },
+      "coverage_status": "partial",
+      "partial_reasons": [
+        "uncovered_facets",
+        "master_event_no_hits"
+      ],
+      "audit": {
+        "footnote_references": 57,
+        "footnote_records": 57,
+        "unique_source_ids": 30,
+        "unresolved_source_ids": [],
+        "candidate_clusters": 32,
+        "synthesized_events": 32,
+        "verifier_removed_events": 2,
+        "issued_events": 30
+      },
+      "research_audit": {
+        "event_discovery": {
+          "mode": "audit",
+          "master_hits": 0,
+          "fallback_hits": 139,
+          "master_status": {
+            "states": {
+              "queued": 0,
+              "stale": 0,
+              "not_started": 0,
+              "processing": 0,
+              "failed": 0,
+              "ready": 0,
+              "partial": 0
+            },
+            "observation_count": 0,
+            "cluster_count": 0,
+            "complete": false,
+            "partial_reasons": []
+          },
+          "master_coverage": {
+            "delay/disruption": 0,
+            "notice/correspondence": 0,
+            "instruction/direction": 0,
+            "variation/change": 0,
+            "programme_update/data_date": 0,
+            "extension_of_time/claim": 0,
+            "dispute/adjudication": 0,
+            "party_position/response": 0
+          },
+          "missing_facets": [
+            "delay/disruption",
+            "notice/correspondence",
+            "instruction/direction",
+            "variation/change",
+            "programme_update/data_date",
+            "extension_of_time/claim",
+            "dispute/adjudication",
+            "party_position/response"
+          ],
+          "incomplete_doc_ids": [],
+          "partial_reasons": [
+            "master_event_no_hits"
+          ],
+          "dense_event_index_used": false,
+          "counter_observation_hits": 0,
+          "search_degradations": [],
+          "event_index_gap_doc_ids": []
+        }
+      },
+      "pack": {
+        "documents": 34,
+        "fragments": 100,
+        "passages": 121,
+        "chars": 118446,
+        "batches_total": 2,
+        "batches_failed": 0,
+        "passages_dropped": 0,
+        "batch_errors": [],
+        "events": 30,
+        "selection": {
+          "candidates": 139,
+          "dropped_below_floor": 18,
+          "dropped_document_cap": 0,
+          "dropped_budget": 0,
+          "admitted_for_coverage": 0,
+          "stopped_early": "",
+          "relevance_floor": 0.35,
+          "distinct_dates": 63,
+          "selected_passages": 121,
+          "selected_chars": 118446,
+          "selected_documents": 34
+        }
+      },
+      "selected_doc_ids": [
+        "0223cd2c-4a17-4fb3-a692-901d71f9fa78",
+        "070a314f-c86b-4ddb-8a4c-2719ba59e3ee",
+        "0ec1b2aa-1ccc-47bc-82a3-eabc3205a111",
+        "0ee684d3-5b21-40dc-85e0-eba9a7484ef9",
+        "0eeacc0d7def9c5a",
+        "10d74c46-299a-4e06-8597-7d0f7c2bf7ce",
+        "14f02fb6-46f5-43cc-b4e2-aa2691ea9a7b",
+        "16b7759c-8f93-493c-8e37-bd9a5559509c",
+        "1b2f32c5-8b51-46ee-8e93-f0250cc4ad72",
+        "1c21d015-0669-442b-87e1-042f5b72243f",
+        "1dddde3bc0d4e3d7",
+        "1e654a66-11b3-4b81-888e-bef97bf111f3",
+        "214c137d-62f4-4dc6-82c4-d761c744e1ac",
+        "21965827-0b90-4c67-83f1-a1fb3074974e",
+        "238a4406-f83f-4429-881d-62ae080be7ad",
+        "26fdc49c-14d0-4022-aac8-0d1a368d4ae6",
+        "281f388f-0906-4309-bee0-a8ccee9e8f24",
+        "2cb39a54-0ec2-46bb-9efb-ced55eeff3e4",
+        "2e37b10d-8f01-411f-802b-645128cb204c",
+        "355cd3ae-673b-408c-be8b-26b387ccdd04",
+        "39f9f356-42d9-4dbc-8327-59503fda95d4",
+        "401f13fd-2e7d-4e7c-8c8c-8faef115f9f2",
+        "4092c243-6f71-4ee0-b1f1-87a5ce00f2c8",
+        "427ef53c-a4fc-4661-beb7-31535e876542",
+        "4349a202-9bae-4a5e-9dc1-055065ce2eec",
+        "45d776e1-a747-4087-a3bc-79588501c37b",
+        "462f2dd4-5541-4768-90d6-030bdc4b9e17",
+        "46614ba7-f110-4b0b-8a97-dcdb3c93cfaa",
+        "478b603c-42db-4da9-bf16-ae4e7cd06bbc",
+        "4b430014-f231-4f49-98f3-13cd65613338",
+        "4fc3f584-f36e-4ec3-9b4e-91faf4876f9c",
+        "53cc0b6e-1ab4-488c-b8d9-fd078d9587e2",
+        "568a3ffe-df1e-4bde-b4eb-afa1954e531a",
+        "58282b57-efc4-4972-8d39-84a4c45977d2",
+        "599d23c2-2084-4721-a5a2-e5e6861cbd5c",
+        "603ead7b4125b1fc",
+        "611491105a157cb6",
+        "622edd91-8456-4f31-9d5f-ba230b29abaa",
+        "62a8fc97-53e9-4912-b7ad-75c4a778d124",
+        "63d9f113641234ca",
+        "64ac28c6-89ab-43a1-addd-70976f9033d0",
+        "684ce31e534e1123",
+        "693b147e-9f17-4419-ba94-f576e3ea1ab5",
+        "6aec63c3-a8f2-498a-abae-9da6a8c67e1f",
+        "6b7c90bc-de12-4e55-afa9-369af50fa7f5",
+        "739287c2-652f-4493-b398-b9877e69082c",
+        "742aad61-2d20-4e9f-a9ff-87b6c0b08806",
+        "75e24035-f17e-49f2-bf71-fe5d023c73e4",
+        "7a3c081f-1ca6-4ab2-bcf5-1c26c0bc8def",
+        "7dad76b2-6eab-421f-ac9c-985b8eda71cc",
+        "839a2f93-4685-4d00-ab5c-42d23bcd4e2e",
+        "87d8b260-2efb-43a7-84f7-373564406916",
+        "87fbd800-5a59-4e7a-8694-732784e49c9d",
+        "8802e5b4-c6c1-4fa4-bed1-355886f734a9",
+        "8b4736f8-45ea-4402-94cf-5d941755f1c9",
+        "8f3b843c-5650-4426-9852-3213634c3158",
+        "912fc61f-1a7f-40ae-8048-c6499675abd0",
+        "9228d1a8-153a-4244-a24f-80b1fce9c26d",
+        "92f1e5e1-17e9-462c-b2d7-d057c33ebb40",
+        "9302cc1078852a2f",
+        "93796139-7eb2-40cf-8f3c-ab3fcb7ce9cc",
+        "9416069e-35b9-44d1-a24f-5bfb8f4ee910",
+        "98106bcd-fdf7-465a-8db7-ee3f98d53956",
+        "988c7a37-64c1-4d6d-befa-711a9d0052e1",
+        "9983a1ac-1f46-4875-967c-62fa71dbbfac",
+        "9be65ba1-632e-4878-843b-cc73261151a8",
+        "9ffc95a7-069d-4031-9d6e-33309972d7d4",
+        "a0973c1b-8eca-432e-874f-3fdea2699ce0",
+        "a2b4d1d3-ac2a-44a7-bc48-21ad39140750",
+        "a637bc7a-ae53-4f7e-aabd-febac0d535f3",
+        "a86f70bf-46bc-42bc-9292-d99184acb18b",
+        "a877be18-28e8-4f85-910e-22ebc7363081",
+        "ab74e7b5-4ab1-4eb5-b787-1f833eeffae9",
+        "af391b6f-f8e6-4d3b-a763-1306d3d7bd2c",
+        "b416d7ff-a69a-4cb0-acf3-ec3a06a107bb",
+        "b7628c64-5944-4eff-aa86-ab8ac6b4525a",
+        "b9bab2b0-60da-4eab-b158-b6c7598b74a1",
+        "ba948165-cf5a-4daa-9047-24a0025fff83",
+        "bc9ae796-bb31-43d8-b4c4-cf22dd1c776d",
+        "bd4b5022-88a8-4928-b81e-c078eb69fc09",
+        "be238b27-c615-4056-ad76-7b6b790ee87f",
+        "c4bf45c1-719d-48a7-9632-fb83a76fd908",
+        "c502c3e3-d0d0-4233-b74a-8fc91885417d",
+        "c613d817-b952-4eaa-b7d6-bbd395ad080a",
+        "ca4f607c-ffb8-4955-9ede-1519af5c19ef",
+        "d8986ab019661d3d",
+        "d8ef2ecfc8110f64",
+        "d8f45f2604541671",
+        "daba382b-ef02-4a99-aebc-956e8a1e7908",
+        "e4020747-98b6-46d5-9754-484af42bb0c6",
+        "e4441164-f11e-4282-9b18-5fd418ebf2bf",
+        "e4981132-8da4-4f68-9ddb-dacb060cf2b1",
+        "e659082fc779ead0",
+        "e73542fc54b3b32c",
+        "e7ee01bc-e74a-42a0-9d82-7d35c78fa237",
+        "f3e0e902-d88c-458d-b2fa-f27cc1e33f52",
+        "f71d0df6-6cf0-4d44-ab03-749edd836862",
+        "fa1d98a48e5cb75f",
+        "fbecc5a6-743b-4a80-a161-0db97689566b",
+        "fe8c16db-f03b-4182-954c-7e015ae02b85"
+      ],
+      "research_questions": [
+        "What was the contractual scope, allocation of risk, and key obligations defined under MUDFA for utility diversion works?",
+        "What was the contractual Products, services, and results to be delivered by the project or contract, allocation of Uncertain event or condition that, if it occurs, affects one or more objectives, and key obligations defined under Multi-Utilities Diversion Framework Agreement for utility diversion works?",
+        "What were the baseline programme dates, schedule constraints, and key milestones for MUDFA mobilisation and execution?",
+        "What were the Approved or selected reference programme used to measure planned dates, progress, and variance dates, Time model of project work, logic, resources, and milestones; often synonymous with programme constraints, and key milestones for Multi-Utilities Diversion Framework Agreement mobilisation and execution?",
+        "What utility diversion interface issues, design changes, or site access restrictions were encountered during MUDFA works?",
+        "What utility diversion interface issues, design changes, or site access restrictions were encountered during Multi-Utilities Diversion Framework Agreement works?",
+        "What site instructions, variation notices, or formal notifications of change were issued regarding utility diversions under MUDFA?",
+        "What site instructions, Contractual change to the scope, quantity, quality, sequence, method, or conditions of the works notices, or formal notifications of change were issued regarding utility diversions under Multi-Utilities Diversion Framework Agreement?",
+        "What contemporaneous positions and notifications were exchanged by parties concerning MUDFA progress and utility delays?",
+        "What contemporaneous positions and notifications were exchanged by parties concerning Multi-Utilities Diversion Framework Agreement progress and utility delays?",
+        "What specific utility diversion delays, work stoppages, or prolongation impacts were recorded against the baseline programme?",
+        "What specific utility diversion delays, work stoppages, or The extended project duration during which additional time-related costs may be incurred impacts were recorded against the Approved or selected reference programme used to measure planned dates, progress, and variance?",
+        "What formal disputes, adjudications, mediations, or claim resolutions arose from MUDFA utility diversion works?",
+        "What formal disputes, adjudications, mediations, or Formal assertion of a contractual or legal right to time, money, or another remedy resolutions arose from Multi-Utilities Diversion Framework Agreement utility diversion works?",
+        "What contradictions, missing records, or unverified claims exist across contemporaneous MUDFA utility diversion documents?",
+        "What contradictions, missing records, or unverified claims exist across contemporaneous Multi-Utilities Diversion Framework Agreement utility diversion documents?"
+      ],
+      "seconds": 190.94,
+      "stages": [
+        {
+          "stage": "research_plan",
+          "progress": 0.08,
+          "seconds": 0.08
+        },
+        {
+          "stage": "source_selection",
+          "progress": 0.14,
+          "seconds": 9.78
+        },
+        {
+          "stage": "evidence_pack",
+          "progress": 0.2,
+          "seconds": 9.78
+        },
+        {
+          "stage": "evidence_extraction",
+          "progress": 0.3,
+          "seconds": 102.49
+        },
+        {
+          "stage": "aggregation",
+          "progress": 0.58,
+          "seconds": 133.79
+        },
+        {
+          "stage": "synthesis",
+          "progress": 0.68,
+          "seconds": 133.79
+        },
+        {
+          "stage": "verification",
+          "progress": 0.82,
+          "seconds": 175.55
+        },
+        {
+          "stage": "word",
+          "progress": 0.9,
+          "seconds": 190.67
+        }
+      ],
+      "vector_mutations_attempted": 0,
+      "usage": {
+        "calls": 17,
+        "input_tokens": 124649,
+        "output_tokens": 13396,
+        "reasoning_tokens": 14297,
+        "cache_hits": 0
+      },
+      "artifact_prefix": "coair-mudfa",
+      "review": {
+        "engine": "coair",
+        "case": "mudfa",
+        "entries": 31,
+        "event_rows": 30,
+        "dated_event_rows": 27,
+        "undated_event_rows": 3,
+        "claims": 41,
+        "inference_claims": 13,
+        "source_anchors": 28,
+        "date_flags": [],
+        "all_sources_resolve": true,
+        "word_footnotes_resolve": true
+      },
+      "event_rows": 30
+    },
+    {
+      "engine": "rag",
+      "case": {
+        "id": "gogar",
+        "topic": "Gogar depot",
+        "date_from": "2008-07-01",
+        "date_to": "2008-12-31"
+      },
+      "project_id": "0fb88a60b80648d5",
+      "model": "gemini-3.6-flash",
+      "prompt_hash": "cc787b383d90c08707e06b07d38aa69b58e05a3272a9ac972caeb8654e54e717",
+      "event_discovery_mode": "audit",
+      "initialization_seconds": 4.05,
+      "provider_response_cache": "disabled",
+      "run_id": "3d04282e49cd4ca48ad7",
+      "status": "completed",
+      "entries": 5,
+      "claims": 8,
+      "evidence_passages": 65,
+      "evidence_files": 16,
+      "invalid_source_ids": [],
+      "word": {
+        "paragraphs": 8,
+        "tables": 0,
+        "footnotes": 14,
+        "unresolved_footnotes": 0,
+        "sha256": "b6ae735b1ea487b04e0a850e044879b78a806b80092b0f9511449dbd83fdfca0"
+      },
+      "coverage_status": "partial",
+      "partial_reasons": [
+        "thin_record",
+        "master_event_no_hits"
+      ],
+      "audit": {
+        "footnote_references": 14,
+        "footnote_records": 14,
+        "unique_source_ids": 5,
+        "unresolved_source_ids": [],
+        "candidate_clusters": 4,
+        "synthesized_events": 4,
+        "verifier_removed_events": 0,
+        "issued_events": 4
+      },
+      "research_audit": {
+        "event_discovery": {
+          "mode": "audit",
+          "master_hits": 0,
+          "fallback_hits": 275,
+          "master_status": {
+            "states": {
+              "partial": 0,
+              "processing": 0,
+              "not_started": 0,
+              "stale": 0,
+              "failed": 0,
+              "queued": 0,
+              "ready": 0
+            },
+            "observation_count": 0,
+            "cluster_count": 0,
+            "complete": false,
+            "partial_reasons": []
+          },
+          "master_coverage": {
+            "delay/disruption": 0,
+            "notice/correspondence": 0,
+            "instruction/direction": 0,
+            "variation/change": 0,
+            "programme_update/data_date": 0,
+            "extension_of_time/claim": 0,
+            "meeting/decision/agreement": 0,
+            "dispute/adjudication": 0,
+            "party_position/response": 0
+          },
+          "missing_facets": [
+            "delay/disruption",
+            "notice/correspondence",
+            "instruction/direction",
+            "variation/change",
+            "programme_update/data_date",
+            "extension_of_time/claim",
+            "meeting/decision/agreement",
+            "dispute/adjudication",
+            "party_position/response"
+          ],
+          "incomplete_doc_ids": [],
+          "partial_reasons": [
+            "master_event_no_hits"
+          ],
+          "dense_event_index_used": false,
+          "counter_observation_hits": 0,
+          "search_degradations": [],
+          "event_index_gap_doc_ids": []
+        }
+      },
+      "pack": {
+        "documents": 16,
+        "fragments": 41,
+        "passages": 65,
+        "chars": 64785,
+        "batches_total": 1,
+        "batches_failed": 0,
+        "passages_dropped": 0,
+        "batch_errors": [],
+        "events": 4,
+        "selection": {
+          "candidates": 275,
+          "dropped_below_floor": 47,
+          "dropped_document_cap": 0,
+          "dropped_budget": 0,
+          "admitted_for_coverage": 1,
+          "stopped_early": "saturated",
+          "relevance_floor": 0.35,
+          "distinct_dates": 30,
+          "selected_passages": 65,
+          "selected_chars": 64785,
+          "selected_documents": 16
+        }
+      },
+      "selected_doc_ids": [
+        "01dc4c9e-5a63-404e-82da-e9bec1e20adc",
+        "0ac29abf17c33032",
+        "0c0dc9da-2b3c-40b2-8479-a5ca99c7c8e5",
+        "127e174d-e329-42a2-bf99-9d6b6d0ef406",
+        "12b48682-2b03-429a-8724-39287f1ba641",
+        "17bd478c-0688-42db-84db-70e535dfdf8e",
+        "1839e3cb-b18a-4aee-b10d-23e428fd4211",
+        "2449d697-2d2a-44db-a3ee-beafb5e0be05",
+        "377b4f09-7ddc-46ac-8601-c55a36eb2b70",
+        "42325738-12fe-4c69-b80a-a11a05960ee4",
+        "43091039-9102-47df-8e2c-9a149aacb631",
+        "45aaceb3-b07b-4c15-ba72-435d656e0f07",
+        "4a59df91-9a11-42f1-8f3d-8c2ff015cd35",
+        "500df3cd-f2d8-4621-97d8-218753e3396e",
+        "60111dca3aed17fa",
+        "603ead7b4125b1fc",
+        "67f0cdfe-6ed9-414c-85a8-2664a4c0b30f",
+        "68bb7674-2948-48cb-b3e4-48c22d10efc8",
+        "6a19823f-07c0-4d15-8313-3922e4b63559",
+        "7c86104c-8a63-437e-8e3c-01517d714fab",
+        "8568377a-6afc-436e-bcbf-4ac1adbe8da4",
+        "88c209d0-a8e0-469f-8e77-6942a5ffcffd",
+        "8c58dcc6-b2ff-451c-81c5-eaa1761f389a",
+        "8e2b6ec3255efe34",
+        "976146d6-21b7-4d00-8fd5-00c254db9a9b",
+        "9c3007044501e6ad",
+        "b6853824-5e42-4592-8e13-06a22fa13e14",
+        "bd47d5c7-3ca3-41af-a5d7-6afb4ae5c60b",
+        "c04d8b99-063d-46c2-93fb-a4e549cc0c41",
+        "c174e60f-69b5-44ec-8813-7233243dfe7c",
+        "c23c46a9-ff2a-409e-bd88-7bfcdd79b4a2",
+        "c92f66f6-399e-455f-ba3e-552f72cb8467",
+        "ccdfed06-d715-47c2-b7d8-8ede315ec0f9",
+        "d9d474f9-5af4-4622-8ffb-d7381a4f0c0b",
+        "e3dd76373e4ad18c",
+        "e73542fc54b3b32c",
+        "ede2e9ff-981d-49dd-a132-b7f5b8938728",
+        "edfcbd14f7462d3e",
+        "f2674a29-a141-4143-b17c-2943888b45c8",
+        "f3f07878-1744-41dd-8909-97b011130a7f",
+        "f9fa3acd-1fb8-488e-b95c-a59cf689a92a"
+      ],
+      "research_questions": [
+        "Gogar depot contractual framework obligations July 2008 to December 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment contractual framework obligations July 2008 to December 2008",
+        "Gogar depot baseline programme schedule expectations 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment Approved or selected reference programme used to measure planned dates, progress, and variance Time model of project work, logic, resources, and milestones; often synonymous with programme expectations 2008",
+        "Gogar depot design deliverables access provisions utilities site interfaces 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment design deliverables access provisions utilities site interfaces 2008",
+        "Gogar depot formal instructions notices variation change requests July December 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment formal instructions notices Contractual change to the scope, quantity, quality, sequence, method, or conditions of the works change requests July December 2008",
+        "Gogar depot contemporaneous party positions progress reports correspondence 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment contemporaneous party positions progress reports Letters, emails, notices, memoranda, and other communications exchanged or recorded on a project 2008",
+        "Gogar depot delay notices work stoppage suspension prolongation claims 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment A time effect in which work or completion occurs later than planned or contractually required notices work stoppage Temporary stopping of work or obligations under a contractual or legal right or instruction The extended project duration during which additional time-related costs may be incurred claims 2008",
+        "Gogar depot dispute adjudication mediation resolution correspondence 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment dispute Expedited dispute-resolution process in which an adjudicator issues a decision, subject to the applicable contract and law Confidential facilitated negotiation in which a mediator assists parties to seek settlement resolution Letters, emails, notices, memoranda, and other communications exchanged or recorded on a project 2008",
+        "Gogar depot missing records contradictions unconfirmed dates July December 2008",
+        "Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment missing records contradictions unconfirmed dates July December 2008"
+      ],
+      "seconds": 196.98,
+      "stages": [
+        {
+          "stage": "research_plan",
+          "progress": 0.08,
+          "seconds": 0.04
+        },
+        {
+          "stage": "source_selection",
+          "progress": 0.14,
+          "seconds": 8.23
+        },
+        {
+          "stage": "evidence_pack",
+          "progress": 0.2,
+          "seconds": 8.23
+        },
+        {
+          "stage": "evidence_extraction",
+          "progress": 0.3,
+          "seconds": 126.09
+        },
+        {
+          "stage": "aggregation",
+          "progress": 0.58,
+          "seconds": 165.99
+        },
+        {
+          "stage": "synthesis",
+          "progress": 0.68,
+          "seconds": 165.99
+        },
+        {
+          "stage": "verification",
+          "progress": 0.82,
+          "seconds": 194.68
+        },
+        {
+          "stage": "word",
+          "progress": 0.9,
+          "seconds": 196.86
+        }
+      ],
+      "vector_mutations_attempted": 0,
+      "usage": {
+        "calls": 16,
+        "input_tokens": 108172,
+        "output_tokens": 9062,
+        "reasoning_tokens": 6422,
+        "cache_hits": 0
+      },
+      "artifact_prefix": "rag-gogar",
+      "review": {
+        "engine": "rag",
+        "case": "gogar",
+        "entries": 5,
+        "event_rows": 4,
+        "dated_event_rows": 4,
+        "undated_event_rows": 0,
+        "claims": 8,
+        "inference_claims": 0,
+        "source_anchors": 3,
+        "date_flags": [],
+        "all_sources_resolve": true,
+        "word_footnotes_resolve": true
+      },
+      "event_rows": 4
+    },
+    {
+      "engine": "coair",
+      "case": {
+        "id": "gogar",
+        "topic": "Gogar depot",
+        "date_from": "2008-07-01",
+        "date_to": "2008-12-31"
+      },
+      "project_id": "0fb88a60b80648d5",
+      "model": "gemini-3.6-flash",
+      "prompt_hash": "cc787b383d90c08707e06b07d38aa69b58e05a3272a9ac972caeb8654e54e717",
+      "event_discovery_mode": "audit",
+      "initialization_seconds": 4.22,
+      "provider_response_cache": "disabled",
+      "run_id": "622dfee230c84c47bd8d",
+      "status": "failed",
+      "error_type": "LLMInvalidStructuredOutputError",
+      "error": "model_output_invalid",
+      "seconds": 148.34,
+      "stages": [
+        {
+          "stage": "research_plan",
+          "progress": 0.08,
+          "seconds": 0.07
+        },
+        {
+          "stage": "source_selection",
+          "progress": 0.14,
+          "seconds": 8.58
+        },
+        {
+          "stage": "evidence_pack",
+          "progress": 0.2,
+          "seconds": 8.58
+        },
+        {
+          "stage": "evidence_extraction",
+          "progress": 0.3,
+          "seconds": 39.45
+        },
+        {
+          "stage": "aggregation",
+          "progress": 0.58,
+          "seconds": 64.33
+        },
+        {
+          "stage": "synthesis",
+          "progress": 0.68,
+          "seconds": 64.33
+        }
+      ],
+      "vector_mutations_attempted": 0,
+      "usage": {
+        "calls": 17,
+        "input_tokens": 149118,
+        "output_tokens": 8317,
+        "reasoning_tokens": 18322,
+        "cache_hits": 0
+      },
+      "artifact_prefix": "coair-gogar"
+    },
+    {
+      "engine": "coair",
+      "case": {
+        "id": "gogar",
+        "topic": "Gogar depot",
+        "date_from": "2008-07-01",
+        "date_to": "2008-12-31"
+      },
+      "project_id": "0fb88a60b80648d5",
+      "model": "gemini-3.6-flash",
+      "prompt_hash": "cc787b383d90c08707e06b07d38aa69b58e05a3272a9ac972caeb8654e54e717",
+      "event_discovery_mode": "audit",
+      "initialization_seconds": 3.75,
+      "provider_response_cache": "disabled",
+      "run_id": "dbd18f16c5784e7e8ebb",
+      "attempt": 2,
+      "status": "completed",
+      "entries": 10,
+      "claims": 16,
+      "evidence_passages": 83,
+      "evidence_files": 21,
+      "invalid_source_ids": [],
+      "word": {
+        "paragraphs": 13,
+        "tables": 0,
+        "footnotes": 21,
+        "unresolved_footnotes": 0,
+        "sha256": "fa984d600cc607e4684f1705bea6944f6da8b63f586d5105b3418ef4906057da"
+      },
+      "coverage_status": "partial",
+      "partial_reasons": [
+        "uncovered_facets",
+        "master_event_no_hits",
+        "master_counter_evidence_gap"
+      ],
+      "audit": {
+        "footnote_references": 21,
+        "footnote_records": 21,
+        "unique_source_ids": 12,
+        "unresolved_source_ids": [],
+        "candidate_clusters": 9,
+        "synthesized_events": 9,
+        "verifier_removed_events": 0,
+        "issued_events": 9
+      },
+      "research_audit": {
+        "event_discovery": {
+          "mode": "audit",
+          "master_hits": 0,
+          "fallback_hits": 326,
+          "master_status": {
+            "states": {
+              "queued": 0,
+              "partial": 0,
+              "ready": 0,
+              "processing": 0,
+              "failed": 0,
+              "not_started": 0,
+              "stale": 0
+            },
+            "observation_count": 0,
+            "cluster_count": 0,
+            "complete": false,
+            "partial_reasons": []
+          },
+          "master_coverage": {
+            "delay/disruption": 0,
+            "notice/correspondence": 0,
+            "instruction/direction": 0,
+            "variation/change": 0,
+            "programme_update/data_date": 0,
+            "extension_of_time/claim": 0,
+            "dispute/adjudication": 0,
+            "party_position/response": 0
+          },
+          "missing_facets": [
+            "delay/disruption",
+            "notice/correspondence",
+            "instruction/direction",
+            "variation/change",
+            "programme_update/data_date",
+            "extension_of_time/claim",
+            "dispute/adjudication",
+            "party_position/response"
+          ],
+          "incomplete_doc_ids": [],
+          "partial_reasons": [
+            "master_event_no_hits",
+            "master_counter_evidence_gap"
+          ],
+          "dense_event_index_used": false,
+          "counter_observation_hits": 0,
+          "search_degradations": [],
+          "event_index_gap_doc_ids": []
+        }
+      },
+      "pack": {
+        "documents": 21,
+        "fragments": 46,
+        "passages": 83,
+        "chars": 88421,
+        "batches_total": 2,
+        "batches_failed": 0,
+        "passages_dropped": 0,
+        "batch_errors": [],
+        "events": 9,
+        "selection": {
+          "candidates": 326,
+          "dropped_below_floor": 52,
+          "dropped_document_cap": 0,
+          "dropped_budget": 0,
+          "admitted_for_coverage": 0,
+          "stopped_early": "saturated",
+          "relevance_floor": 0.35,
+          "distinct_dates": 52,
+          "selected_passages": 83,
+          "selected_chars": 88421,
+          "selected_documents": 21
+        }
+      },
+      "selected_doc_ids": [
+        "01f4e0de-bbc2-4ada-904a-5dae97e55808",
+        "12b48682-2b03-429a-8724-39287f1ba641",
+        "17bd478c-0688-42db-84db-70e535dfdf8e",
+        "186edac2-309b-4215-8075-1eb8c04af2d7",
+        "22e5b543-556b-4fac-a70f-1dc50cfce711",
+        "31ceff7148a061d1",
+        "364e322f-31bc-42a9-940d-b554b86c89f6",
+        "377b4f09-7ddc-46ac-8601-c55a36eb2b70",
+        "3fae9e27-e739-4bdc-8cd0-6c77c8b5c879",
+        "43091039-9102-47df-8e2c-9a149aacb631",
+        "45aaceb3-b07b-4c15-ba72-435d656e0f07",
+        "4a4d9fdc-6ceb-496f-8fbd-c66dfc2951e9",
+        "4a59df91-9a11-42f1-8f3d-8c2ff015cd35",
+        "4b16c448-f6d2-4536-b0e8-2fa5cca55d0b",
+        "4d53ff3d-3f91-4ac9-b6ce-b54638ece588",
+        "500df3cd-f2d8-4621-97d8-218753e3396e",
+        "52bd239e-e168-41a7-aed3-404af68de710",
+        "5ba6ea2c-78b8-41be-845e-a6bccad522a3",
+        "67f0cdfe-6ed9-414c-85a8-2664a4c0b30f",
+        "688185db-8ee1-4155-a0b4-8a5a26bded8d",
+        "68bb7674-2948-48cb-b3e4-48c22d10efc8",
+        "7830be105a964cfd",
+        "84126857-5f05-4098-97eb-fbc6930af9ad",
+        "8568377a-6afc-436e-bcbf-4ac1adbe8da4",
+        "8b6569b3-2a8e-4c29-bb34-5a4c758fc9b5",
+        "8c58dcc6-b2ff-451c-81c5-eaa1761f389a",
+        "91673e2dd39e4095",
+        "94d106bd-967d-424f-8441-ea62b913b42d",
+        "976146d6-21b7-4d00-8fd5-00c254db9a9b",
+        "b6853824-5e42-4592-8e13-06a22fa13e14",
+        "bbd5a93a-cc2d-4bf7-b11d-25ab2926fbbc",
+        "c04d8b99-063d-46c2-93fb-a4e549cc0c41",
+        "c174e60f-69b5-44ec-8813-7233243dfe7c",
+        "c23c46a9-ff2a-409e-bd88-7bfcdd79b4a2",
+        "c9ce8bf15152733e",
+        "d56ba506d01d1a42",
+        "d8fc28a6-585c-4579-9ffb-1df7e30fe135",
+        "d9d474f9-5af4-4622-8ffb-d7381a4f0c0b",
+        "e26fca5d-0872-4070-8060-0abd0ebe3b42",
+        "e509e6e2282858fe",
+        "ede2e9ff-981d-49dd-a132-b7f5b8938728",
+        "edf053f2-2649-4345-938b-ef844af008b7",
+        "edfcbd14f7462d3e",
+        "f2674a29-a141-4143-b17c-2943888b45c8",
+        "f3f07878-1744-41dd-8909-97b011130a7f",
+        "f7387903-152a-436c-9a2d-2c51173097f0"
+      ],
+      "research_questions": [
+        "What were the contractual obligations and scope defined for the Gogar depot between July 2008 and December 2008?",
+        "What were the contractual obligations and Products, services, and results to be delivered by the project or contract defined for the Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment between July 2008 and December 2008?",
+        "What baseline master programme expectations and milestones applied to the Gogar depot during this period?",
+        "What baseline Top-level integrated programme coordinating major contracts, interfaces, and milestones expectations and milestones applied to the Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment during this period?",
+        "What design approvals, access issues, utilities diversions, or interface issues affected Gogar depot from July 2008 to December 2008?",
+        "What design approvals, access issues, utilities diversions, or interface issues affected Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment from July 2008 to December 2008?",
+        "Which formal instructions, site instructions, change requests, or notices of variation were issued regarding Gogar depot during this timeframe?",
+        "Which formal instructions, site instructions, change requests, or notices of Contractual change to the scope, quantity, quality, sequence, method, or conditions of the works were issued regarding Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment during this timeframe?",
+        "What were the contemporaneous positions expressed by tie Limited and BSC Consortium concerning Gogar depot progress from July to December 2008?",
+        "What were the contemporaneous positions expressed by Transport Initiatives Edinburgh Limited Limited and Bilfinger Berger, Siemens and CAF Consortium concerning Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment progress from July to December 2008?",
+        "What notices of delay, work stoppages, or prolongation claims were submitted regarding Gogar depot between July 2008 and December 2008?",
+        "What notices of A time effect in which work or completion occurs later than planned or contractually required, work stoppages, or The extended project duration during which additional time-related costs may be incurred claims were submitted regarding Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment between July 2008 and December 2008?",
+        "Were any disputes, adjudications, or formal dispute resolution steps initiated for Gogar depot during this period?",
+        "Were any disputes, adjudications, or formal dispute resolution steps initiated for Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment during this period?",
+        "Are there missing records, conflicting instructions, or contradictions regarding Gogar depot construction between July 2008 and December 2008?",
+        "Are there missing records, conflicting instructions, or contradictions regarding Gogar Facility for stabling, servicing, maintaining, and controlling vehicles or equipment construction between July 2008 and December 2008?"
+      ],
+      "seconds": 136.65,
+      "stages": [
+        {
+          "stage": "research_plan",
+          "progress": 0.08,
+          "seconds": 0.07
+        },
+        {
+          "stage": "source_selection",
+          "progress": 0.14,
+          "seconds": 6.99
+        },
+        {
+          "stage": "evidence_pack",
+          "progress": 0.2,
+          "seconds": 7.0
+        },
+        {
+          "stage": "evidence_extraction",
+          "progress": 0.3,
+          "seconds": 71.31
+        },
+        {
+          "stage": "aggregation",
+          "progress": 0.58,
+          "seconds": 91.91
+        },
+        {
+          "stage": "synthesis",
+          "progress": 0.68,
+          "seconds": 91.91
+        },
+        {
+          "stage": "verification",
+          "progress": 0.82,
+          "seconds": 133.62
+        },
+        {
+          "stage": "word",
+          "progress": 0.9,
+          "seconds": 136.58
+        }
+      ],
+      "vector_mutations_attempted": 0,
+      "usage": {
+        "calls": 16,
+        "input_tokens": 109504,
+        "output_tokens": 6584,
+        "reasoning_tokens": 13986,
+        "cache_hits": 0
+      },
+      "artifact_prefix": "coair-gogar-attempt-2",
+      "review": {
+        "engine": "coair",
+        "case": "gogar",
+        "entries": 10,
+        "event_rows": 9,
+        "dated_event_rows": 9,
+        "undated_event_rows": 0,
+        "claims": 16,
+        "inference_claims": 0,
+        "source_anchors": 10,
+        "date_flags": [],
+        "all_sources_resolve": true,
+        "word_footnotes_resolve": true
+      },
+      "event_rows": 9
+    },
+    {
+      "engine": "rag",
+      "case": {
+        "id": "utilities",
+        "topic": "Utilities diversion programme: Parsons Brinckerhoff responsibilities, coordination decisions, recorded difficulties and programme consequences",
+        "date_from": "",
+        "date_to": ""
+      },
+      "project_id": "0fb88a60b80648d5",
+      "model": "gemini-3.6-flash",
+      "prompt_hash": "cc787b383d90c08707e06b07d38aa69b58e05a3272a9ac972caeb8654e54e717",
+      "event_discovery_mode": "audit",
+      "initialization_seconds": 3.48,
+      "provider_response_cache": "disabled",
+      "run_id": "b30f1849049c4667ae7a",
+      "status": "completed",
+      "entries": 7,
+      "claims": 13,
+      "evidence_passages": 50,
+      "evidence_files": 22,
+      "invalid_source_ids": [],
+      "word": {
+        "paragraphs": 10,
+        "tables": 0,
+        "footnotes": 19,
+        "unresolved_footnotes": 0,
+        "sha256": "ab31f10d9ca74fb810c319a85d1371e30373dd8db2273372fa2002ebefe3ce21"
+      },
+      "coverage_status": "partial",
+      "partial_reasons": [
+        "uncovered_facets",
+        "thin_record",
+        "master_event_no_hits",
+        "master_counter_evidence_gap"
+      ],
+      "audit": {
+        "footnote_references": 19,
+        "footnote_records": 19,
+        "unique_source_ids": 9,
+        "unresolved_source_ids": [],
+        "candidate_clusters": 6,
+        "synthesized_events": 6,
+        "verifier_removed_events": 0,
+        "issued_events": 6
+      },
+      "research_audit": {
+        "event_discovery": {
+          "mode": "audit",
+          "master_hits": 0,
+          "fallback_hits": 80,
+          "master_status": {
+            "states": {
+              "processing": 0,
+              "stale": 0,
+              "not_started": 0,
+              "ready": 0,
+              "failed": 0,
+              "queued": 0,
+              "partial": 0
+            },
+            "observation_count": 0,
+            "cluster_count": 0,
+            "complete": false,
+            "partial_reasons": []
+          },
+          "master_coverage": {
+            "delay/disruption": 0,
+            "notice/correspondence": 0,
+            "instruction/direction": 0,
+            "variation/change": 0,
+            "programme_update/data_date": 0,
+            "meeting/decision/agreement": 0,
+            "dispute/adjudication": 0,
+            "party_position/response": 0
+          },
+          "missing_facets": [
+            "delay/disruption",
+            "notice/correspondence",
+            "instruction/direction",
+            "variation/change",
+            "programme_update/data_date",
+            "meeting/decision/agreement",
+            "dispute/adjudication",
+            "party_position/response"
+          ],
+          "incomplete_doc_ids": [],
+          "partial_reasons": [
+            "master_event_no_hits",
+            "master_counter_evidence_gap"
+          ],
+          "dense_event_index_used": false,
+          "counter_observation_hits": 0,
+          "search_degradations": [],
+          "event_index_gap_doc_ids": []
+        }
+      },
+      "pack": {
+        "documents": 22,
+        "fragments": 40,
+        "passages": 50,
+        "chars": 40844,
+        "batches_total": 1,
+        "batches_failed": 0,
+        "passages_dropped": 0,
+        "batch_errors": [],
+        "events": 6,
+        "selection": {
+          "candidates": 80,
+          "dropped_below_floor": 31,
+          "dropped_document_cap": 0,
+          "dropped_budget": 0,
+          "admitted_for_coverage": 1,
+          "stopped_early": "",
+          "relevance_floor": 0.35,
+          "distinct_dates": 20,
+          "selected_passages": 50,
+          "selected_chars": 40844,
+          "selected_documents": 22
+        }
+      },
+      "selected_doc_ids": [
+        "23c8a8c3-7442-40a7-8d40-408309192708",
+        "34772e5c-d1bd-4db0-943b-8bf2e5c167d7",
+        "3b97274ed205dab2",
+        "42445b68-a233-48d2-b65a-f31843fffeff",
+        "44200a7ea14a6afa",
+        "478b603c-42db-4da9-bf16-ae4e7cd06bbc",
+        "47f9fcc5-ca9d-48d7-8284-1670d6ef74ac",
+        "48a4a5f7-ddf3-41c8-b5f8-18fe3fe0988d",
+        "4a099af1-805c-4269-b295-5bb428e81945",
+        "4d271139-542c-4133-b508-e699247c7eaa",
+        "60111dca3aed17fa",
+        "611491105a157cb6",
+        "62a8fc97-53e9-4912-b7ad-75c4a778d124",
+        "64ac28c6-89ab-43a1-addd-70976f9033d0",
+        "64e81c0c-315f-4925-98d8-4234396db91b",
+        "700da06a-c29a-4856-8bc7-f4dbc06a3229",
+        "7b55a50e13205c8d",
+        "82b9cd8f-4ae4-4728-a3cf-2807b4d250d1",
+        "84519e8ecf8ea8d7",
+        "894fe4db-bb1a-4a23-bfb2-475076d65ec4",
+        "8ac2fc7eaa2f7435",
+        "8cf19928-0376-42c4-839b-054a2b0e90cd",
+        "93bb11ed1e5d3ae4",
+        "a755f648ccf5548f",
+        "b0fe6a34-7ef8-4901-8d43-802b1e56ac7d",
+        "b22e9e28-4fbf-41f0-9005-9c53a09329d0",
+        "b7862985-cb58-4208-ac03-c1b224999a6f",
+        "bf2a79904ba39582",
+        "c083386e-d040-440f-b433-c19242b998a5",
+        "c32e2ba2-b6d4-4ff8-bca7-053df4c96ac1",
+        "c6c10747-e2e1-4524-9355-da192b7e5ee0",
+        "c7f5200c-7321-4c47-a622-d9d6aac2beab",
+        "cfee3f36-b05e-43a6-bf11-03409eea2f12",
+        "d348ab81bcb3964c",
+        "d71f61ae91f5d227",
+        "dec287f5-87a7-4537-bd60-dec275cb2df2",
+        "e0d3b765-eb37-4587-b15d-5f00bc7f3886",
+        "e1423513-ca99-40a1-96bf-2fef82f2736f",
+        "e432db21-a034-4e37-a667-841231f6ccd1",
+        "e65d6d3c-6cce-46d0-9c28-4c88c4e7659e"
+      ],
+      "research_questions": [
+        "Parsons Brinckerhoff SDS contract utility diversion obligations scope",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project Safety Data Sheet contract utility diversion obligations Products, services, and results to be delivered by the project or contract",
+        "Parsons Brinckerhoff baseline programme expectations utilities diversion",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project Approved or selected reference programme used to measure planned dates, progress, and variance expectations Relocation, protection, abandonment, or modification of existing utility services to enable the works",
+        "Parsons Brinckerhoff utility diversion design interface coordination",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project utility diversion Boundary requiring coordination between design disciplines, packages, systems, or parties coordination",
+        "Parsons Brinckerhoff utilities site access clearance technical instructions",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project utilities site access clearance technical instructions",
+        "Parsons Brinckerhoff utility diversion delay notices variations change orders",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project utility diversion A time effect in which work or completion occurs later than planned or contractually required notices variations change orders",
+        "Contemporaneous party positions tie Parsons Brinckerhoff utility delays",
+        "Contemporaneous party positions Transport Initiatives Edinburgh Limited Firm engaged as System Design Services provider for the Edinburgh Tram project utility delays",
+        "Utilities diversion design delay work stoppage critical path programme consequences",
+        "Relocation, protection, abandonment, or modification of existing utility services to enable the works design A time effect in which work or completion occurs later than planned or contractually required work stoppage Longest or driving logic-linked sequence determining the relevant project or milestone completion date Logic-linked time model of project activities, durations, calendars, constraints, and milestones; also called a schedule consequences",
+        "Parsons Brinckerhoff utility diversion dispute adjudication mediation settlement",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project utility diversion dispute Expedited dispute-resolution process in which an adjudicator issues a decision, subject to the applicable contract and law Confidential facilitated negotiation in which a mediator assists parties to seek settlement Downward movement of a structure or ground under load",
+        "Missing records conflicting evidence Parsons Brinckerhoff utility diversion programme",
+        "Missing records conflicting evidence Firm engaged as System Design Services provider for the Edinburgh Tram project utility diversion Logic-linked time model of project activities, durations, calendars, constraints, and milestones; also called a schedule"
+      ],
+      "seconds": 173.14,
+      "stages": [
+        {
+          "stage": "research_plan",
+          "progress": 0.08,
+          "seconds": 0.05
+        },
+        {
+          "stage": "source_selection",
+          "progress": 0.14,
+          "seconds": 6.48
+        },
+        {
+          "stage": "evidence_pack",
+          "progress": 0.2,
+          "seconds": 6.48
+        },
+        {
+          "stage": "evidence_extraction",
+          "progress": 0.3,
+          "seconds": 125.48
+        },
+        {
+          "stage": "aggregation",
+          "progress": 0.58,
+          "seconds": 135.58
+        },
+        {
+          "stage": "synthesis",
+          "progress": 0.68,
+          "seconds": 135.58
+        },
+        {
+          "stage": "verification",
+          "progress": 0.82,
+          "seconds": 169.36
+        },
+        {
+          "stage": "word",
+          "progress": 0.9,
+          "seconds": 173.02
+        }
+      ],
+      "vector_mutations_attempted": 0,
+      "usage": {
+        "calls": 15,
+        "input_tokens": 58140,
+        "output_tokens": 6166,
+        "reasoning_tokens": 6175,
+        "cache_hits": 0
+      },
+      "artifact_prefix": "rag-utilities",
+      "review": {
+        "engine": "rag",
+        "case": "utilities",
+        "entries": 7,
+        "event_rows": 6,
+        "dated_event_rows": 4,
+        "undated_event_rows": 2,
+        "claims": 13,
+        "inference_claims": 4,
+        "source_anchors": 7,
+        "date_flags": [],
+        "all_sources_resolve": true,
+        "word_footnotes_resolve": true
+      },
+      "event_rows": 6
+    },
+    {
+      "engine": "coair",
+      "case": {
+        "id": "utilities",
+        "topic": "Utilities diversion programme: Parsons Brinckerhoff responsibilities, coordination decisions, recorded difficulties and programme consequences",
+        "date_from": "",
+        "date_to": ""
+      },
+      "project_id": "0fb88a60b80648d5",
+      "model": "gemini-3.6-flash",
+      "prompt_hash": "cc787b383d90c08707e06b07d38aa69b58e05a3272a9ac972caeb8654e54e717",
+      "event_discovery_mode": "audit",
+      "initialization_seconds": 3.99,
+      "provider_response_cache": "disabled",
+      "run_id": "2c2bf12e730e4d53b388",
+      "attempt": 1,
+      "status": "completed",
+      "entries": 6,
+      "claims": 15,
+      "evidence_passages": 51,
+      "evidence_files": 21,
+      "invalid_source_ids": [],
+      "word": {
+        "paragraphs": 9,
+        "tables": 0,
+        "footnotes": 20,
+        "unresolved_footnotes": 0,
+        "sha256": "bbd34d1eec2d1b06873cfa16ff54900e56b724ac8ab124a5969e462714eb148c"
+      },
+      "coverage_status": "partial",
+      "partial_reasons": [
+        "uncovered_facets",
+        "thin_record",
+        "master_event_no_hits",
+        "master_counter_evidence_gap"
+      ],
+      "audit": {
+        "footnote_references": 20,
+        "footnote_records": 20,
+        "unique_source_ids": 8,
+        "unresolved_source_ids": [],
+        "candidate_clusters": 5,
+        "synthesized_events": 5,
+        "verifier_removed_events": 0,
+        "issued_events": 5
+      },
+      "research_audit": {
+        "event_discovery": {
+          "mode": "audit",
+          "master_hits": 0,
+          "fallback_hits": 84,
+          "master_status": {
+            "states": {
+              "partial": 0,
+              "stale": 0,
+              "queued": 0,
+              "ready": 0,
+              "failed": 0,
+              "not_started": 0,
+              "processing": 0
+            },
+            "observation_count": 0,
+            "cluster_count": 0,
+            "complete": false,
+            "partial_reasons": []
+          },
+          "master_coverage": {
+            "delay/disruption": 0,
+            "notice/correspondence": 0,
+            "instruction/direction": 0,
+            "variation/change": 0,
+            "programme_update/data_date": 0,
+            "extension_of_time/claim": 0,
+            "meeting/decision/agreement": 0,
+            "dispute/adjudication": 0
+          },
+          "missing_facets": [
+            "delay/disruption",
+            "notice/correspondence",
+            "instruction/direction",
+            "variation/change",
+            "programme_update/data_date",
+            "extension_of_time/claim",
+            "meeting/decision/agreement",
+            "dispute/adjudication"
+          ],
+          "incomplete_doc_ids": [],
+          "partial_reasons": [
+            "master_event_no_hits",
+            "master_counter_evidence_gap"
+          ],
+          "dense_event_index_used": false,
+          "counter_observation_hits": 0,
+          "search_degradations": [],
+          "event_index_gap_doc_ids": []
+        }
+      },
+      "pack": {
+        "documents": 21,
+        "fragments": 39,
+        "passages": 51,
+        "chars": 40822,
+        "batches_total": 1,
+        "batches_failed": 0,
+        "passages_dropped": 0,
+        "batch_errors": [],
+        "events": 5,
+        "selection": {
+          "candidates": 84,
+          "dropped_below_floor": 34,
+          "dropped_document_cap": 0,
+          "dropped_budget": 0,
+          "admitted_for_coverage": 1,
+          "stopped_early": "",
+          "relevance_floor": 0.35,
+          "distinct_dates": 21,
+          "selected_passages": 51,
+          "selected_chars": 40822,
+          "selected_documents": 21
+        }
+      },
+      "selected_doc_ids": [
+        "23c8a8c3-7442-40a7-8d40-408309192708",
+        "34772e5c-d1bd-4db0-943b-8bf2e5c167d7",
+        "42445b68-a233-48d2-b65a-f31843fffeff",
+        "44200a7ea14a6afa",
+        "478b603c-42db-4da9-bf16-ae4e7cd06bbc",
+        "47f9fcc5-ca9d-48d7-8284-1670d6ef74ac",
+        "48a4a5f7-ddf3-41c8-b5f8-18fe3fe0988d",
+        "4a099af1-805c-4269-b295-5bb428e81945",
+        "4d271139-542c-4133-b508-e699247c7eaa",
+        "4f6b94716147dc61",
+        "60111dca3aed17fa",
+        "611491105a157cb6",
+        "62a8fc97-53e9-4912-b7ad-75c4a778d124",
+        "64ac28c6-89ab-43a1-addd-70976f9033d0",
+        "64e81c0c-315f-4925-98d8-4234396db91b",
+        "700da06a-c29a-4856-8bc7-f4dbc06a3229",
+        "7b55a50e13205c8d",
+        "82b9cd8f-4ae4-4728-a3cf-2807b4d250d1",
+        "84519e8ecf8ea8d7",
+        "894fe4db-bb1a-4a23-bfb2-475076d65ec4",
+        "8cf19928-0376-42c4-839b-054a2b0e90cd",
+        "93bb11ed1e5d3ae4",
+        "a755f648ccf5548f",
+        "b0fe6a34-7ef8-4901-8d43-802b1e56ac7d",
+        "b22e9e28-4fbf-41f0-9005-9c53a09329d0",
+        "b7862985-cb58-4208-ac03-c1b224999a6f",
+        "c083386e-d040-440f-b433-c19242b998a5",
+        "c32e2ba2-b6d4-4ff8-bca7-053df4c96ac1",
+        "c6c10747-e2e1-4524-9355-da192b7e5ee0",
+        "c7f5200c-7321-4c47-a622-d9d6aac2beab",
+        "cee10b7a-3b06-4265-b4c8-97e636876626",
+        "cfee3f36-b05e-43a6-bf11-03409eea2f12",
+        "d348ab81bcb3964c",
+        "d71f61ae91f5d227",
+        "dec287f5-87a7-4537-bd60-dec275cb2df2",
+        "e0d3b765-eb37-4587-b15d-5f00bc7f3886",
+        "e1423513-ca99-40a1-96bf-2fef82f2736f",
+        "e432db21-a034-4e37-a667-841231f6ccd1",
+        "e65d6d3c-6cce-46d0-9c28-4c88c4e7659e"
+      ],
+      "research_questions": [
+        "Parsons Brinckerhoff SDS contract terms utilities diversion scope obligations",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project Safety Data Sheet contract terms Relocation, protection, abandonment, or modification of existing utility services to enable the works Products, services, and results to be delivered by the project or contract obligations",
+        "Baseline programme schedule utilities diversion Parsons Brinckerhoff SDS deliverables",
+        "Approved or selected reference programme used to measure planned dates, progress, and variance Time model of project work, logic, resources, and milestones; often synonymous with programme Relocation, protection, abandonment, or modification of existing utility services to enable the works Firm engaged as System Design Services provider for the Edinburgh Tram project Safety Data Sheet deliverables",
+        "Parsons Brinckerhoff utilities diversion design interfaces MUSD MUP approval",
+        "Firm engaged as System Design Services provider for the Edinburgh Tram project Relocation, protection, abandonment, or modification of existing utility services to enable the works design interfaces MUSD MUP approval",
+        "Instructions notices change orders utilities diversion Parsons Brinckerhoff",
+        "Instructions notices change orders Relocation, protection, abandonment, or modification of existing utility services to enable the works Firm engaged as System Design Services provider for the Edinburgh Tram project",
+        "Contemporaneous records Parsons Brinckerhoff utilities coordination site difficulties",
+        "Contemporaneous records Firm engaged as System Design Services provider for the Edinburgh Tram project utilities coordination site difficulties",
+        "Utilities diversion delay critical path work stoppage programme consequences SDS",
+        "Relocation, protection, abandonment, or modification of existing utility services to enable the works A time effect in which work or completion occurs later than planned or contractually required Longest or driving logic-linked sequence determining the relevant project or milestone completion date work stoppage Logic-linked time model of project activities, durations, calendars, constraints, and milestones; also called a schedule consequences Safety Data Sheet",
+        "Dispute adjudication mediation claims Parsons Brinckerhoff utilities scope",
+        "Dispute Expedited dispute-resolution process in which an adjudicator issues a decision, subject to the applicable contract and law Confidential facilitated negotiation in which a mediator assists parties to seek settlement claims Firm engaged as System Design Services provider for the Edinburgh Tram project utilities Products, services, and results to be delivered by the project or contract",
+        "Contradictions missing records utilities diversion Parsons Brinckerhoff design delays",
+        "Contradictions missing records Relocation, protection, abandonment, or modification of existing utility services to enable the works Firm engaged as System Design Services provider for the Edinburgh Tram project design delays"
+      ],
+      "seconds": 112.39,
+      "stages": [
+        {
+          "stage": "research_plan",
+          "progress": 0.08,
+          "seconds": 0.09
+        },
+        {
+          "stage": "source_selection",
+          "progress": 0.14,
+          "seconds": 8.31
+        },
+        {
+          "stage": "evidence_pack",
+          "progress": 0.2,
+          "seconds": 8.31
+        },
+        {
+          "stage": "evidence_extraction",
+          "progress": 0.3,
+          "seconds": 78.02
+        },
+        {
+          "stage": "aggregation",
+          "progress": 0.58,
+          "seconds": 88.61
+        },
+        {
+          "stage": "synthesis",
+          "progress": 0.68,
+          "seconds": 88.61
+        },
+        {
+          "stage": "verification",
+          "progress": 0.82,
+          "seconds": 108.13
+        },
+        {
+          "stage": "word",
+          "progress": 0.9,
+          "seconds": 112.32
+        }
+      ],
+      "vector_mutations_attempted": 0,
+      "usage": {
+        "calls": 14,
+        "input_tokens": 51659,
+        "output_tokens": 4348,
+        "reasoning_tokens": 6707,
+        "cache_hits": 0
+      },
+      "artifact_prefix": "coair-utilities",
+      "review": {
+        "engine": "coair",
+        "case": "utilities",
+        "entries": 6,
+        "event_rows": 5,
+        "dated_event_rows": 5,
+        "undated_event_rows": 0,
+        "claims": 15,
+        "inference_claims": 2,
+        "source_anchors": 8,
+        "date_flags": [],
+        "all_sources_resolve": true,
+        "word_footnotes_resolve": true
+      },
+      "event_rows": 5
+    }
+  ],
+  "manual_review": [
+    {
+      "case": "mudfa",
+      "assessment": "Comparable core coverage",
+      "detail": "Both outputs cover contract October 2006, July 2007 commencement, approximately 285 delayed IFC drawings, six-week programme delay, six-month notified delay, and Revision 8 target of 16 December 2009. Key claims checked against their cited excerpts. Neither fully explains the contractor/design responsibility distinction requested in the broad topic."
+    },
+    {
+      "case": "mudfa",
+      "assessment": "Topical noise and repetition",
+      "detail": "Coair includes a JRC transport-modelling contract award unrelated to the central MUDFA chronology. Both outputs repeat some contract/business-case material. Similar row totals do not prove unique or complete events."
+    },
+    {
+      "case": "gogar",
+      "assessment": "Completion is not reliable on the first attempt",
+      "detail": "First Coair run failed after built-in retries at OverviewModel validation: source_ids exceeds three and/or overview_claims exceeds five. One explicitly recorded fresh repeat completed without changing application code or prompts. First failure remains part of the result. The corresponding constraints are shared with RAG."
+    },
+    {
+      "case": "gogar",
+      "assessment": "Different coverage on the same input corpus",
+      "detail": "RAG produced four event rows; the completed Coair repeat produced nine. Both correctly describe selected construction dates as programmed rather than completed. RAG includes the 13 October earthworks finish; Coair includes 29 October HV supply quote expectations. Both include the 6 November depot access bridge drawings milestone. The DCR0010 prior-approval event in the older reference is absent. Coair repeats one culvert milestone and adds broad project/OLE/staff context; RAG includes a Baird Drive transmittal. More rows is not a quality score."
+    },
+    {
+      "case": "utilities",
+      "assessment": "Relevant PB responsibilities are preserved",
+      "detail": "Both outputs explain PB/SDS utility-data assessment, diversion design and assistance to tie. Coair adds the dated PB extension-of-time claim and quantitative diversion findings; RAG additionally describes tram-slab-depth clashes. Selected source excerpts support the central responsibility narratives."
+    },
+    {
+      "case": "utilities",
+      "assessment": "Unproven temporal attribution requires correction",
+      "detail": "Coair entry 6.1.5 groups retrospective ground-investigation and approximately 59000m actually undertaken assertions under 4 December 2007. TRI00000111_C witness statement page 3 explicitly associates that date with design-programme documents, but does not independently date every subsequent assertion to that day. This is a temporal-support gap, not proof that the underlying quantities are false. A dated claim cover alone also does not establish actual submission on that date."
+    }
+  ],
+  "verdict": {
+    "core_chronology_transfer_supported": true,
+    "controlled_reviewed_pilot": "reasonable after assigning and loading the intended corpus in the chosen environment",
+    "full_customer_cutover_approved": false,
+    "reason": "Format-completion reliability, temporal support and topical coverage need strengthening; production corpus/library/hosting migration is not performed by this test."
+  },
+  "limitations": [
+    "Three case studies plus one explicit Coair Gogar repeat, not a statistical reliability sample.",
+    "Native runtime/source code in disposable stores; not seven public UI journeys.",
+    "A RAG Gogar 3GiB OOM probe is excluded from content comparison and separately recorded. Later runs explicitly cap DuckDB at 1GiB; timings are not matched performance benchmarks.",
+    "Master-event stores start empty in both clones; native audit discovery falls back to normal retrieval.",
+    "Automatic date regex checks found no mismatch in their narrow supported cases; manual review still found a temporal-attribution gap. No exhaustive factual/coverage sign-off.",
+    "Current staging API has 2GiB and three sample PDFs; full-corpus engine QA uses up to 3GiB. Full-data deployment capacity and original-file/library mapping remain gates."
+  ],
+  "production_protection": {
+    "rag_container_started_at": "2026-10-21T11:46:22.760447532Z",
+    "rag_image": "coair-chronology:20261021-clean-list",
+    "rag_health": "healthy",
+    "integration_image": "ghcr.io/coairai/coair-integration-api:d5b321773a71147e2e277bd468df66ffaaa1e4e1",
+    "integration_health": "healthy",
+    "original_sample_file_ids": [
+      "0235aed85faa16ec",
+      "161298c26281926a",
+      "8a04f0812c996d8b"
+    ],
+    "application_changes": "none; qualification helper and report only",
+    "customer_account_or_payment_database_migrated": false
+  },
+  "cleanup": {
+    "disposable_native_databases_removed": true,
+    "temporary_provider_environment_removed": true,
+    "retained_inputs": "one canonical portable corpus and hash-verified runtime-source archive",
+    "retained_outputs": "all successful Word outputs, raw report evidence, failed-case logs and metrics"
+  }
+}

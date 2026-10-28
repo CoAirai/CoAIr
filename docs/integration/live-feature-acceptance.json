@@ -1,0 +1,27 @@
+{
+  "commit": "0488dbc5fc58ade61a93552c94eba457b8e8a74f",
+  "original_file_ids": [
+    "0235aed85faa16ec",
+    "161298c26281926a",
+    "8a04f0812c996d8b"
+  ],
+  "accepted": true,
+  "programme_ids": [
+    "xer_9b1f3a7e84e84af49939",
+    "xer_dd27f8fd87c449358409"
+  ],
+  "project_id": "e902b5d14e2647df",
+  "foreign_project_id": "a13c8f356cf64660",
+  "word_export": "Heading, bold text, native table and citations retained",
+  "excel_export": "Typed zero/false and literal formula-looking text retained",
+  "workspace_id": "fws_0225fc312b8342d0a7ee",
+  "dcma_run_id": "frun_23c6714062914868b095",
+  "ai_status": "ready",
+  "assembled_run_id": "frun_d1f13775dbb44cb0b68f",
+  "word_artifact_id": "fart_1ffda0ad448046498e83",
+  "report_title_policy": "Saved workspace report title takes precedence over run parameters",
+  "toolkit_modules": 19,
+  "forensic_isolation": "Foreign active project rejected workspace and artifact IDs",
+  "original_inventory_unchanged": true,
+  "cleanup": "Own programmes deleted and QA projects archived"
+}

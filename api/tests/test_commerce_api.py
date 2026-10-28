@@ -17,6 +17,8 @@ os.environ.setdefault("JWT_SECRET", "test-secret-please-replace-in-prod")
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
+    from backend.core import platform_guard
+    monkeypatch.setattr(platform_guard, "_rate_limiter", platform_guard.RateLimiter())
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     from src import commerce_store as commerce_store_module
     from src import ops_store as ops_store_module
@@ -174,8 +176,8 @@ def test_packages_catalog_and_admin_update(client, acme):
     assert catalog.status_code == 200
     plans = catalog.json()["plans"]
     ids = [plan["id"] for plan in plans]
-    assert ids == ["demo", "foundation", "pro", "enterprise", "custom"]
-    assert plans[2]["modules"]["chatbot"]["access"] == "included"
+    assert ids == ["foundation", "pro", "enterprise"]
+    assert next(plan for plan in plans if plan["id"] == "pro")["modules"]["chatbot"]["access"] == "included"
 
     ops = _auth(client, "ops")
     updated = client.patch("/api/admin/packages/pro", headers=ops, json={
@@ -208,10 +210,27 @@ def test_token_economics_round_trip(client, acme):
     assert saved["updated_by"] == "ops"
 
 
-def test_access_request_approve_creates_owner_and_checkout(client, stores, acme):
+def _verified_signup(client, email):
+    sent = client.post("/api/auth/email/send-code", json={"email": email, "purpose": "signup"})
+    assert sent.status_code == 200
+    challenge = sent.json()
+    verified = client.post("/api/auth/email/verify-code", json={
+        "challenge_id": challenge["challenge_id"], "code": challenge["debug_code"],
+    })
+    assert verified.status_code == 200
+    return verified.json()["verification_token"]
+
+
+def test_access_request_approve_creates_owner_and_checkout(client, stores, acme, monkeypatch):
+    activation_mail = {}
+    def capture_invite(kind, recipient, **details):
+        activation_mail.update(details)
+        return {"ok": True, "mode": "dry-run"}
+    monkeypatch.setattr("src.auth_provision.send_coair_email", capture_invite)
     created = client.post("/api/access-requests", json={
         "full_name": "Maya Chen",
         "email": "maya@northspan.example",
+        "email_verification_token": _verified_signup(client, "maya@northspan.example"),
         "company_name": "Northspan",
     })
     assert created.status_code == 201
@@ -221,6 +240,7 @@ def test_access_request_approve_creates_owner_and_checkout(client, stores, acme)
     duplicate = client.post("/api/access-requests", json={
         "full_name": "Maya Chen",
         "email": "maya@northspan.example",
+        "email_verification_token": _verified_signup(client, "maya@northspan.example"),
         "company_name": "Northspan",
     })
     assert duplicate.status_code == 409
@@ -235,9 +255,17 @@ def test_access_request_approve_creates_owner_and_checkout(client, stores, acme)
     assert approved.status_code == 200
     body = approved.json()
     username = body["owner"]["username"]
-    password = body["owner"]["temporary_password"]
     assert username == "maya@northspan.example"
-    assert password
+    assert body["owner"]["temporary_password"] == ""
+    assert body["owner"]["activation_required"] is True
+    assert stores[0].get_user(username)["account_status"] == "invited"
+    password = "QualifiedPassword123"
+    activated = client.post("/api/auth/invite/activate", json={
+        "token": activation_mail["invite_token"], "code": activation_mail["mfa_code"],
+        "email": username, "password": password,
+    })
+    assert activated.status_code == 200
+    assert stores[0].get_user(username)["account_status"] == "active"
     org_id = body["org"]["org_id"]
 
     owner = _auth(client, username, password)
@@ -267,6 +295,7 @@ def test_access_request_deny(client, acme):
     created = client.post("/api/access-requests", json={
         "full_name": "Jordan Hale",
         "email": "jordan@hale.example",
+        "email_verification_token": _verified_signup(client, "jordan@hale.example"),
         "company_name": "Hale Civil",
     }).json()
     ops = _auth(client, "ops")

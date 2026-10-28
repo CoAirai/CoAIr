@@ -1,0 +1,463 @@
+{
+  "date": "2026-10-24",
+  "target_code_commit": "6501e022bc8f2b56633e9f99add819a08ec87430",
+  "reference_image": "coair-chronology:20261021-clean-list",
+  "method": {
+    "scope": "Actual ChatOrchestrator/router/retrieval/provider/accounting in disposable containers; HTTP/TLS and bootstrap excluded",
+    "pdf_count": 3,
+    "chunk_count": 8,
+    "vector_count": 8,
+    "project_id": "6cebdac2835a4df8",
+    "corpus_sha256": "c0758a6f27abbf408ed4911533eae78a72c6dc4a61754b86eb8b6f0670524f4d",
+    "cross_version_roundtrip": "exact hash match",
+    "model": "gemini-3.6-flash",
+    "embedding": "BGE base en v1.5 / local-bge-v1",
+    "limits": {
+      "cpus": 1,
+      "memory": "1536m"
+    },
+    "provider_response_cache": "disabled in both; zero recorded cache hits",
+    "native_router_retrieval_cache": "enabled; second pass is warm",
+    "native_duckdb_versions": {
+      "rag": "1.5.5",
+      "coair": "2.0.0"
+    },
+    "native_account_schemas": "separate; provider tokens, not CA balances, compared",
+    "sample_size": "two repeats per chat case per engine; one full report per engine",
+    "engine_run_order": [
+      "coair",
+      "rag"
+    ],
+    "pdfs": [
+      {
+        "name": "CEC01123743.pdf",
+        "sha256": "30040b4dbe8d49d291d97c071854ad0a83752dea820f9892271f7c388d22018b"
+      },
+      {
+        "name": "CEC01546478.pdf",
+        "sha256": "06edd3eb7ea71b418d44ddba56491c8758aeba59151412341c4a64fe3a672ae1"
+      },
+      {
+        "name": "CEC01630357.pdf",
+        "sha256": "681665ccd8b05f16b566d7a13decc7adb07c9bc32562be9feae7e37fa1724baf"
+      }
+    ]
+  },
+  "engines": {
+    "coair": {
+      "initialization_seconds": 3.478,
+      "queries": [
+        {
+          "case": "selected_document",
+          "repeat": 1,
+          "status": "completed",
+          "seconds": 13.68,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 2,
+            "input_tokens": 3808,
+            "output_tokens": 464,
+            "reasoning_tokens": 1937,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01546478.pdf"
+          ]
+        },
+        {
+          "case": "followup",
+          "repeat": 1,
+          "status": "completed",
+          "seconds": 8.396,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 3,
+            "input_tokens": 6092,
+            "output_tokens": 178,
+            "reasoning_tokens": 460,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01546478.pdf"
+          ]
+        },
+        {
+          "case": "standalone_after_history",
+          "repeat": 1,
+          "status": "completed",
+          "seconds": 16.643,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 3,
+            "input_tokens": 7241,
+            "output_tokens": 311,
+            "reasoning_tokens": 2512,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01123743.pdf"
+          ]
+        },
+        {
+          "case": "selected_document",
+          "repeat": 2,
+          "status": "completed",
+          "seconds": 10.827,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 1,
+            "input_tokens": 1877,
+            "output_tokens": 407,
+            "reasoning_tokens": 1837,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01546478.pdf"
+          ]
+        },
+        {
+          "case": "followup",
+          "repeat": 2,
+          "status": "completed",
+          "seconds": 8.281,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 3,
+            "input_tokens": 6035,
+            "output_tokens": 110,
+            "reasoning_tokens": 675,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01546478.pdf"
+          ]
+        },
+        {
+          "case": "standalone_after_history",
+          "repeat": 2,
+          "status": "completed",
+          "seconds": 14.206,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 1,
+            "input_tokens": 4828,
+            "output_tokens": 439,
+            "reasoning_tokens": 2308,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01123743.pdf"
+          ]
+        }
+      ],
+      "cases": {
+        "selected_document": {
+          "seconds": [
+            13.68,
+            10.827
+          ],
+          "mean_seconds": 12.253,
+          "n": 2
+        },
+        "followup": {
+          "seconds": [
+            8.396,
+            8.281
+          ],
+          "mean_seconds": 8.338,
+          "n": 2
+        },
+        "standalone_after_history": {
+          "seconds": [
+            16.643,
+            14.206
+          ],
+          "mean_seconds": 15.425,
+          "n": 2
+        }
+      },
+      "report": {
+        "status": "completed",
+        "records": 4,
+        "footnotes": 10,
+        "tables": 0,
+        "bytes": 38399,
+        "coverage_status": "partial",
+        "partial_reasons": [
+          "uncovered_facets",
+          "thin_record"
+        ],
+        "sha256": "b7680342eb0ba1162d5863cec0d58cd640e26a42935b76b9a51bf0c94507d897",
+        "seconds": 30.225,
+        "stages": [
+          {
+            "stage": "research_plan",
+            "progress": 0.08,
+            "seconds": 0.018
+          },
+          {
+            "stage": "evidence_pack",
+            "progress": 0.2,
+            "seconds": 3.058
+          },
+          {
+            "stage": "evidence_extraction",
+            "progress": 0.3,
+            "seconds": 3.063
+          },
+          {
+            "stage": "aggregation",
+            "progress": 0.58,
+            "seconds": 12.472
+          },
+          {
+            "stage": "synthesis",
+            "progress": 0.68,
+            "seconds": 12.472
+          },
+          {
+            "stage": "verification",
+            "progress": 0.82,
+            "seconds": 30.17
+          }
+        ],
+        "run_id": "39be03ee21a24e35ab00",
+        "usage": {
+          "calls": 5,
+          "input_tokens": 15715,
+          "output_tokens": 2974,
+          "reasoning_tokens": 6110
+        }
+      },
+      "responses_completed": 6,
+      "citation_contract_passed": 6
+    },
+    "rag": {
+      "initialization_seconds": 3.718,
+      "queries": [
+        {
+          "case": "selected_document",
+          "repeat": 1,
+          "status": "completed",
+          "seconds": 18.992,
+          "citations": 0,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 2,
+            "input_tokens": 3994,
+            "output_tokens": 400,
+            "reasoning_tokens": 747,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": false,
+          "citation_files": []
+        },
+        {
+          "case": "followup",
+          "repeat": 1,
+          "status": "completed",
+          "seconds": 10.64,
+          "citations": 3,
+          "selection_scope_passed": false,
+          "usage": {
+            "calls": 3,
+            "input_tokens": 7565,
+            "output_tokens": 126,
+            "reasoning_tokens": 325,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": false,
+          "citation_files": [
+            "CEC01123743.pdf",
+            "CEC01546478.pdf",
+            "CEC01630357.pdf"
+          ]
+        },
+        {
+          "case": "standalone_after_history",
+          "repeat": 1,
+          "status": "completed",
+          "seconds": 16.345,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 2,
+            "input_tokens": 6788,
+            "output_tokens": 96,
+            "reasoning_tokens": 978,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01123743.pdf"
+          ]
+        },
+        {
+          "case": "selected_document",
+          "repeat": 2,
+          "status": "completed",
+          "seconds": 16.409,
+          "citations": 0,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 1,
+            "input_tokens": 2026,
+            "output_tokens": 405,
+            "reasoning_tokens": 863,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": false,
+          "citation_files": []
+        },
+        {
+          "case": "followup",
+          "repeat": 2,
+          "status": "completed",
+          "seconds": 9.562,
+          "citations": 3,
+          "selection_scope_passed": false,
+          "usage": {
+            "calls": 2,
+            "input_tokens": 5801,
+            "output_tokens": 117,
+            "reasoning_tokens": 327,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": false,
+          "citation_files": [
+            "CEC01123743.pdf",
+            "CEC01546478.pdf",
+            "CEC01630357.pdf"
+          ]
+        },
+        {
+          "case": "standalone_after_history",
+          "repeat": 2,
+          "status": "completed",
+          "seconds": 13.665,
+          "citations": 1,
+          "selection_scope_passed": true,
+          "usage": {
+            "calls": 1,
+            "input_tokens": 4884,
+            "output_tokens": 193,
+            "reasoning_tokens": 776,
+            "cache_hits": 0
+          },
+          "citation_contract_passed": true,
+          "citation_files": [
+            "CEC01123743.pdf"
+          ]
+        }
+      ],
+      "cases": {
+        "selected_document": {
+          "seconds": [
+            18.992,
+            16.409
+          ],
+          "mean_seconds": 17.7,
+          "n": 2
+        },
+        "followup": {
+          "seconds": [
+            10.64,
+            9.562
+          ],
+          "mean_seconds": 10.101,
+          "n": 2
+        },
+        "standalone_after_history": {
+          "seconds": [
+            16.345,
+            13.665
+          ],
+          "mean_seconds": 15.005,
+          "n": 2
+        }
+      },
+      "report": {
+        "status": "completed",
+        "records": 14,
+        "footnotes": 22,
+        "tables": 0,
+        "bytes": 39370,
+        "coverage_status": "partial",
+        "partial_reasons": [
+          "uncovered_facets"
+        ],
+        "sha256": "0972aad7b03d1084cfea8e292c199a0ab2cbf3db06f0dd4bd32749ae47a760cb",
+        "seconds": 44.578,
+        "stages": [
+          {
+            "stage": "research_plan",
+            "progress": 0.08,
+            "seconds": 0.03
+          },
+          {
+            "stage": "evidence_pack",
+            "progress": 0.2,
+            "seconds": 3.211
+          },
+          {
+            "stage": "evidence_extraction",
+            "progress": 0.3,
+            "seconds": 3.216
+          },
+          {
+            "stage": "aggregation",
+            "progress": 0.58,
+            "seconds": 16.469
+          },
+          {
+            "stage": "synthesis",
+            "progress": 0.68,
+            "seconds": 16.471
+          },
+          {
+            "stage": "verification",
+            "progress": 0.82,
+            "seconds": 40.499
+          },
+          {
+            "stage": "word",
+            "progress": 0.9,
+            "seconds": 44.476
+          }
+        ],
+        "run_id": "a0daa616cba34bffb205",
+        "usage": {
+          "calls": 6,
+          "input_tokens": 29784,
+          "output_tokens": 7380,
+          "reasoning_tokens": 8103
+        }
+      },
+      "responses_completed": 6,
+      "citation_contract_passed": 2
+    }
+  },
+  "limitations": [
+    "Small corpus; no full Edinburgh or load-test latency claim.",
+    "LLM outputs and event counts differ: report durations do not establish a speedup or equivalent quality.",
+    "Date-normalization proof remains a demonstrated shared quality gap.",
+    "Legacy reference has missing structured citations and selection widening; target passes the tested contract."
+  ],
+  "excluded_probes": [
+    "Coair users.db copied to legacy RAG caused a 24-versus-23 ledger-column mismatch.",
+    "DuckDB 2.0.0 physical file copied to RAG 1.5.5 caused an empty in-memory fallback; those reference timings are excluded.",
+    "Earlier target run exposed selection widening; replaced by the validated run after canonical file-ID fix."
+  ]
+}

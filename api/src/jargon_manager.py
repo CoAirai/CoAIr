@@ -45,6 +45,20 @@ def jargon_dictionary_version() -> str:
         return "jargon-unavailable"
 
 
+def project_domain_hint(project_id: str = "") -> str:
+    """Read only the current project's label; never reuse another request's domain."""
+    try:
+        from .project_context import get_current_project_id
+        pid = str(project_id or get_current_project_id() or "").strip()
+        if not pid:
+            return ""
+        from .project_store import get_project_store
+        project = get_project_store().get(pid)
+        return str((project or {}).get("name") or "").strip()
+    except Exception:
+        return ""
+
+
 @dataclass(frozen=True)
 class PreparedQuery:
     """One immutable jargon pass shared by routing, retrieval and generation."""
@@ -248,7 +262,7 @@ class JargonManager:
 
         def tag_of(sense: str) -> str:
             found = _TAG_RE.findall(sense)
-            return found[-1].strip().lower() if found else ""
+            return found[-1].strip("[] ").lower() if found else ""
 
         hint = str(domain_hint or "").strip().lower()
         chosen = ""
@@ -257,7 +271,11 @@ class JargonManager:
                 tag = tag_of(sense)
                 # Either direction: hint "Edinburgh Tram Inquiry" matches tag
                 # "edinburgh tram inquiry"; hint "P6 schedule" matches tag "p6".
-                if tag and (tag in hint or hint in tag):
+                if tag and (tag in hint or hint in tag or (
+                        len(tag.split()[0]) >= 4
+                        and tag.split()[0] not in {"case", "contract", "project", "generic"}
+                        and re.match(r"^" + re.escape(tag.split()[0]) + r"\b", hint)
+                )):
                     chosen = sense
                     break
         if not chosen:
@@ -276,6 +294,7 @@ class JargonManager:
         variants; LLMs receive a compact terminology block rather than the
         entire 2,700-term dictionary.
         """
+        domain_hint = domain_hint or project_domain_hint()
         original = str(query or "")
         if not original.strip():
             return PreparedQuery(original, (), "", original, (original,))
@@ -565,25 +584,24 @@ class JargonManager:
         if not query:
             return query
 
-        replaced = query
-        for abbr, meaning in sorted(
-            self._abbr_to_meaning.items(), key=lambda kv: len(kv[0]), reverse=True
-        ):
-            if not abbr or not meaning:
+        domain_hint = project_domain_hint()
+        meanings = {abbr.casefold(): (self.retrieval_sense(meaning, domain_hint)
+                                     if domain_hint else meaning)
+                    for abbr, meaning in self._abbr_to_meaning.items() if abbr and meaning}
+        if not meanings:
+            return query
+        terms = "|".join(re.escape(abbr) for abbr in sorted(meanings, key=len, reverse=True))
+        pattern = re.compile(rf"(?<![A-Za-z0-9])(?:{terms})(?![A-Za-z0-9])", re.IGNORECASE)
+        parts = []
+        position = 0
+        for match in pattern.finditer(query):
+            if match.start() < position:
                 continue
-            paired_pattern = re.compile(
-                rf"(?<![A-Za-z0-9]){re.escape(abbr)}(?![A-Za-z0-9])"
-                rf"\s*\(\s*{re.escape(meaning)}\s*\)",
-                re.IGNORECASE,
-            )
-            replaced = paired_pattern.sub(meaning, replaced)
-            pattern = re.compile(
-                rf"(?<![A-Za-z0-9]){re.escape(abbr)}(?![A-Za-z0-9])",
-                re.IGNORECASE,
-            )
-            replaced = pattern.sub(meaning, replaced)
-
-        return replaced
+            meaning = meanings[match.group().casefold()]
+            paired = re.match(rf"\s*\(\s*{re.escape(meaning)}\s*\)", query[match.end():], re.IGNORECASE)
+            parts.extend((query[position:match.start()], meaning))
+            position = match.end() + (paired.end() if paired else 0)
+        return "".join(parts) + query[position:]
 
     def lookup_concept_group(self, term: str) -> Optional[List[str]]:
         """
@@ -616,17 +634,21 @@ class JargonManager:
         Returns:
             Expanded query with abbreviation meanings
         """
-        expanded = query
-        words = re.findall(r'\b[A-Z][A-Z0-9&/]{1,10}\b', query)
+        original_lower = query.lower()
+        domain_hint = project_domain_hint()
 
-        for word in words:
+        def expand_original(match):
+            word = match.group()
             meaning = self.expand(word)
-            if meaning:
-                # Add meaning in parentheses if not already present
-                if meaning.lower() not in query.lower():
-                    expanded = expanded.replace(word, f"{word} ({meaning})")
+            if meaning and domain_hint:
+                meaning = self.retrieval_sense(meaning, domain_hint)
+            if meaning and meaning.lower() not in original_lower:
+                return f"{word} ({meaning})"
+            return word
 
-        return expanded
+        # Match the original input once. Replacing inside already-generated
+        # definitions can recursively grow a selected document until OOM.
+        return re.sub(r'\b[A-Z][A-Z0-9&/]{1,10}\b', expand_original, query)
 
     def normalize_column_name(self, column: str) -> Tuple[str, Optional[str]]:
         """

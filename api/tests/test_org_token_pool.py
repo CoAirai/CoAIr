@@ -45,7 +45,7 @@ def test_rebalance_remaining_keeps_usage(stores):
     users.create_user("pool-a", "pw", token_limit=33)
     users.create_user("pool-b", "pw", token_limit=33)
     org = orgs.create_org(
-        name="Pool Co", owner="pool-owner", default_token_limit=100
+        name="Pool Co", owner="pool-owner", created_by="pool-owner", default_token_limit=100
     )
     org_id = org["org_id"]
     orgs.add_member(org_id, "pool-a", "member")
@@ -73,7 +73,7 @@ def test_transfer_unused_clamps(stores):
     users.create_user("xfer-owner", "pw", token_limit=50)
     users.create_user("xfer-member", "pw", token_limit=10)
     org = orgs.create_org(
-        name="Xfer Co", owner="xfer-owner", default_token_limit=100
+        name="Xfer Co", owner="xfer-owner", created_by="xfer-owner", default_token_limit=100
     )
     org_id = org["org_id"]
     orgs.add_member(org_id, "xfer-member", "member")
@@ -93,7 +93,7 @@ def test_full_pool_reset(stores):
     users.create_user("full-a", "pw", token_limit=30)
     users.create_user("full-b", "pw", token_limit=30)
     org = orgs.create_org(
-        name="Full Co", owner="full-owner", default_token_limit=90
+        name="Full Co", owner="full-owner", created_by="full-owner", default_token_limit=90
     )
     org_id = org["org_id"]
     orgs.add_member(org_id, "full-a", "member")

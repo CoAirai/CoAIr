@@ -209,13 +209,13 @@ class TestBulkCorpusChunkSearch:
         con = duckdb.connect(":memory:")
         con.execute(
             "CREATE TABLE chunks (chunk_id VARCHAR, doc_id VARCHAR, "
-            "file_name VARCHAR, page_number INTEGER, text VARCHAR)"
+            "file_name VARCHAR, page_number INTEGER, text VARCHAR, project_id VARCHAR)"
         )
         con.execute(
             "INSERT INTO chunks VALUES "
-            "('c1','doc_fasta','FASTA_SPEC.pdf',1,'fasta installation notes'),"
-            "('c2','doc_fasta','FASTA_SPEC.pdf',2,'more fasta details'),"
-            "('c3','doc_tram','TRAM_REPORT.pdf',1,'tram budget overview')"
+            "('c1','doc_fasta','FASTA_SPEC.pdf',1,'fasta installation notes','project-a'),"
+            "('c2','doc_fasta','FASTA_SPEC.pdf',2,'more fasta details','project-a'),"
+            "('c3','doc_tram','TRAM_REPORT.pdf',1,'tram budget overview','project-b')"
         )
 
         class _StubStore:
@@ -239,10 +239,13 @@ class TestBulkCorpusChunkSearch:
         from src.document_rag import corpus_var
         router = self._router_with_chunk_store(monkeypatch)
         token = corpus_var.set("edinburgh")
+        from src.project_context import current_project_id_var
+        project_token = current_project_id_var.set("project-a")
         try:
             results = router._unified_document_search("fasta")
         finally:
             corpus_var.reset(token)
+            current_project_id_var.reset(project_token)
         names = [r["file_name"] for r in results]
         assert "FASTA_SPEC.pdf" in names
         hit = next(r for r in results if r["file_name"] == "FASTA_SPEC.pdf")

@@ -26,8 +26,9 @@ from .evidence_model import EvidenceItem
 # ships, it just stops claiming to be a full one.
 THIN_RECORD_EVENTS = 8
 
-# Ceiling on the evidence handed to extraction, in characters. Three batches at
-# EVIDENCE_BATCH_CHARS. The old rule capped the *count* of selected documents at
+# Legacy bounded-selection default for experimental V3 and explicit previews.
+# Qualified V2 generation/preview pass max_chars=None; extraction calls, rather
+# than the total report, carry a character budget. The old rule capped the *count* of selected documents at
 # twelve, which controlled neither cost nor truncation risk: a document here can
 # be 16 characters or 290,000, so twelve of them was anywhere between one batch
 # and fifty. Bounding the text bounds both.
@@ -55,11 +56,6 @@ RELEVANCE_FLOOR = 0.35
 # characters should cost 70,000 characters.
 SATURATION_WINDOW = 25
 
-# How many scored passages retrieval hands to the selector. This is a candidate
-# pool, not the pack: the selector still has to fit them inside MAX_PACK_CHARS.
-# It was 120, which at a 1,200-character excerpt could not fill the budget even
-# in principle, so the ceiling would never have been reachable.
-CANDIDATE_PASSAGES = 400
 
 
 @dataclass(frozen=True)
@@ -102,11 +98,11 @@ def select_pack(
     evidence: Sequence[EvidenceItem],
     *,
     facets: Mapping[str, Sequence[str]] | None = None,
-    max_chars: int = MAX_PACK_CHARS,
+    max_chars: int | None = MAX_PACK_CHARS,
     max_document_share: float = MAX_DOCUMENT_SHARE,
     relevance_floor: float = RELEVANCE_FLOOR,
 ) -> PackSelection:
-    """Choose the evidence to extract from, bounded by text rather than count.
+    """Choose qualifying evidence; max_chars=None reads it all across batches.
 
     Replaces "take the top twelve documents". That rule limited the wrong
     dimension — a `doc_id` in this corpus is a fragment, averaging ~2,000
@@ -115,7 +111,8 @@ def select_pack(
     relevance threshold, so it padded a narrow topic with twelve items whether
     or not twelve were worth reading.
 
-    Four rules, in order:
+    With max_chars=None, budget/share/saturation cuts are disabled; relevance
+    and coverage selection still apply. Bounded mode follows four rules:
 
     1. Keep passages within `relevance_floor` of the best. This is what makes
        the pack adaptive: a narrow topic stops early.
@@ -128,11 +125,13 @@ def select_pack(
     Grouping is by `file_name`, not `doc_id`: the cap is meant to stop one
     *document* dominating, and doc_ids are fragments of documents.
     """
+    # Unbounded report mode must not equate repeated dates with duplicate facts.
     ranked = sorted(evidence, key=lambda item: float(item.score or 0.0), reverse=True)
     stats: Dict = {
         "candidates": len(ranked), "dropped_below_floor": 0,
         "dropped_document_cap": 0, "dropped_budget": 0,
         "admitted_for_coverage": 0, "stopped_early": "",
+        "scope": "all_qualifying_candidates" if max_chars is None else "bounded_preview",
     }
     if not ranked:
         return PackSelection([], stats)
@@ -142,7 +141,8 @@ def select_pack(
     stats["relevance_floor"] = round(floor, 6)
 
     facet_map = dict(facets or {})
-    per_document_cap = max(1, int(max_chars * max_document_share))
+    # None means all qualifying evidence; only individual model calls are bounded.
+    per_document_cap = max(1, int(max_chars * max_document_share)) if max_chars is not None else None
 
     chosen: List[EvidenceItem] = []
     chosen_ids: set[str] = set()
@@ -155,11 +155,11 @@ def select_pack(
         size = len(item.excerpt or "")
         if item.source_id in chosen_ids:
             return False
-        if used_chars + size > max_chars:
+        if max_chars is not None and used_chars + size > max_chars:
             stats["dropped_budget"] += 1
             return False
         key = item.file_name or item.doc_id
-        if per_document.get(key, 0) + size > per_document_cap:
+        if per_document_cap is not None and per_document.get(key, 0) + size > per_document_cap:
             stats["dropped_document_cap"] += 1
             return False
         chosen.append(item)
@@ -193,7 +193,7 @@ def select_pack(
         # spent. `gained` already counts a new facet as progress, so a long
         # stale run means coverage has stopped improving too. The rescue pass
         # below still goes looking for anything still missing.
-        if stale >= SATURATION_WINDOW:
+        if max_chars is not None and stale >= SATURATION_WINDOW:
             stats["stopped_early"] = "saturated"
             break
     stats["distinct_dates"] = len(dates_seen)

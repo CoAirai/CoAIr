@@ -85,14 +85,13 @@ def test_scoped_request_with_no_tables_of_its_own_gets_nothing():
     assert router._allowed_data_tables() == []
 
 
-def test_legacy_corpus_account_still_reaches_its_tables(monkeypatch):
+def test_legacy_corpus_tag_cannot_expand_an_empty_projects_tables(monkeypatch):
     monkeypatch.setattr("src.document_rag._current_user_corpus", lambda: "edinburgh")
     router = _router(_analyzer(TABLES))
 
-    # Its catalog entries carry no project_id, so the corpus tag is the only
-    # boundary they have. Losing this is the regression that hides 122 tables.
+    # Pre-project tables require explicit migration; the tag grants no membership.
     set_current_project("edinburgh-project")
-    assert router._allowed_data_tables() == ["legacy_edinburgh"]
+    assert router._allowed_data_tables() == []
 
 
 def test_unscoped_script_keeps_unrestricted_access(monkeypatch):
@@ -168,6 +167,9 @@ def test_topic_inventory_cache_is_keyed_by_project(monkeypatch):
 
 
 class _EmptyRegistry:
+    def get_all(self, project_id=None):
+        return []
+
     def get_completed(self, project_id=None):
         return []
 
@@ -198,7 +200,7 @@ def test_empty_project_summary_is_zero_not_the_platform(monkeypatch):
     }
 
 
-def test_legacy_corpus_account_still_sees_its_library(monkeypatch):
+def test_legacy_corpus_tag_cannot_expand_an_empty_projects_library(monkeypatch):
     from backend.api import library
 
     monkeypatch.setattr("src.document_registry.get_document_registry", lambda: _EmptyRegistry())
@@ -211,4 +213,4 @@ def test_legacy_corpus_account_still_sees_its_library(monkeypatch):
 
     assert asyncio.run(
         library.list_library(user=user, project=project)
-    ) == ["bulk-doc", "spreadsheet"]
+    ) == []

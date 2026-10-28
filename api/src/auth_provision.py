@@ -63,15 +63,15 @@ def issue_invite_activation_email(
         secret=code if not (result.get("ok") and result.get("mode") == "live") else None,
     )
     emailed = bool(result.get("ok") and result.get("mode") == "live")
+    from backend.core.platform_guard import expose_security_debug
+
     payload: Dict[str, Any] = {
         "challenge_id": challenge["challenge_id"],
         "emailed": emailed,
-        "debug_code": challenge.get("debug_code"),
+        "debug_code": challenge.get("debug_code") if expose_security_debug() else None,
         "email_error": None if emailed else result.get("error"),
         "invite_token_id": invite["token_id"],
     }
-    from backend.core.platform_guard import expose_security_debug
-
     if expose_security_debug():
         payload["debug_invite_token"] = invite["token"]
     return payload

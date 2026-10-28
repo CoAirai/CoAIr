@@ -74,13 +74,28 @@ class HybridExecutor:
             self._jargon = get_jargon_manager()
         return self._jargon
 
-    def _build_table_context(self, query: str = "") -> str:
+    def _build_table_context(self, query: str = "",
+                             allowed_tables: Optional[List[str]] = None) -> str:
         """L2 — query-relevant, RELIABLE data tables only (no OCR junk pseudo-
         tables). Scales: only the top-N tables relevant to the query are listed,
         so prompt size stays bounded as the corpus grows."""
         da = self.data_analyzer
-        # select_tables is heuristic (no LLM) and already drops junk tables.
-        names = da.select_tables(query, max_tables=8) if query else da.sql_table_names()[:12]
+        from .project_context import get_current_project_id
+        from .document_rag import _current_user_corpus
+        project_id = get_current_project_id()
+        scope = da.get_tables_for_project(project_id) if project_id else None
+        corpus = _current_user_corpus()
+        if not project_id and corpus:
+            scope = da.get_tables_for_corpus(corpus)
+        if project_id and scope is None:
+            scope = []
+        if allowed_tables is not None:
+            scope = [name for name in allowed_tables if scope is None or name in scope]
+        # Apply scope before ranking so unrelated tables cannot crowd out local ones.
+        names = (da.select_tables(query, max_tables=8, allowed_tables=scope) if query
+                 else [name for name in da.sql_table_names()
+                       if scope is None or name in scope][:12])
+        names = [name for name in names if scope is None or name in scope]
         if not names:
             return "No reliable data tables loaded."
 
@@ -99,45 +114,40 @@ class HybridExecutor:
                 lines.append(f"  {jargon_ctx}")
         return '\n'.join(lines)
 
-    def _build_doc_context(self, query: str = "") -> str:
-        """L0+L1 — document corpus TOPICS (compressed cluster labels) + the
+    def _build_doc_context(self, query: str = "",
+                           doc_ids: Optional[List[str]] = None) -> str:
+        """L0+L1 — project document TOPICS + the
         query-relevant documents' one-line summaries, so the planner knows what
         the documents are ABOUT (not just filenames) and routes prose/person/
         date/correspondence sub-questions to DOCUMENT/TIMELINE, not SQL.
 
-        Scales: cluster labels compress 100s of docs into ~12 topics; only the
+        Scales: local metadata is bounded to ~12 topics; only the
         top-N query-relevant per-doc summaries are added.
         """
         lines = []
 
-        # L1a — corpus topic inventory (compressed: cluster labels, ~12).
+        from .agent_metadata import document_topics, scoped_documents
         try:
-            from .document_clusterer import get_clusterer, UNCATEGORIZED_LABEL
-            topics = []
-            for c in get_clusterer().list_clusters():
-                label = (c.get("label") or "").strip()
-                if label and label != UNCATEGORIZED_LABEL:
-                    topics.append(f"{label} ({c.get('doc_count', 0)})")
-                if len(topics) >= 12:
-                    break
-            if topics:
-                lines.append("DOCUMENT TOPICS (corpus covers): " + "; ".join(topics))
+            records = scoped_documents(doc_ids)
         except Exception:
-            pass
+            return "No documents loaded."
+
+        # Never use global cluster labels: their wording may span tenants.
+        topics = [f"{label} ({count})" for label, count in document_topics(records)]
+        if topics:
+            lines.append("DOCUMENT TOPICS (corpus covers): " + "; ".join(topics))
 
         # L0+L1b — query-relevant per-document summaries (top-N).
         try:
-            from .document_registry import get_document_registry
             q_tokens = {t for t in re.findall(r"\b\w{3,}\b", (query or "").lower())}
             scored = []
-            for rec in get_document_registry().get_completed():
+            for rec in records:
                 if rec.file_type == "data":
                     continue  # data files are covered by the table context
                 hay = " ".join([
                     rec.file_name or "",
                     rec.llm_summary or "",
                     " ".join(getattr(rec, "llm_topics", None) or []),
-                    rec.cluster_label or "",
                 ]).lower()
                 score = sum(1 for t in q_tokens if t in hay)
                 scored.append((score, rec))
@@ -151,17 +161,8 @@ class HybridExecutor:
         except Exception:
             pass
 
-        # L3 — lightweight relationship signal (parties), for timeline routing.
-        try:
-            stats = self.light_graph.get_statistics()
-            if stats.get('node_count', 0) > 0:
-                parties = self.light_graph.get_all_parties()
-                if parties:
-                    party_str = ', '.join(p['party'] for p in parties[:5])
-                    lines.append(f"Correspondence parties: {party_str}")
-        except Exception:
-            pass
-
+        # The graph party inventory has no project boundary. Omit that optional
+        # routing hint until the graph can provide independently scoped metadata.
         return '\n'.join(lines) if lines else "No documents loaded."
 
     def execute(self, query: str, doc_ids: Optional[List[str]] = None,
@@ -187,8 +188,8 @@ class HybridExecutor:
 
         # Gather query-relevant, content-aware context (bounded by query relevance,
         # not corpus size).
-        table_context = self._build_table_context(expanded)
-        doc_context = self._build_doc_context(expanded)
+        table_context = self._build_table_context(expanded, allowed_tables=allowed_tables)
+        doc_context = self._build_doc_context(expanded, doc_ids=doc_ids)
 
         # Plan
         plan = self.planner.plan(expanded, table_context, doc_context)
@@ -457,8 +458,8 @@ class HybridExecutor:
         logger.info(f"[HybridExecutor] Dual query: {query[:100]}...")
 
         expanded = self.jargon.expand_query(query)
-        table_context = self._build_table_context(expanded)
-        doc_context = self._build_doc_context(expanded)
+        table_context = self._build_table_context(expanded, allowed_tables=allowed_tables)
+        doc_context = self._build_doc_context(expanded, doc_ids=doc_ids)
 
         # Plan once (plan structure is provider-independent)
         plan = self.planner.plan(expanded, table_context, doc_context)

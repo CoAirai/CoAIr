@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import Icon from "@/components/Icon";
+import SourceTable from "./SourceTable";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
 import {
@@ -253,7 +254,8 @@ const DocumentPreview = () => {
                                         className="mx-auto w-full"
                                     />
                                 )}
-                                {!loading && !hasImage && (
+                                {!loading && !error && live?.type === "table" && <SourceTable content={live} />}
+                                {!loading && !hasImage && live?.type !== "table" && (
                                     <div>
                                         <div className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
                                             Page {page}
@@ -393,56 +395,7 @@ const DocumentPreview = () => {
                                     !hasImage &&
                                     isLive &&
                                     live?.type === "table" && (
-                                        <div className="overflow-auto text-label-xs">
-                                            <div className="mb-2 text-label-sm font-medium text-strong-950">
-                                                {live.sheet_name || displayName}
-                                            </div>
-                                            <table className="w-full border-collapse">
-                                                <thead>
-                                                    <tr>
-                                                        {(live.columns || []).map(
-                                                            (col) => (
-                                                                <th
-                                                                    key={col}
-                                                                    className="border-b border-stroke-soft-200 px-1 py-1 text-left"
-                                                                >
-                                                                    {col}
-                                                                </th>
-                                                            )
-                                                        )}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {(live.rows || [])
-                                                        .slice(0, 40)
-                                                        .map((row, i) => (
-                                                            <tr key={i}>
-                                                                {(
-                                                                    live.columns ||
-                                                                    Object.keys(row)
-                                                                ).map((col) => (
-                                                                    <td
-                                                                        key={col}
-                                                                        className="border-b border-stroke-soft-200 px-1 py-1 text-sub-600"
-                                                                    >
-                                                                        {String(
-                                                                            row[col] ??
-                                                                                ""
-                                                                        )}
-                                                                    </td>
-                                                                ))}
-                                                            </tr>
-                                                        ))}
-                                                </tbody>
-                                            </table>
-                                            {(live.rows || []).length > 40 ? (
-                                                <p className="mt-2 text-label-xs text-sub-600">
-                                                    Showing 40 of{" "}
-                                                    {(live.rows || []).length.toLocaleString()}{" "}
-                                                    rows.
-                                                </p>
-                                            ) : null}
-                                        </div>
+                                        <SourceTable content={live} />
                                     )}
                                 {!loading &&
                                     !hasImage &&

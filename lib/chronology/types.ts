@@ -32,6 +32,8 @@ export type ChronologyReport = {
     parties?: string;
     createdAt: string;
     status: ChronologyStatus;
+    stage?: string;
+    progress?: number;
     error?: string;
     sections: ChronologySection[];
     sources: ChronologySource[];

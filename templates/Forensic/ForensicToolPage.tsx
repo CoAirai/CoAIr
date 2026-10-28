@@ -1,5 +1,7 @@
 "use client";
 
+import { parseAnswer, type AnswerPart } from "@/lib/chat/answerText";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -73,6 +75,19 @@ function forensicFailure(run: CoairForensicRun) {
     return `Run failed — ${code.replaceAll("_", " ")}`;
 }
 
+function NarrativeText({ text }: { text: string }) {
+    return <div className="flex flex-col gap-2" aria-label="AI narrative">
+                {parseAnswer(text).map((block, index) => {
+                    const parts = (values: AnswerPart[]) => values.map((part, i) => part.type === "bold"
+                        ? <strong key={i} className="font-semibold">{part.text}</strong>
+                        : <span key={i}>{part.type === "cite" ? part.name : part.text}</span>);
+                    if (block.type === "code") return <pre key={index} className="overflow-auto whitespace-pre-wrap">{block.text}</pre>;
+                    if (block.type === "table") return <div key={index} className="overflow-auto"><table className="w-full text-left text-label-sm"><thead><tr>{block.headers.map((h,i)=><th key={i} className="px-2 py-1 font-semibold">{h}</th>)}</tr></thead><tbody>{block.rows.map((row,i)=><tr key={i}>{row.map((cell,j)=><td key={j} className="px-2 py-1">{cell}</td>)}</tr>)}</tbody></table></div>;
+                    return block.type === "heading" ? <h3 key={index} className="font-semibold">{parts(block.parts)}</h3> : <p key={index} className="text-label-sm leading-6">{parts(block.parts)}</p>;
+                })}
+            </div>;
+}
+
 function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
     if (!run) {
         return (
@@ -106,9 +121,10 @@ function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
             result?.text ||
             (Array.isArray(result?.findings) ? result.findings.join(" ") : "");
         return (
-            <p className="mt-2 text-label-sm leading-6 text-sub-600">
-                {fallback || "Run finished with no summary."}
-            </p>
+            <div className="mt-2 flex flex-col gap-2">
+                {result?.narrative ? <NarrativeText text={result.narrative} /> : <p className="text-label-sm leading-6 text-sub-600">{fallback || "Run finished with no summary."}</p>}
+                {(result?.warnings ?? []).map((warning, index) => <p key={index} className="text-label-sm text-sub-600">{warning}</p>)}
+            </div>
         );
     }
     return (
@@ -164,6 +180,8 @@ function ForensicLiveResult({ run }: { run: CoairForensicRun | null }) {
                     </table>
                 </div>
             ) : null}
+            {(result.warnings ?? []).map((warning, index) => <p key={index} className="text-label-sm text-sub-600">{warning}</p>)}
+            {result.narrative ? <NarrativeText text={result.narrative} /> : null}
         </div>
     );
 }
@@ -211,6 +229,7 @@ const ForensicToolPage = ({ toolId }: Props) => {
     const [cabCodes, setCabCodes] = useState("");
     const [cabAnchor, setCabAnchor] = useState("");
     const [downloadingArtifact, setDownloadingArtifact] = useState("");
+    const [includeAiNarrative, setIncludeAiNarrative] = useState(false);
 
     const programmeWorkspaces = live.enabled ? liveWorkspaces : mockWorkspaces;
     const activeWorkspace =
@@ -393,7 +412,8 @@ const ForensicToolPage = ({ toolId }: Props) => {
                     finish: delayFinish,
                     activityCodes: cabCodes,
                     anchor: cabAnchor,
-                })
+                }),
+                includeAiNarrative && tool.id !== "report-assembler"
             );
             setRun(created);
         } catch (err) {
@@ -652,6 +672,12 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                     </div>
                                 ) : null}
                                 {live.enabled && tool.id !== "report-assembler" ? (
+                                    <label className="mt-4 flex items-center gap-2 text-label-sm text-sub-600">
+                                        <input type="checkbox" checked={includeAiNarrative} disabled={runBusy} onChange={event => setIncludeAiNarrative(event.target.checked)} />
+                                        Include AI narrative
+                                    </label>
+                                ) : null}
+                                {live.enabled ? (
                                     <button
                                         type="button"
                                         disabled={!canLiveRun || runBusy || shortOnFiles}
@@ -669,9 +695,8 @@ const ForensicToolPage = ({ toolId }: Props) => {
                                 ) : null}
                                 {live.enabled && tool.id === "report-assembler" ? (
                                     <p className="mt-3 text-label-xs leading-5 text-sub-600">
-                                        A downloadable claim report is not
-                                        available from this page yet. Run the
-                                        other checks in this workspace first.
+                                        Run the required checks in this workspace first,
+                                        then assemble their results into a Word report.
                                     </p>
                                 ) : null}
                                 {live.enabled && !canLiveRun ? (

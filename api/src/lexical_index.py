@@ -19,8 +19,6 @@ from typing import Dict, List, Optional
 
 from .logger import logger
 
-# Rebuilding the BM25 index takes 30–60 s on a full chunk store; during bulk
-# uploads the store changes constantly, so rebuild at most this often.
 _FTS_REBUILD_MIN_INTERVAL = 300.0
 
 
@@ -45,17 +43,12 @@ class LexicalIndex:
 
     # ── Chunk-level BM25 ─────────────────────────────────────
     def warm(self) -> None:
-        """Build the BM25 index in the background so the first question doesn't wait."""
+        """Discover a persisted index or build it off the request path."""
         from .chunk_store import get_chunk_store
         if not get_chunk_store().is_empty():
             self._start_fts_build(force=True)
 
     def _ensure_fts(self) -> bool:
-        """Whether a BM25 index can be queried right now. Never blocks on a build.
-
-        A stale index keeps serving (newly added chunks still arrive through the
-        dense lane) while a fresh one is built on a separate DuckDB connection.
-        """
         from .chunk_store import get_chunk_store
         cs = get_chunk_store()
         if cs.is_empty():
@@ -78,28 +71,36 @@ class LexicalIndex:
     def _build_fts(self) -> None:
         from .chunk_store import get_chunk_store
         cs = get_chunk_store()
-        # Cleared before building so chunks added mid-build mark it dirty again.
-        cs.mark_clean()
         started = time.monotonic()
         try:
-            con = cs.connection().cursor()
+            revision = cs.fts_revision()
+            con = cs.connection()
             try:
-                con.execute("INSTALL fts; LOAD fts;")
-                con.execute(
-                    "PRAGMA create_fts_index('chunks', 'chunk_id', 'text', overwrite=1)"
-                )
+                try:
+                    con.execute("LOAD fts")
+                except Exception:
+                    con.execute("INSTALL fts; LOAD fts")
+                existing = con.execute(
+                    "SELECT 1 FROM information_schema.schemata "
+                    "WHERE schema_name='fts_main_chunks' LIMIT 1"
+                ).fetchone()
+                if existing and not cs.is_dirty():
+                    self._fts_ready = self._fts_available = True
+                    logger.info("[Lexical] Reusing persisted FTS index")
+                    return
+                con.execute("PRAGMA create_fts_index('chunks', 'chunk_id', 'text', overwrite=1)")
             finally:
                 con.close()
-            self._fts_ready = True
-            self._fts_available = True
-            logger.info(
-                f"[Lexical] FTS index built over chunks in {time.monotonic() - started:.1f}s"
-            )
-        except Exception as e:
+            # Never clear an upload/delete that arrived during the build.
+            cs.mark_clean_if_unchanged(revision)
+            cs.checkpoint()
+            self._fts_ready = self._fts_available = True
+            logger.info(f"[Lexical] FTS index built in {time.monotonic() - started:.1f}s")
+        except Exception as exc:
             cs.mark_dirty()
             if not self._fts_ready:
                 self._fts_available = False
-            logger.warning(f"[Lexical] FTS build failed, using LIKE fallback: {e}")
+            logger.warning(f"[Lexical] FTS build failed, using LIKE fallback: {exc}")
         finally:
             with self._fts_lock:
                 self._fts_building = False
@@ -121,14 +122,8 @@ class LexicalIndex:
         cs = get_chunk_store()
         if cs.is_empty():
             return []
-        con = cs.connection().cursor()
-        try:
-            return self._search_chunks(con, query, top_k, project_id, doc_ids)
-        finally:
-            con.close()
+        con = cs.connection()
 
-    def _search_chunks(self, con, query: str, top_k: int, project_id: str,
-                       doc_ids: Optional[List[str]]) -> List[Dict]:
         if self._ensure_fts():
             try:
                 where = "project_id = ?"
@@ -137,13 +132,12 @@ class LexicalIndex:
                     where += f" AND doc_id IN ({','.join('?' for _ in doc_ids)})"
                     params.extend(list(doc_ids))
                 params.append(top_k)
-                # DuckDB 2 refuses to filter on the alias of a volatile function
-                # in the same SELECT, so the score is computed in a subquery.
                 rows = con.execute(
-                    "SELECT * FROM (SELECT chunk_id, doc_id, file_name, page_number, text, "
+                    "WITH scored AS MATERIALIZED ("
+                    "SELECT chunk_id, doc_id, file_name, page_number, text, "
                     "fts_main_chunks.match_bm25(chunk_id, ?) AS score "
-                    f"FROM chunks WHERE {where}) AS ranked "
-                    "WHERE score IS NOT NULL ORDER BY score DESC LIMIT ?",
+                    f"FROM chunks WHERE {where}) "
+                    "SELECT * FROM scored WHERE score IS NOT NULL ORDER BY score DESC LIMIT ?",
                     params,
                 ).fetchall()
                 return [
@@ -200,7 +194,7 @@ class LexicalIndex:
         # 1. Notice subject/topics/actions (light_graph)
         try:
             from .light_graph import get_light_graph
-            for node in get_light_graph().search_broad(terms, limit=limit):
+            for node in get_light_graph().search_broad(terms, limit=limit, project_id=project_id):
                 if (node.get("project_id") or "") != project_id:
                     continue
                 did = node.get("doc_id")
