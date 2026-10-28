@@ -133,7 +133,13 @@ class UserStore:
             yield conn
 
     def _init_schema(self) -> None:
-        if not use_postgres():
+        if use_postgres():
+            # create_app() builds this store before lifespan startup runs, so a
+            # fresh Postgres database needs its tables first.
+            from .database import apply_core_schema
+
+            apply_core_schema()
+        else:
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
                 columns = table_columns(conn, "users")
