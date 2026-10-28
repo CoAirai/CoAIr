@@ -72,7 +72,10 @@ done
 echo "health: `$state (backup: /root/coair-api-code-backup-$stamp.tgz)"
 [ "`$state" = healthy ]
 "@
-$remote -replace "`r", "" | ssh -o BatchMode=yes $Server "bash -s"
+# Run from a file: piped to "bash -s", docker compose reads the rest of the
+# script from stdin. Windows PowerShell also appends CRLF, so strip CR there.
+$remote | ssh -o BatchMode=yes $Server "tr -d '\r' > /tmp/coair-api-deploy.sh"
+ssh -o BatchMode=yes $Server "bash /tmp/coair-api-deploy.sh < /dev/null; rc=`$?; rm -f /tmp/coair-api-deploy.sh; exit `$rc"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "API is not healthy. Roll back with:" -ForegroundColor Red
     Write-Host "  ssh $Server 'cd $AppDir && tar -xzf /root/coair-api-code-backup-$stamp.tgz && docker compose -f docker-compose.vps.yml up -d --build api'"
