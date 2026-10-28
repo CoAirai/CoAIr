@@ -33,10 +33,17 @@ if ($dirty) {
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $commit = git rev-parse --short HEAD
 $archive = Join-Path $env:TEMP "coair-api-$stamp.tgz"
-git archive --format=tar.gz -o $archive HEAD:api
+# HEAD:api cannot see the root .gitattributes, so without this Windows
+# core.autocrlf=true writes CRLF and the container cannot exec entrypoint.sh.
+git -c core.autocrlf=false -c core.eol=lf archive --format=tar.gz -o $archive HEAD:api
 $entries = (tar -tzf $archive | Measure-Object).Count
 if ($LASTEXITCODE -ne 0 -or $entries -lt 100) {
     Write-Host "Archive looks wrong ($entries files) - not deploying." -ForegroundColor Red
+    exit 1
+}
+$entrypoint = (tar -xOzf $archive entrypoint.sh | Out-String)
+if ($entrypoint -match "`r") {
+    Write-Host "entrypoint.sh has Windows line endings in the archive - not deploying." -ForegroundColor Red
     exit 1
 }
 scp -o BatchMode=yes $archive "${Server}:/tmp/coair-api-code.tgz"
