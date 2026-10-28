@@ -618,3 +618,49 @@ research capability instead of skipping necessary tool work to advertise a short
 number. Report windowing, finite per-call budgets and terminal-only streaming solve
 different problems; full-corpus recall and repeated SQL-tool latency remain separate
 qualification/optimization work.
+
+### Qualified terminal-only release
+
+Runtime source **`f9363c100087d90953c80f7f0b88c17218d29b15`** is deployed as matched,
+healthy API/web images on `https://coair-test.duckdns.org`.
+[Full CI/deployment](https://github.com/CoAirai/CoAIr/actions/runs/40607944536)
+passed **648 API tests, 13 subtests, three PostgreSQL adapter tests and the Next.js
+build**. The web suite passes **173 tests**; TypeScript validation passes.
+[Native ARM64 qualification](https://github.com/CoAirai/CoAIr/actions/runs/40607944531)
+passed both image builds and **104 runtime tests** with clean dependency checks.
+The completed exact-commit deployment pin was cleared.
+
+Public HTTPS acceptance on this release:
+
+| Case | First public text | Complete | Delivery | Owned citations |
+|---|---:|---:|---|---:|
+| Selected PDF responsibilities/table | 6.046 s | 8.104 s | 20 real deltas | 1 |
+| Complex document/cost question, actual AGENT route | 85.285 s | 90.495 s | 36 real deltas, all after final-writer handoff at 84.228 s | 2 |
+| Repeat selected-PDF answer | 0.508 s | 0.536 s | One immediate cached snapshot; no artificial typing delay | 1 |
+
+All three reject invalid credentials and an unknown/unowned project, retain the
+canonical answer on reload, preserve Word source/page references and native
+tables, and produce a valid Excel workbook. Final drafts match canonical text.
+The AGENT run explicitly asserts no public answer text before its final writer.
+Temporary test conversations were deleted; existing user conversations, documents
+and account/billing records were preserved. Original RAG remained healthy and
+was not redeployed.
+
+The slow AGENT case remains open as a performance finding. Its own run-store
+record contains **14 model calls**: three SQL calls with 30.07 s cumulative model
+latency, four answer-synthesis calls with 29.64 s, two document-synthesis calls
+with 18.98 s, three controller/generation calls with 7.26 s, classification 1.36 s
+and reranking 1.01 s. These are cumulative call durations, not a separate
+non-overlapping timing model. This points the next optimization at repeated SQL /
+intermediate synthesis work; it is not evidence of unresolved context clipping,
+nor a claim that every slow research case is fixed.
+
+Reproducible scripts and the three current acceptance JSON files are retained in
+`/opt/coair-integration/qualification/four-stage-review`:
+`chat-source-stream-provider-probe.py`, `chat-agent-stream-provider-probe.py`,
+`chat-public-stream-probe.py` and `results/chat-stream-{acceptance,agent-acceptance,cache-acceptance}.json`.
+Owned temporary source overlays/scripts were removed after integrity checks.
+The real public corpus remains the three-PDF staging sample; long-input unit
+coverage and synthetic provider fixtures do not certify complete native-archive
+recall. These features introduce no account/payment/database schema migration or
+new runtime library, and do not qualify fully local DGX/vLLM inference.
