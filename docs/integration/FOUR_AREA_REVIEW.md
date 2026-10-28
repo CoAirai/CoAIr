@@ -590,3 +590,31 @@ GBP 25 cost after the old observation cut. All eight date/qualification/source/
 table/stream checks passed. The final answer arrived in eight real public deltas:
 first delta 14.157 s, complete 14.908 s including controller calls. This is a
 controlled tool fixture, not a replacement for a full-corpus latency/recall study.
+
+### Public delivery acceptance and terminal-writer boundary
+
+The first public selected-PDF check passed with real HTTPS/proxy/authentication:
+first text 7.631 s, complete 10.230 s, 20 deltas, five activity steps and one owned
+citation. Persisted/reopened text matches the canonical response. Word preserves
+the source/page appendix and native table; Excel export opens as a valid workbook.
+Invalid credentials and an unknown/unowned project were rejected before work.
+The first export probe mistakenly expected chronology-style Word footnotes from
+the chat formatter; it was corrected to check chat's existing source/page appendix.
+No formatter behavior or assertions about chronology footnotes were changed.
+
+The first real AGENT public query also preserved three owned citations, canonical
+history, Word sources/table and Excel. However, its 23.714 s first text included
+internal SQL/tool drafts before final composition at 82.211 s; complete time was
+89.399 s. This did not satisfy the requested terminal-stage boundary. ReAct tools
+and nonterminal plan steps now suppress public text callbacks while retaining
+normal activity reporting, accounting and their findings. The callback is restored
+for the final writer/last plan step. Two regressions prove internal narratives
+cannot become public deltas and request-local streaming is restored afterwards.
+The focused suite passes 94 tests plus four subtests after this correction.
+
+The 89-second complex cost case is a remaining latency finding, not evidence that
+source partitioning eliminated all SQL/agent delays. This patch preserves the
+research capability instead of skipping necessary tool work to advertise a shorter
+number. Report windowing, finite per-call budgets and terminal-only streaming solve
+different problems; full-corpus recall and repeated SQL-tool latency remain separate
+qualification/optimization work.

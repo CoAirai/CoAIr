@@ -443,6 +443,8 @@ class PlanExecutor:
                             str(prev.get('summary', prev.get('answer', '')))[:2000]
                         )
 
+            from .answer_stream import answer_stream_var
+            stream_token = answer_stream_var.set(None) if step is not plan.steps[-1] else None
             try:
                 if step.step_type == StepType.SQL.value:
                     result = self._execute_sql_step(instruction, step_results, allowed_tables=allowed_tables)
@@ -516,6 +518,10 @@ class PlanExecutor:
                         "completed_steps": completed_ids,
                     },
                 }
+
+            finally:
+                if stream_token is not None:
+                    answer_stream_var.reset(stream_token)
 
         # Get final answer from last step
         final = step_results.get(len(plan.steps) - 1, {})

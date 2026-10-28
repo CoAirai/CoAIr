@@ -144,7 +144,9 @@ class ReActAgent:
                 break
             last_step = (act, ainput)
 
-            obs, srcs, extra = self._run_tool(act, ainput, doc_ids, seen, survey_cache)
+            from .answer_stream import internal_answer_scope
+            with internal_answer_scope():
+                obs, srcs, extra = self._run_tool(act, ainput, doc_ids, seen, survey_cache)
             tools_used.append(act)
             steps_taken += 1
             # Two consecutive empty/no-result observations → no traction, stop.

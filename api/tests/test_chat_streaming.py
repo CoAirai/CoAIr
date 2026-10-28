@@ -157,3 +157,56 @@ def test_long_review_keeps_final_activity_without_unbounded_history(monkeypatch)
         events = [json.loads(frame.removeprefix("data: ").strip()) async for frame in response.body_iterator]
         assert any(e.get("kind") == "answer" and e["label"] == "Writing the answer" for e in events)
     asyncio.run(exercise())
+
+
+def test_agent_tool_narratives_are_not_public_final_text(monkeypatch):
+    from src.react_agent import ReActAgent
+    from src.answer_stream import publish_answer
+    agent = ReActAgent(NS())
+    actions = iter([{"action":"sql_query","action_input":"query"},
+                    {"action":"finish","action_input":""}])
+    monkeypatch.setattr(agent, "_decide", lambda *a: next(actions))
+    monkeypatch.setattr(agent, "_corpus_map", lambda *a: "metadata")
+    monkeypatch.setattr(agent, "_budget_exhausted", lambda *a: False)
+    def tool(*a):
+        publish_answer("answer_delta", text="internal SQL narrative")
+        return "tool findings", [], {}
+    def final(*a):
+        publish_answer("answer_delta", text="public final answer")
+        return "public final answer"
+    monkeypatch.setattr(agent, "_run_tool", tool)
+    monkeypatch.setattr(agent, "_final_synthesis", final)
+    events = []
+    token = answer_stream_var.set(events.append)
+    try:
+        result = agent.run("question", max_iterations=3)
+        assert answer_stream_var.get() == events.append
+    finally:
+        answer_stream_var.reset(token)
+    assert result["answer"] == "public final answer"
+    assert events == [{"type":"answer_delta","text":"public final answer"}]
+
+
+def test_plan_streams_only_its_terminal_step(monkeypatch):
+    from src.query_planner import PlanExecutor, PlanStep, QueryPlan
+    from src.answer_stream import publish_answer
+    executor = PlanExecutor.__new__(PlanExecutor)
+    def intermediate(*a, **kw):
+        publish_answer("answer_delta", text="internal plan narrative")
+        return {"answer":"tool findings","sources":[]}
+    def final(*a, **kw):
+        publish_answer("answer_delta", text="terminal answer")
+        return {"answer":"terminal answer","sources":[]}
+    monkeypatch.setattr(executor, "_execute_sql_step", intermediate)
+    monkeypatch.setattr(executor, "_execute_combine_step", final)
+    plan = QueryPlan("question", [PlanStep(0,"sql","query","query"),
+        PlanStep(1,"combine","combine","combine",depends_on=[0])])
+    events = []
+    token = answer_stream_var.set(events.append)
+    try:
+        result = executor.execute(plan)
+        assert answer_stream_var.get() == events.append
+    finally:
+        answer_stream_var.reset(token)
+    assert result["answer"] == "terminal answer"
+    assert events == [{"type":"answer_delta","text":"terminal answer"}]
