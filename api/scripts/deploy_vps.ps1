@@ -41,8 +41,13 @@ if ($LASTEXITCODE -ne 0 -or $entries -lt 100) {
     Write-Host "Archive looks wrong ($entries files) - not deploying." -ForegroundColor Red
     exit 1
 }
-$entrypoint = (tar -xOzf $archive entrypoint.sh | Out-String)
-if ($entrypoint -match "`r") {
+$check = Join-Path $env:TEMP "coair-api-check-$stamp"
+New-Item -ItemType Directory -Force $check | Out-Null
+tar -xzf $archive -C $check entrypoint.sh
+$entrypoint = Join-Path $check "entrypoint.sh"
+$bad = -not (Test-Path $entrypoint) -or ([IO.File]::ReadAllBytes($entrypoint) -contains [byte]13)
+Remove-Item -Recurse -Force -LiteralPath $check
+if ($bad) {
     Write-Host "entrypoint.sh has Windows line endings in the archive - not deploying." -ForegroundColor Red
     exit 1
 }
