@@ -16,10 +16,14 @@ param(
     [string]$AppDir = "/opt/coair-api"
 )
 
-$ErrorActionPreference = "Stop"
-Set-Location (Split-Path $PSScriptRoot -Parent)
+# Native tools (ssh, docker) write progress to stderr; Windows PowerShell would
+# turn that into a terminating error under "Stop". Exit codes are checked instead.
+$ErrorActionPreference = "Continue"
+# git archive only packs the current directory's part of the tree, so run it
+# from the repository root.
+Set-Location (git -C $PSScriptRoot rev-parse --show-toplevel)
 
-$dirty = git status --porcelain --untracked-files=no -- .
+$dirty = git status --porcelain --untracked-files=no -- api
 if ($dirty) {
     Write-Host "Uncommitted API changes - commit them first:" -ForegroundColor Red
     $dirty
@@ -30,18 +34,24 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $commit = git rev-parse --short HEAD
 $archive = Join-Path $env:TEMP "coair-api-$stamp.tgz"
 git archive --format=tar.gz -o $archive HEAD:api
+$entries = (tar -tzf $archive | Measure-Object).Count
+if ($LASTEXITCODE -ne 0 -or $entries -lt 100) {
+    Write-Host "Archive looks wrong ($entries files) - not deploying." -ForegroundColor Red
+    exit 1
+}
 scp -o BatchMode=yes $archive "${Server}:/tmp/coair-api-code.tgz"
+if ($LASTEXITCODE -ne 0) { Write-Host "Upload failed." -ForegroundColor Red; exit 1 }
 Remove-Item $archive
 
 $remote = @"
-set -e
+set -eo pipefail
 cd $AppDir
 tar --exclude=./storage --exclude=./data --exclude=./logs --exclude=./.env \
     -czf /root/coair-api-code-backup-$stamp.tgz .
 tar -xzf /tmp/coair-api-code.tgz -C $AppDir && rm /tmp/coair-api-code.tgz
+docker compose -f docker-compose.vps.yml build api 2>&1 | tail -3
+docker compose -f docker-compose.vps.yml up -d api 2>&1 | tail -1
 echo $commit > $AppDir/DEPLOYED_COMMIT
-docker compose -f docker-compose.vps.yml build api | tail -1
-docker compose -f docker-compose.vps.yml up -d api | tail -1
 for i in `$(seq 1 40); do
   sleep 6
   state=`$(docker inspect coair-api --format '{{.State.Health.Status}}')
