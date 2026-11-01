@@ -19,6 +19,7 @@ def command(*args, **kwargs):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--image', required=True)
+    p.add_argument('--prepare-only', action='store_true')
     p.add_argument('--destination', type=Path, default=Path('/home/coair/coair-secure'))
     p.add_argument('--inference-container', default='coair-local-api-1')
     a = p.parse_args()
@@ -27,6 +28,7 @@ def main():
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     for name in ('compose.secure.yaml', 'nginx.secure.conf', 'model-proxy.conf.template'):
         shutil.copyfile(Path(__file__).with_name(name), root / name)
+        (root / name).chmod(0o644)
     inspected = json.loads(command('docker', 'inspect', a.inference_container).stdout)[0]
     original = dict(x.split('=', 1) for x in inspected['Config']['Env'] if '=' in x)
     for key in ('LLM_API_KEY', 'EMBEDDING_API_KEY'):
@@ -63,8 +65,24 @@ def main():
             raise RuntimeError(f'Provision protected runtime secret first: {name}')
     compose = ['docker', 'compose', '--env-file', str(env_path), '-f', str(root / 'compose.secure.yaml')]
     command(*compose, 'config', '--quiet')
-    command(*compose, 'up', '-d', '--wait', '--wait-timeout', '180')
-    print(json.dumps({'installed': True, 'image': a.image, 'url': 'http://100.91.121.116:18082',
+    if not a.prepare_only:
+        # Initialize only this isolated release's writable volumes. Root exists
+        # solely in this networkless helper; the application runs as UID 1000.
+        mounts = []
+        targets = {'documents': '/app/data', 'storage': '/app/storage', 'cache': '/app/cache',
+                   'logs': '/app/logs', 'temporary': '/tmp', 'ocr-cache': '/app/.cache'}
+        for name, target in targets.items():
+            volume = 'coair-secure_' + name
+            command('docker', 'volume', 'create', volume)
+            mounts += ['-v', volume + ':' + target]
+        command('docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'sh',
+                *mounts, a.image, '-c',
+                'if [ ! -d /app/cache/.duckdb ] && [ -d /root/.duckdb ]; then '
+                'cp -a /root/.duckdb /app/cache/.duckdb; fi; '
+                'for p in /app/data /app/storage /app/cache /app/logs /tmp /app/.cache; do '
+                'if [ "$(stat -c %u "$p")" != 1000 ]; then chown -R 1000:1000 "$p"; fi; done')
+        command(*compose, 'up', '-d', '--wait', '--wait-timeout', '180')
+    print(json.dumps({'installed': not a.prepare_only, 'prepared': True, 'image': a.image, 'url': 'http://100.91.121.116:18082',
                       'existing_data_mounted': False, 'cloud_keys_configured': False}))
 
 

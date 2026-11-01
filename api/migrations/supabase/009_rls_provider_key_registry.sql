@@ -1,8 +1,16 @@
--- provider_key_registry was added in 008 without RLS. Match 002_rls_deny_anon:
--- enable RLS with no policies so anon/authenticated cannot access via PostgREST.
--- API uses service_role / BYPASSRLS and is unaffected.
-
+-- Keep the registry backend-only on Supabase and standalone PostgreSQL.
+-- Standalone installations do not create Supabase's PostgREST roles.
 ALTER TABLE public.provider_key_registry ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE public.provider_key_registry FROM anon, authenticated;
-GRANT ALL ON TABLE public.provider_key_registry TO service_role;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        REVOKE ALL ON TABLE public.provider_key_registry FROM anon;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        REVOKE ALL ON TABLE public.provider_key_registry FROM authenticated;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+        GRANT ALL ON TABLE public.provider_key_registry TO service_role;
+    END IF;
+END $$;
