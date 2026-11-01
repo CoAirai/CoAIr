@@ -30,3 +30,20 @@ The main-targeting PR is for review, not automatic production promotion. Existin
 integration deployment remains gated by its approved branch/qualification commit.
 Do not change that qualification variable as part of merely synchronizing main.
 The original RAG checkout and the running AWS/DGX deployments are unaffected.
+
+## Explicit deployment boundary
+
+| Target | Branch | Model path |
+| --- | --- | --- |
+| coair.com / cloud main candidate | codex/long-document-evidence | Gemini by default; Z.AI only when explicitly configured |
+| DGX Spark appliance | codex/dgx-secure-local | Private Qwen/vLLM and local embeddings |
+
+The cloud candidate does not require a local model service or the DGX to be online.
+A main merge may deploy the public website through its hosting integration; the
+integration workflow's AWS guard does not control that external hosting behavior.
+Keep the main PR in draft until an explicit production merge is requested.
+
+CI runs a cloud-only boundary check for this branch and PRs targeting main. It
+verifies the default provider, exercises the real provider-selection function
+without SDK/network calls, and rejects appliance transport/installer files in the
+cloud tree. The DGX branch is intentionally outside this cloud-only check.
