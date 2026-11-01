@@ -157,7 +157,11 @@ report=request('/reports/'+job_id+'/document',raw=True)
 with zipfile.ZipFile(io.BytesIO(report)) as z:
     assert b'2007' in z.read('word/document.xml')
 (artifacts/'chronology.docx').write_bytes(report)
-metrics['chronology_ready']=True;metrics['chronology_seconds']=round(time.monotonic()-started,2)
+metrics['chronology_ready']=True
+metrics['chronology_poll_seconds']=round(time.monotonic()-started,2)
+if job.get('started_at') and job.get('completed_at'):
+    from datetime import datetime
+    metrics['chronology_generation_seconds']=round((datetime.fromisoformat(job['completed_at'])-datetime.fromisoformat(job['started_at'])).total_seconds(),2)
 toolkit=request('/forensic/toolkit-evidence',{'title':'Installation verification findings',
     'methodology':'Evidence-backed fixture verification','findings':['NW-001 records an access request on 12 January 2007.'],
     'source_doc_ids':[ids['installation-evidence.pdf']]})
