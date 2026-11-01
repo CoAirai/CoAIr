@@ -91,8 +91,15 @@ def test_react_agent_finish_uses_retrieve_only(monkeypatch):
         {"thought": "have enough", "action": "finish", "action_input": "Final answer."},
     ])
     monkeypatch.setattr(ra.llm_client, "generate_json", lambda p, **k: _resp(next(seq)))
+    writes = []
+    def write_answer(prompt, **kwargs):
+        writes.append(prompt)
+        return LLMResponse(text="Final answer.", usage=LLMUsage(prompt_tokens=1, completion_tokens=1, provider="gemini"))
+    monkeypatch.setattr(ra.llm_client, "generate_text", write_answer)
     router = _FakeRouter()
     res = ra.ReActAgent(router).run("compare clause with hours")
+    assert len(writes) == 1
+    assert "compare clause with hours" in writes[0]
     assert res["answer"] == "Final answer."
     assert res["routing"]["decision"] == "agent"
     # the document tool must run retrieve-only (no double synthesis)

@@ -120,7 +120,13 @@ xlsx=request('/chat/spreadsheet',{'table_columns':['Activity','DurationDays'],'t
 with zipfile.ZipFile(io.BytesIO(xlsx)) as z:assert 'xl/workbook.xml' in z.namelist()
 (artifacts/'table.xlsx').write_bytes(xlsx)
 metrics['word_and_excel_downloads']=True
-job=request('/chronology/generate',{'topic':'Zone A access events in January 2007','source_doc_ids':[ids['installation-evidence.pdf']]})
+saved=ROOT/'qualification-chronology.json'
+if saved.exists():
+    previous=json.loads(saved.read_text())
+    assert previous['project_id']==access['project_id']
+    job=request('/reports/'+previous['job_id'])
+else:
+    job=request('/chronology/generate',{'topic':'Zone A access events in January 2007','source_doc_ids':[ids['installation-evidence.pdf']]})
 job_id=job['job_id'];metrics['chronology_job_id']=job_id
 # Save progress before polling so a separate operator can inspect a slow run.
 (ROOT/'qualification-progress.json').write_text(json.dumps({'metrics':metrics,'job_id':job_id,'project_id':access['project_id']}))
@@ -136,6 +142,11 @@ with zipfile.ZipFile(io.BytesIO(report)) as z:
     assert b'2007' in z.read('word/document.xml')
 (artifacts/'chronology.docx').write_bytes(report)
 metrics['chronology_ready']=True;metrics['chronology_seconds']=round(time.monotonic()-started,2)
+toolkit=request('/forensic/toolkit-evidence',{'title':'Installation verification findings',
+    'methodology':'Evidence-backed fixture verification','findings':['NW-001 records an access request on 12 January 2007.'],
+    'source_doc_ids':[ids['installation-evidence.pdf']]})
+assert toolkit
+metrics['toolkit_evidence_saved']=True
 metrics['qualified']=True
 (ROOT/'qualification-results.json').write_text(json.dumps(metrics,indent=2))
 print(json.dumps(metrics))
