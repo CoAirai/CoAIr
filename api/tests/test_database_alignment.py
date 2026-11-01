@@ -60,3 +60,17 @@ def test_failed_transaction_does_not_persist_partial_usage(stores):
             db.execute('UPDATE user_usage SET prompt_tokens=999 WHERE username=?', [owner])
             raise RuntimeError('qualification rollback')
     assert users.get_usage(owner)['used_tokens'] == 0
+
+
+def test_provider_key_registry_remains_backend_only():
+    from src.database import connect, use_postgres
+    if not use_postgres():
+        pytest.skip('PostgreSQL RLS contract')
+    apply_core_schema(force=True)
+    with connect() as db:
+        assert db.execute("SELECT relrowsecurity FROM pg_class WHERE oid='public.provider_key_registry'::regclass").fetchone()[0]
+        for role, expected in (('anon', False), ('authenticated', False), ('service_role', True)):
+            exists = db.execute('SELECT 1 FROM pg_roles WHERE rolname=?', [role]).fetchone()
+            if exists:
+                allowed = db.execute("SELECT has_table_privilege(?, 'public.provider_key_registry', 'SELECT')", [role]).fetchone()[0]
+                assert allowed == expected

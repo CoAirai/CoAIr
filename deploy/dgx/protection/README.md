@@ -18,7 +18,7 @@ restrictions, firmware/boot policy and TPM key provisioning are separate work.
 - Device key and license are read-only mounts, not image layers, build arguments,
   environment variables or repository files. The signing private key stays on the
   developer machine. The public verification key is compiled into the launcher.
-- The final image copies a prepared filesystem into `FROM scratch`. It does not
+- The final image copies a flattened, prepared filesystem into `FROM scratch`. It does not
   inherit development image layers containing deleted sources.
 - Third-party interpreter/site-packages, browser JavaScript, static templates and
   database migrations are not claimed to be secret. Required notices remain.
@@ -44,8 +44,7 @@ PROTECTION_PYTHON=/path/to/python-with-cryptography \
   deploy/dgx/protection/build.sh coair@DGX_ADDRESS release-id
 ```
 
-The builder creates a new remote build directory, compiles using a disposable
-compiler image, fetches the app tree, encrypts/signs **locally**, then transfers only
+The builder creates a new remote build directory, compiles in a disposable container (no source-bearing compiler image/cache), fetches the app tree, encrypts/signs **locally**, then transfers only
 the protected runtime build context back. The existing server is not switched.
 `COAIR_SIGNING_HOME` defaults to `~/.coair-release-secrets/dgx-pilot`; keep this
 restricted directory backed up securely. `DGX_SSH_KEY` selects the SSH key.
@@ -94,3 +93,15 @@ successful protection. No customer files or live secrets are changed.
 Developer-side source modules remain usable without the protected manifest. The
 protected image fails closed when the signed package/key/license is unavailable.
 See VALIDATION.md for the actual device test results and outstanding limitations.
+
+## Isolated secure installation
+
+`compose.secure.yaml` and `install_secure.py` run the qualified protected release
+on Tailscale port 18082 with separate PostgreSQL, Qdrant and document volumes.
+Existing Qwen and embedding services are reused; no second GPU model is loaded.
+The API runs as UID 1000 with a read-only root filesystem, no Linux capabilities,
+and no Internet route. Gateways run as UID 101. Non-secret nginx configuration
+is readable by that UID; runtime secrets remain mode 0600 outside image layers.
+Use `bootstrap_secure.py` after health checks to create an organization owner;
+credentials are written to the private `access.json`, never printed or reset.
+The original local installation and its customer corpus stay separate.
