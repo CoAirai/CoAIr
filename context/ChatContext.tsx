@@ -1,5 +1,7 @@
 "use client";
 
+import { updateAnswerDraft, type AnswerDraft } from "@/lib/chat/answerStream";
+
 import {
     createContext,
     useCallback,
@@ -26,7 +28,6 @@ import {
     renameConversation,
     setConversationPinOrder,
     sendLiveChat,
-    getChatProgress,
     type ChatActivityStep,
 } from "@/lib/coair/liveLogin";
 import { SEED_RECENTS_BY_USER, SEED_THREADS_BY_USER } from "@/lib/chat/demoData";
@@ -44,6 +45,7 @@ type ChatContextValue = {
     recentQueries: RecentQuery[];
     isReplying: boolean;
     replyActivity: ChatActivityStep | null;
+    replyDraft: string;
     sendError: string | null;
     selectedQueryId: string | null;
     activeKbId: string;
@@ -193,6 +195,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const replyActivity = isReplying
         ? activityByKey[openConversationId ?? "__local__"] ?? null
         : null;
+    const [draftByKey, setDraftByKey] = useState<Record<string, AnswerDraft>>({});
+    const replyDraft = isReplying ? draftByKey[openConversationId ?? "__local__"]?.text ?? "" : "";
     const setActivity = useCallback(
         (key: string, step: ChatActivityStep | null) =>
             setActivityByKey((prev) => {
@@ -203,7 +207,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     return next;
                 }
                 const current = prev[key];
-                if (current?.kind === step.kind && current.label === step.label) return prev;
+                if (current?.kind === step.kind && current.label === step.label && current.detail === step.detail) return prev;
                 return { ...prev, [key]: step };
             }),
         []
@@ -824,40 +828,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     const requestId = makeId("req");
                     const activityKey = pendingKey;
                     const projectId = session.projectId;
-                    let polling = true;
-                    const poll = async () => {
-                        while (polling && !abort.signal.aborted) {
-                            await new Promise((resolve) => setTimeout(resolve, 1000));
-                            if (!polling) break;
-                            try {
-                                const progress = await getChatProgress(
-                                    session.accessToken!,
-                                    projectId,
-                                    requestId,
-                                    abort.signal
-                                );
-                                const last = progress.steps[progress.steps.length - 1];
-                                if (polling && last) setActivity(activityKey, last);
-                                if (progress.done) break;
-                            } catch {
-                                // The feed is decorative; the answer request decides success.
-                            }
-                        }
-                    };
-                    void poll();
                     let response: Awaited<ReturnType<typeof sendLiveChat>>;
                     try {
                         response = await sendLiveChat({
-                            token: session.accessToken!,
-                            projectId,
-                            conversationId,
-                            message: trimmed,
-                            requestId,
-                            signal: abort.signal,
+                            token: session.accessToken!, projectId, conversationId,
+                            message: trimmed, requestId, signal: abort.signal,
+                            onEvent: (event) => {
+                                if (abort.signal.aborted) return;
+                                if (event.type === "activity" && event.kind && event.label)
+                                    setActivity(activityKey, { kind: event.kind, label: event.label, detail: event.detail });
+                                if (event.type.startsWith("answer_")) {
+                                    setDraftByKey(prev => ({ ...prev,
+                                        [activityKey]: updateAnswerDraft(prev[activityKey] ?? { text: "", base: "" }, event),
+                                    }));
+                                }
+                            },
                         });
                     } finally {
-                        polling = false;
                         setActivity(activityKey, null);
+                        setDraftByKey(prev => { const next = { ...prev }; delete next[activityKey]; return next; });
                     }
                     assistantText = response.assistant_text;
                     citations = mapLiveCitations(response.citations);
@@ -1033,6 +1022,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             archivedQueries,
             isReplying,
             replyActivity,
+            replyDraft,
             sendError,
             selectedQueryId,
             activeKbId,
@@ -1064,6 +1054,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             closeDocumentPreview,
             isReplying,
             replyActivity,
+            replyDraft,
             messages,
             openCitation,
             openDocumentPreview,

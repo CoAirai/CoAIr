@@ -1,4 +1,5 @@
-import { CoairApiError, coairFetch, isApiUnreachable } from "./client";
+import { readAnswerStream, type AnswerStreamEvent } from "@/lib/chat/answerStream";
+import { COAIR_API_BASE, CoairApiError, coairFetch, isApiUnreachable } from "./client";
 import { showAuthDebugCodes } from "./debugFlags";
 import { mapLiveSession } from "./mapSession";
 import { readTrustedDeviceTokenForLogin } from "./trustedDevice";
@@ -468,8 +469,9 @@ export async function sendLiveChat(input: {
     message: string;
     requestId: string;
     signal?: AbortSignal;
+    onEvent?: (event: AnswerStreamEvent) => void;
 }) {
-    return coairFetch<{
+    type ChatResult = {
         assistant_text: string;
         sql_artifact?: import("@/lib/chat/types").SqlArtifact | null;
         citations?: Array<{
@@ -478,7 +480,27 @@ export async function sendLiveChat(input: {
             anchor?: string;
             snippet?: string;
         }>;
-    }>("/chat", {
+    };
+    const body = {
+        message: input.message, conversation_id: input.conversationId,
+        mode: "chat", request_id: input.requestId,
+    };
+    const response = await fetch(`${COAIR_API_BASE}/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream",
+            Authorization: `Bearer ${input.token}`, "X-Project-ID": input.projectId },
+        body: JSON.stringify(body), signal: input.signal,
+    });
+    if (response.ok) return readAnswerStream<ChatResult>(response, input.onEvent);
+    // A rolling deployment may briefly serve the older API. Only a missing
+    // endpoint permits fallback; never replay a started/billed streaming POST.
+    if (response.status !== 404 && response.status !== 405) {
+        const text = await response.text();
+        let message = "Unable to start the answer.";
+        try { const value = JSON.parse(text); if (typeof value.detail === "string") message = value.detail; } catch { /* generic safe error */ }
+        throw new CoairApiError(message, response.status, text);
+    }
+    return coairFetch<ChatResult>("/chat", {
         method: "POST",
         token: input.token,
         projectId: input.projectId,

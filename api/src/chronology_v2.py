@@ -8,7 +8,7 @@ import re
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
@@ -24,6 +24,7 @@ from .report_errors import classify_report_error, diagnostic_summary
 
 PIPELINE_VERSION = "chronology-v2"
 EVIDENCE_BATCH_CHARS = 80_000
+EXTRACTION_WINDOW_CHARS = 12_000
 # How many candidate documents the preview lists for the analyst. Presentation
 # only — what the report reads is decided by evidence_pack.select_pack.
 MAX_PREVIEW_DOCUMENTS = 20
@@ -70,8 +71,13 @@ class EventModel(BaseModel):
     cluster_id: str = ""
     event_date: str = ""
     date_precision: str = "unknown"
-    date_source: str = "unresolved"
-    date_evidence: str = ""
+    date_source: str = Field(
+        default="unresolved", json_schema_extra={"enum": sorted(ALLOWED_DATE_SOURCES)},
+        description="Source of the quoted event date; never use metadata or text as a value.",
+    )
+    date_evidence: str = Field(
+        default="", description="Verbatim source wording including the year needed to prove event_date.",
+    )
     claims: List[ClaimModel] = Field(min_length=1, max_length=MAX_EVENT_CLAIMS)
     parties: List[str] = Field(default_factory=list, max_length=20)
     event_type: str = "event"
@@ -157,6 +163,29 @@ def _claims_are_source_valid(value: Dict, evidence: Sequence[EvidenceItem]) -> b
             numbers = [number.rstrip(".,") for number in re.findall(r"(?<![a-z])\d[\d,.%/-]*", text)]
             if any(number not in source_text for number in numbers):
                 return False
+            ambiguous_days = re.findall(
+                r"\b(\d{1,2})(?:st|nd|rd|th)\s+(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s+(\d{4})\b",
+                " ".join(source_text.split()),
+            )
+            if ambiguous_days:
+                # An ambiguous OCR day must not survive as a factual date in
+                # the narrative after its event-date field has been cleared.
+                for date in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s+(\d{4})\b", text):
+                    if not any(int(date[1]) in (int(first), int(second)) and date[2][:3] == month[:3] and date[3] == year
+                               for first, second, month, year in ambiguous_days):
+                        continue
+                    parsed = None
+                    for fmt in ("%d %B %Y", "%d %b %Y"):
+                        try:
+                            parsed = datetime.strptime(" ".join(date.groups()), fmt)
+                            break
+                        except ValueError:
+                            pass
+                    if parsed is not None and not _date_proven({
+                        "event_date": parsed.strftime("%Y-%m-%d"), "date_precision": "exact",
+                        "date_source": "content_body", "date_evidence": date.group(), "claims": [claim],
+                    }, evidence):
+                        return False
             quotations = re.findall(r'["“]([^"”]{3,})["”]', str(claim.get("text") or ""))
             if any(quote.casefold().strip() not in source_text for quote in quotations):
                 return False
@@ -220,7 +249,21 @@ def _date_proven(event: Dict, evidence: Sequence[EvidenceItem]) -> bool:
         str(source_id) for claim in event.get("claims", [])
         for source_id in claim.get("source_ids", [])
     }
-    return any(date_evidence.casefold() in by_id.get(source_id, "") for source_id in source_ids)
+    # OCR and PDF line wrapping may change whitespace, never the quoted words.
+    quote = " ".join(date_evidence.casefold().split())
+    for source_id in source_ids:
+        text = " ".join(by_id.get(source_id, "").split())
+        ambiguous = []
+        if precision in {"exact", "day"}:
+            # Broken OCR such as "1st 11 April 2007" must not be silently
+            # interpreted as 11 April by matching only its trailing words.
+            ambiguous = [match.span() for match in re.finditer(
+                r"\b\d{1,2}(?:st|nd|rd|th)\s+\d{1,2}(?:st|nd|rd|th)?\s+[a-z]+\s+\d{4}\b", text,
+            )]
+        for match in re.finditer(re.escape(quote), text):
+            if not any(match.start() < end and match.end() > start for start, end in ambiguous):
+                return True
+    return False
 
 
 def _enforce_event_date(event: Dict, evidence: Sequence[EvidenceItem]) -> Dict:
@@ -569,6 +612,71 @@ def evidence_batches(evidence: Sequence[EvidenceItem], max_chars: int = EVIDENCE
     return batches
 
 
+def occurrence_windows(item: EvidenceItem) -> List[EvidenceItem]:
+    """Keep each explicit programme target with its preceding task wording.
+
+    Source IDs continue to identify the original cited page. The exact window
+    text participates in the extraction hash, so distinct rows cannot share a
+    cached extraction just because they cite the same page.
+    """
+    targets = list(re.finditer(
+        r"(?im)^[ \t]*Complete(?:[ \t]+by[ \t]+[^\n]+|[ \t]+\d+[ \t]+weeks?[ \t]+after[^\n]*)(?:\n|$)",
+        item.excerpt,
+    ))
+    if len(targets) < 2:
+        return [item]
+    windows = []
+    start = 0
+    for index, target in enumerate(targets):
+        end = len(item.excerpt) if index == len(targets) - 1 else target.end()
+        windows.append(replace(item, excerpt=item.excerpt[start:end]))
+        start = end
+    return windows
+
+
+def _restore_programme_target_dates(entries: List[Dict], batch: Sequence[EvidenceItem]) -> List[Dict]:
+    """Recover quoted schedule dates, preserving month precision for end/mid.
+
+    The event's own claim and cited source must repeat the date wording.
+    This never borrows discovery metadata or fills a missing year. The independent
+    verifier still checks the temporal link of every claim in the final event.
+    """
+    by_id = {item.source_id: item for item in batch}
+    names = "January February March April May June July August September October November December".split()
+    months = {alias.lower(): i for i, name in enumerate(names, 1) for alias in (name, name[:3])}
+    month_pattern = "|".join(sorted(months, key=len, reverse=True))
+    pattern = re.compile(
+        rf"(?i)\b(?:(\d{{1,2}})(?:st|nd|rd|th)?\s+|(?:end|mid)(?:\s+of)?\s+)?({month_pattern})\s+(\d{{4}})\b"
+    )
+    for event in entries:
+        if event.get("event_date"):
+            continue
+        proposals = {}
+        for claim in event.get("claims", []):
+            for source_id in claim.get("source_ids", []):
+                source = by_id.get(source_id)
+                if source is None:
+                    continue
+                targets = re.findall(r"(?im)^[ \t]*Complete[ \t]+by[ \t]+([^\n]+)", source.excerpt)
+                # A planned agreement may state a month in prose rather than
+                # a Complete-by row. Admit only wording repeated by the claim
+                # and proved verbatim in its own cited source; never fill a year.
+                matches = list(pattern.finditer(targets[0] if len(targets) == 1 else source.excerpt))
+                for match in matches:
+                    day, month, year = match.groups()
+                    month_number = months[month.lower()]
+                    proposed = {**event, "event_date": f"{year}-{month_number:02d}" + (f"-{int(day):02d}" if day else ""),
+                                "date_precision": "exact" if day else "month", "date_source": "content_body",
+                                "date_evidence": match.group()}
+                    if (_date_matches_quote(proposed["event_date"], proposed["date_precision"], claim["text"])
+                            and _date_proven(proposed, [source])):
+                        proposals[proposed["event_date"]] = proposed
+        if len(proposals) == 1:
+            proposed = next(iter(proposals.values()))
+            event.update({key: proposed[key] for key in ("event_date", "date_precision", "date_source", "date_evidence")})
+    return entries
+
+
 def extract_batch(
     *, batch: Sequence[EvidenceItem], prepared: PreparedChronologyQuery,
     cache_context: str,
@@ -588,7 +696,7 @@ def extract_batch(
         thinking_level="low", max_tokens=16_384, prompt_version=prompts["version"],
         cache_key="chronology-extract", cache_context=cache_context, ttl_s=0,
     )
-    return _prune_source_invalid_events(response.raw, batch)
+    return _restore_programme_target_dates(_prune_source_invalid_events(response.raw, batch), batch)
 
 
 def extract_batches(
@@ -632,14 +740,32 @@ def extract_batches(
             save_step(key, input_hash, "failed", None, error_code)
 
     def run(batch: List[EvidenceItem], key: str, output: List[Dict], depth: int = 0) -> None:
+        from .llm_client import _model_for_task
         input_hash = _hash({
-            "evidence": [asdict(item) for item in batch],
+            "evidence": evidence_markdown(batch),
+            "topic": prepared.english_query, "parties": prepared.parties,
+            "model": _model_for_task("chronology_extract"),
+            "jargon": jargon_dictionary_version(), "policy": "source-occurrences-v5",
             "prompt": chronology_prompt_hash(),
             "schema": ExtractionModel.model_json_schema(),
         })
         previous = load_step(key, input_hash) if load_step else None
         if previous and previous.get("status") == "ready":
-            output.extend((previous.get("output") or {}).get("entries", [])); return
+            cached = previous.get("output") or {}
+            try:
+                ExtractionModel.model_validate(cached)
+                valid = _prune_source_invalid_events(cached, batch)
+                reusable = (bool(valid) and len(valid) == len(cached.get("entries", []))
+                            and _claims_are_source_valid(cached, batch))
+            except Exception:
+                reusable = False
+            if reusable:
+                output.extend(valid)
+                with counter_lock:
+                    counters["batches_reused"] = counters.get("batches_reused", 0) + 1
+                if save_step:
+                    save_step(key, input_hash, "ready", {"entries": valid}, "")
+                return
         if save_step:
             save_step(key, input_hash, "processing", None, "")
         try:
@@ -670,7 +796,23 @@ def extract_batches(
             with counter_lock:
                 fail(batch, key, input_hash, exc)
 
-    batches = evidence_batches(evidence)
+    # Retrieval rank can vary between identical searches. Extraction reads all
+    # chosen evidence, so use stable source/page order for coherent reads and
+    # content-addressed reuse without discarding a lower-ranked passage.
+    ordered = sorted(evidence, key=lambda item: (item.file_name, item.page or 0, item.doc_id, item.source_id))
+    # A source page must not disappear inside a larger document's context.
+    # Read each page independently in small windows; this is a per-call
+    # budget, never a cap on the number of documents or report events.
+    documents: Dict[Tuple[str, int | None], List[EvidenceItem]] = {}
+    for item in ordered:
+        documents.setdefault((item.doc_id, item.page), []).append(item)
+    batches = []
+    for document in documents.values():
+        for batch in evidence_batches(document, max_chars=EXTRACTION_WINDOW_CHARS):
+            if any(len(occurrence_windows(item)) > 1 for item in batch):
+                batches.extend([window] for item in batch for window in occurrence_windows(item))
+            else:
+                batches.append(batch)
     counters["batches_total"] = len(batches)
     def read_one(index, batch):
         output: List[Dict] = []
@@ -890,7 +1032,17 @@ def synthesize(
             input_hash, prompt, schema_name="chronology_v2_event_batch",
             validation_model=EventSynthesisModel, semantic_validator=batch_valid,
         )
-        return list(output.get("entries", []))
+        entries = list(output.get("entries", []))
+        proven = {str(event["cluster_id"]): event for event in batch
+                  if event.get("event_date") and _date_proven(event, batch_evidence)}
+        for event in entries:
+            original = proven.get(str(event.get("cluster_id")))
+            if original:
+                # Drafting may reword a claim, but cannot erase or replace a
+                # proven candidate date. Final citation/date checks still run.
+                for field in ("event_date", "date_precision", "date_source", "date_evidence"):
+                    event[field] = original[field]
+        return entries
 
     # These drafts use independent evidence batches. Keep provider concurrency
     # bounded and collect in batch order; every claim is still verified below.
@@ -937,6 +1089,13 @@ def verify_claims(
                 "source_ids": sorted({sid for c in event.get("claims", []) for sid in c.get("source_ids", [])}),
             })
         for claim_index, claim in enumerate(event.get("claims", [])):
+            if event.get("event_date") and len(event.get("claims", [])) > 1:
+                claims.append({
+                    "claim_ref": f"date:{event_index}:{claim_index}", "verification_kind": "event_date",
+                    "event_date": event["event_date"], "date_precision": event.get("date_precision"),
+                    "date_source": event.get("date_source"), "date_evidence": event.get("date_evidence"),
+                    "text": claim.get("text", ""), "source_ids": claim.get("source_ids", []),
+                })
             claims.append({"claim_ref": f"event:{event_index}:{claim_index}", **claim})
     if not claims:
         raise ValueError("insufficient_evidence")
