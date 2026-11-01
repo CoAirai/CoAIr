@@ -56,6 +56,8 @@ def get_run(
     value = get_run_store().details(run_id, project_id=project.project_id)
     if not value:
         raise HTTPException(404, "run_not_found")
+    if not is_admin(user.role) and value['run']['username'] != user.username:
+        raise HTTPException(404, 'run_not_found')
     if not is_admin(user.role):
         for call in value.get("llm_calls", []):
             call.pop("cost_usd", None)

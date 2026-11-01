@@ -263,6 +263,8 @@ class MasterEventStore:
         return rows[0]
 
     def enqueue_gap_reindex(self, project_id: str, doc_ids: Sequence[str]) -> List[str]:
+        from backend.core.security import get_current_username
+        requested_by = get_current_username() or ''
         queued: List[str] = []
         for doc_id in dict.fromkeys(str(value) for value in doc_ids if value):
             version = self.active_version_for_document(project_id, doc_id)
@@ -270,7 +272,7 @@ class MasterEventStore:
                 continue
             self.enqueue_index(
                 project_id, doc_id, str(version["version_id"]),
-                requested_by="chronology_gap", force=True,
+                requested_by=requested_by, force=True,
             )
             queued.append(doc_id)
         return queued

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from .config import (
     GEMINI_MODEL, GEMINI_MODEL_LITE, GEMINI_INGESTION_MODEL,
+    LOCAL_LLM, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_CONTEXT_TOKENS,
     OPENAI_API_KEY, OPENAI_MODEL,
     ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
     ZAI_API_KEY, ZAI_BASE_URL, ZAI_MODEL, ZAI_MODEL_LITE,
@@ -564,6 +565,9 @@ def create_llm(provider: str, temperature: float = 0.1, max_tokens: int = 2048,
     Returns:
         Tuple of (llm_instance, model_name)
     """
+    if LOCAL_LLM:
+        from .local_llama import LocalLLM
+        return LocalLLM(max_tokens=max_tokens, temperature=temperature), LLM_MODEL
     if provider == "openai":
         from llama_index.llms.openai import OpenAI
         model = model or OPENAI_MODEL
@@ -636,6 +640,8 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int,
 def estimate_cost_nanos(model: str, prompt_tokens: int, completion_tokens: int,
                         cached_tokens: int = 0) -> int:
     """Price a call using the explicit catalog; unknown models fail closed."""
+    if LOCAL_LLM and model == LLM_MODEL:
+        return 0  # Local quotas count actual tokens; no cloud-provider charge.
     pricing = LLM_PRICING.get(model)
     if not pricing:
         raise ValueError(f"No pricing configured for model: {model}")
@@ -658,6 +664,10 @@ def estimate_tokens(text: str) -> int:
 
 def count_input_tokens(model: str, text: str) -> int:
     """Use Gemini count_tokens when available, with a deterministic fallback."""
+    if LOCAL_LLM:
+        from .openai_compatible import tokenize
+        return tokenize(LLM_BASE_URL, LLM_API_KEY, LLM_MODEL,
+                        [{"role": "user", "content": text}], 60, False)
     estimate = estimate_tokens(text)
     if not model.startswith((
         "gemini-2.5-", "models/gemini-2.5-", "gemini-3.", "models/gemini-3.",
@@ -708,6 +718,8 @@ def _is_ingestion_task(task_type: str) -> bool:
 
 def primary_llm_provider() -> str:
     """Return the active text provider: gemini (default) or zai when configured."""
+    if LOCAL_LLM:
+        return "vllm"
     preferred = LLM_PRIMARY_PROVIDER if LLM_PRIMARY_PROVIDER in ("gemini", "zai") else "gemini"
     if preferred == "zai" and ZAI_API_KEY:
         return "zai"
@@ -721,6 +733,8 @@ def primary_llm_provider() -> str:
 
 def _model_for_task(task_type: str, provider: Optional[str] = None) -> str:
     """Keep user research on the quality model; reserve the lite model for ingestion."""
+    if LOCAL_LLM:
+        return LLM_MODEL
     active = provider or primary_llm_provider()
     if active == "zai":
         return ZAI_MODEL_LITE if _is_ingestion_task(task_type) else ZAI_MODEL
@@ -841,10 +855,13 @@ def _generate_text(
         else:
             model = GEMINI_MODEL
 
-    if model not in LLM_PRICING:
+    if model not in LLM_PRICING and not (LOCAL_LLM and model == LLM_MODEL):
         raise ValueError(f"No pricing configured for model: {model}")
 
-    max_tokens = clamp_output_tokens(model, max_tokens or profile.max_output_tokens, profile)
+    requested = max_tokens or profile.max_output_tokens
+    if LOCAL_LLM:
+        requested = max(requested, profile.max_output_tokens)
+    max_tokens = clamp_output_tokens(model, requested, profile)
     timeout_seconds = int(timeout_seconds or profile.timeout_seconds)
 
     thinking = int(thinking) if thinking else 0
@@ -927,10 +944,10 @@ def _generate_text(
     estimated_input = estimate_tokens(combined_input)
     exact_input = (
         count_input_tokens(model, combined_input)
-        if task_type.startswith("chronology_") or estimated_input >= profile.max_input_tokens * .8
+        if not LOCAL_LLM and (task_type.startswith("chronology_") or estimated_input >= profile.max_input_tokens * .8)
         else estimated_input
     )
-    if exact_input > profile.max_input_tokens:
+    if not LOCAL_LLM and exact_input > profile.max_input_tokens:
         raise LLMInputBudgetExceededError(
             f"input_budget_exceeded:{task_type}:{exact_input}>{profile.max_input_tokens}"
         )
@@ -967,7 +984,7 @@ def _generate_text(
         pass
 
     # ── Create LLM (skipped for the native gemini-thinking path) ──
-    if use_native_gemini or use_gemini_thinking:
+    if LOCAL_LLM or use_native_gemini or use_gemini_thinking:
         llm = None
     else:
         llm, model = create_llm(
@@ -978,7 +995,7 @@ def _generate_text(
 
     last_error = None
     thinking_degraded = False
-    retry_count = max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
+    retry_count = 1 if LOCAL_LLM else max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
     original_prompt = prompt
     for attempt in range(1 + retry_count):
         if attempt:
@@ -997,7 +1014,20 @@ def _generate_text(
             native_prompt_tok = 0
             native_cached_tok = 0
 
-            if use_native_gemini or use_gemini_thinking:
+            if provider == "vllm":
+                from .openai_compatible import generate, visible_text
+                response = generate(
+                    base_url=LLM_BASE_URL, api_key=LLM_API_KEY, model=LLM_MODEL,
+                    prompt=prompt, system=system, max_tokens=max_tokens,
+                    max_input_tokens=min(profile.max_input_tokens, LLM_CONTEXT_TOKENS - max_tokens - 1024),
+                    context_tokens=LLM_CONTEXT_TOKENS, temperature=temperature,
+                    timeout_seconds=timeout_seconds, thinking=False,
+                    json_mode=json_mode, response_schema=response_schema,
+                )
+                text = visible_text(response.choices[0].message.content)
+                native_prompt_tok = response.usage.prompt_tokens if response.usage else 0
+                native_comp_tok = response.usage.completion_tokens if response.usage else 0
+            elif use_native_gemini or use_gemini_thinking:
                 text, native_prompt_tok, native_comp_tok, thoughts_tok, native_cached_tok, response = _gemini_generate_native(
                     prompt=prompt, system=system, max_tokens=max_tokens,
                     model=model, thinking_level=thinking_level,
@@ -1196,6 +1226,8 @@ def _generate_text(
             else:
                 logger.error(f"[LLMClient] {provider} failed after {1 + retry_count} attempts: {e}")
 
+    if LOCAL_LLM and last_error is not None:
+        raise last_error
     if isinstance(last_error, (
         LLMIncompleteResponseError, LLMInvalidStructuredOutputError,
         LLMResearchBudgetExceededError,
@@ -1304,12 +1336,14 @@ def generate_multimodal_text(
     max_tokens: int = 8192, task_type: str = "ocr",
 ) -> LLMResponse:
     """Metered Gemini multimodal generation used by selective OCR."""
+    if LOCAL_LLM:
+        raise RuntimeError("Local text inference cannot process images; local OCR is required")
     enforce_budget(); _enforce_user_quota()
     from google import genai
     from google.genai import types
 
     model = _model_for_task(task_type)
-    if model not in LLM_PRICING:
+    if model not in LLM_PRICING and not (LOCAL_LLM and model == LLM_MODEL):
         raise ValueError(f"No pricing configured for model: {model}")
     profile = get_task_profile(task_type)
     max_tokens = clamp_output_tokens(model, max_tokens, profile)
@@ -1389,7 +1423,7 @@ def generate_response_json(
     providers receive the schema in the system prompt and return parsed JSON text.
     """
     active = primary_llm_provider()
-    if active == "zai":
+    if active in ("zai", "vllm"):
         schema_hint = json.dumps(schema, ensure_ascii=False, sort_keys=True)
         augmented_system = (
             f"{system}\n\nRespond with JSON matching this schema:\n{schema_hint}"
@@ -1397,8 +1431,8 @@ def generate_response_json(
         response = generate_text(
             prompt,
             system=augmented_system,
-            model=_model_for_task(task_type, "zai"),
-            provider="zai",
+            model=_model_for_task(task_type, active),
+            provider=active,
             json_mode=True,
             thinking_level=thinking_level or get_task_profile(task_type).thinking_level,
             task_type=task_type,

@@ -55,6 +55,7 @@ const LiveTeamPage = () => {
     const [message, setMessage] = useState<string | null>(null);
     const [tempPassword, setTempPassword] = useState<string | null>(null);
     const [showInvite, setShowInvite] = useState(false);
+    const [inviteUrl, setInviteUrl] = useState<string | null>(null);
     const [tokenRequests, setTokenRequests] = useState<CoairMemberTokenRequest[]>(
         []
     );
@@ -154,6 +155,7 @@ const LiveTeamPage = () => {
                 displayName: displayName.trim() || undefined,
             });
             setTempPassword(invited.temporary_password || null);
+            setInviteUrl(invited.invite_url || null);
             if (invited.email_sent === false) {
                 setMessage(
                     invited.temporary_password
@@ -172,6 +174,7 @@ const LiveTeamPage = () => {
             await refresh();
         } catch (err) {
             setTempPassword(null);
+            setInviteUrl(null);
             setMessage(apiErrorMessage(err));
         }
     };
@@ -346,6 +349,14 @@ const LiveTeamPage = () => {
             ) : null}
             {message ? (
                 <p className="text-label-sm text-sub-600">{message}</p>
+            ) : null}
+            {inviteUrl ? (
+                <div className="surface-panel p-4">
+                    <p className="text-label-sm">Customer registration link — share only with this customer</p>
+                    <input aria-label="Customer registration link" className="mt-2 w-full p-2" readOnly value={inviteUrl} onFocus={(event) => event.target.select()} />
+                    <button type="button" className="mt-2 text-blue-500" onClick={() => void navigator.clipboard.writeText(inviteUrl).then(() => setMessage("Registration link copied")).catch(() => setMessage("Select and copy the link above"))}>Copy registration link</button>
+                    <p className="mt-2 text-label-xs">The customer verifies their email and chooses their password. Their seven-day demo starts at activation.</p>
+                </div>
             ) : null}
             {tempPassword ? (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -613,6 +624,8 @@ const LiveTeamPage = () => {
                                     <th className="px-5 py-3 font-medium">Role</th>
                                     <th className="px-5 py-3 font-medium">Used</th>
                                     <th className="px-5 py-3 font-medium">Limit</th>
+                                    <th className="px-5 py-3 font-medium">Documents</th>
+                                    <th className="px-5 py-3 font-medium">Access ends</th>
                                     <th className="px-5 py-3 font-medium">
                                         Remaining
                                     </th>
@@ -639,7 +652,7 @@ const LiveTeamPage = () => {
                                 {users.map((user) => {
                                     const used = user.used_tokens ?? 0;
                                     const limit = user.token_limit ?? 0;
-                                    const remaining = Math.max(0, limit - used);
+                                    const remaining = Math.max(0, limit - used - (user.reserved_tokens ?? 0));
                                     return (
                                         <tr
                                             key={user.username}
@@ -674,9 +687,17 @@ const LiveTeamPage = () => {
                                             </td>
                                             <td className="px-5 py-4 tabular-nums text-sub-600">
                                                 {fmt.format(used)}
+                                                {user.reserved_tokens ? <div className="text-label-xs">{fmt.format(user.reserved_tokens)} pending</div> : null}
                                             </td>
                                             <td className="px-5 py-4 tabular-nums text-sub-600">
                                                 {fmt.format(limit)}
+                                                {user.access_plan === "office" ? " / day" : user.access_plan === "demo" ? " / demo" : ""}
+                                            </td>
+                                            <td className="px-5 py-4 tabular-nums text-sub-600">
+                                                {((user.storage_used_bytes ?? 0) / 1e9).toFixed(2)} / {((user.storage_limit_bytes ?? 0) / 1e9).toFixed(0)} GB
+                                            </td>
+                                            <td className="px-5 py-4 text-sub-600">
+                                                {user.expires_at ? new Date(user.expires_at).toLocaleString() : "No expiry"}
                                             </td>
                                             <td className="px-5 py-4 tabular-nums text-sub-600">
                                                 {fmt.format(remaining)}
@@ -709,7 +730,7 @@ const LiveTeamPage = () => {
                                             </td>
                                             <td className="px-5 py-4">
                                                 {user.org_role !== "owner" &&
-                                                user.is_active !== false ? (
+                                                user.is_active !== false || user.account_status === "invited" ? (
                                                     <button
                                                         type="button"
                                                         className="text-label-xs text-red-500"

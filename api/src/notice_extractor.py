@@ -768,6 +768,13 @@ class NoticeExtractor:
             match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if match:
                 value = match.group(1).strip()
+                # A missing value plus \s* may consume the next header line.
+                # Never report a field label as a person or a subject.
+                if re.fullmatch(
+                    r"(?:from|to|sent|date|subject|attachments?|cc|bcc|ref(?:erence)?)\s*:",
+                    value, re.IGNORECASE,
+                ):
+                    continue
                 if len(value) > 3:  # Minimum meaningful length
                     page = self._find_page(match.group(0), pages)
                     evidence = {
@@ -1209,5 +1216,13 @@ def extract_and_save_notice(
     """
     extractor = get_notice_extractor(use_llm)
     notice = extractor.extract_notice(doc_id, file_path, doc_text_by_page, project_id)
+    from .config import LOCAL_LLM
+    if LOCAL_LLM and project_id:
+        from .document_review import ReviewStore, FIELDS
+        review = ReviewStore().get(project_id, doc_id)
+        if review and review['version'] > 0:
+            for key in ('date', 'sender', 'recipient', 'subject', 'doc_type'):
+                if key in review['metadata']:
+                    setattr(notice, key, review['metadata'][key] or None)
     path = extractor.save_notice(notice)
     return notice, path

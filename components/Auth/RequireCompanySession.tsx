@@ -27,6 +27,10 @@ export default function RequireCompanySession({
             redirectToSignIn(router);
             return;
         }
+        if (session.mustChangePassword) {
+            router.replace("/auth/change-password");
+            return;
+        }
         // Platform admins never use the company workspace portal.
         if (session.role === "super_admin") {
             portalNavigate(router, homeUrlForRole(session.role));
@@ -38,7 +42,7 @@ export default function RequireCompanySession({
         }
     }, [ready, session, router, isLive]);
 
-    if (!ready || !session) {
+    if (!ready || !session || session.mustChangePassword) {
         return <WorkspaceGateSkeleton pathname={pathname} />;
     }
 

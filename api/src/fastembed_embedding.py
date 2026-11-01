@@ -31,7 +31,12 @@ class FastEmbedEmbedding(BaseEmbedding):
                  query_instruction: str = BGE_QUERY_INSTRUCTION, **kwargs: Any) -> None:
         super().__init__(model_name=model_name, **kwargs)
         from fastembed import TextEmbedding
-        self._model = TextEmbedding(model_name=model_name)
+        import os
+        self._model = TextEmbedding(
+            model_name=model_name, cache_dir=os.getenv("FASTEMBED_CACHE_PATH") or None,
+            local_files_only=os.getenv("DEPLOYMENT_MODE") == "local",
+            threads=int(os.getenv("EMBEDDING_THREADS", "2")),
+        )
         self._query_instruction = query_instruction
 
     def _embed_one(self, text: str) -> List[float]:

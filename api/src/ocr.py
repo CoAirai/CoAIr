@@ -501,7 +501,12 @@ class OCRPipeline:
             doc = fitz.open(pdf_path)
             page = doc[page_number - 1]
 
-            mat = fitz.Matrix(self.dpi / 72, self.dpi / 72)
+            # Bound raster memory for large engineering sheets.
+            import math
+            scale = min(self.dpi / 72, math.sqrt(25_000_000 / max(1, page.rect.width * page.rect.height)))
+            if scale < self.dpi / 72:
+                warnings.append("Large page rendered at reduced DPI (25 MP pixel budget)")
+            mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat)
             img_data = pix.tobytes("png")
             img = Image.open(BytesIO(img_data))
@@ -602,7 +607,8 @@ class OCRPipeline:
         file_hash = self._get_file_hash(pdf_path)
         doc = fitz.open(pdf_path)
         total_pages = len(doc)
-        if total_pages > self.max_pages:
+        source_total_pages = total_pages
+        if self.max_pages > 0 and total_pages > self.max_pages:
             logger.warning(f"   PDF has {total_pages} pages, limiting to {self.max_pages}")
             total_pages = self.max_pages
 
@@ -611,7 +617,9 @@ class OCRPipeline:
         for page_num in range(total_pages):
             page = doc[page_num]
             page_number = page_num + 1
-            native_text = page.get_text().strip()
+            # PDF content streams can store all header labels before their
+            # values. Restore reading order so From/To/Subject retain values.
+            native_text = page.get_text(sort=True).strip()
             if self.mode == "off":
                 do_ocr = False
             elif self.mode == "force":
@@ -696,6 +704,25 @@ class OCRPipeline:
         logger.info(f"   ----------------------------------------")
         logger.info(f"   Extraction summary: native={native_count}, ocr={ocr_count}, "
                     f"failed={failed_count}")
+        # Keep coverage evidence even for blank/unreadable pages that cannot
+        # produce an embedding. Never mistake a page cap for full extraction.
+        from .config import DEPLOYMENT_MODE, STORAGE_DIR
+        if DEPLOYMENT_MODE == 'local':
+            import json
+            from pathlib import Path
+            folder = Path(STORAGE_DIR) / 'ocr_audits'
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / f'{file_hash}-{self.language}-{self.mode}.json'
+            audit = {'file_name': Path(pdf_path).name, 'content_cache_key': file_hash,
+                     'source_pages': source_total_pages, 'processed_pages': len(results),
+                     'all_pages_processed': len(results) == source_total_pages,
+                     'language': self.language, 'mode': self.mode,
+                     'pages': [{'page': p.page_number, 'characters': p.char_count,
+                                'method': p.extraction_method, 'warnings': p.warnings,
+                                'confidence': p.ocr_confidence} for p in results]}
+            temporary = target.with_suffix('.tmp')
+            temporary.write_text(json.dumps(audit, ensure_ascii=False))
+            temporary.replace(target)
         return results
 
     def detect_table_like_structure(self, text: str) -> bool:

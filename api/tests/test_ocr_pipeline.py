@@ -183,3 +183,35 @@ class TestOCRModeOff:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_zero_page_limit_extracts_every_page(tmp_path):
+    import fitz
+    from src.ocr import OCRPipeline
+    path = tmp_path / 'all-pages.pdf'
+    with fitz.open() as doc:
+        for number in range(3):
+            doc.new_page().insert_text((72, 72), f'Page {number + 1} contains native text.')
+        doc.save(path)
+    pages = OCRPipeline(mode='off', max_pages=0).extract_text_auto(str(path))
+    assert [p.page_number for p in pages] == [1, 2, 3]
+    assert 'Page 3' in pages[-1].text
+
+
+def test_local_audit_records_blank_page_and_complete_coverage(tmp_path, monkeypatch):
+    import json
+    import fitz
+    from src import config
+    from src.ocr import OCRPipeline
+    monkeypatch.setattr(config, 'DEPLOYMENT_MODE', 'local')
+    monkeypatch.setattr(config, 'STORAGE_DIR', tmp_path)
+    path = tmp_path / 'coverage.pdf'
+    with fitz.open() as doc:
+        doc.new_page().insert_text((72, 72), 'This page has native text.')
+        doc.new_page()
+        doc.save(path)
+    OCRPipeline(mode='off', max_pages=0).extract_text_auto(str(path))
+    audit = json.loads(next((tmp_path/'ocr_audits').glob('*.json')).read_text())
+    assert audit['all_pages_processed'] and audit['processed_pages'] == 2
+    assert audit['pages'][1]['characters'] == 0
+    assert audit['pages'][1]['warnings']

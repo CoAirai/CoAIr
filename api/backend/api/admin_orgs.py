@@ -25,6 +25,9 @@ from src.user_store import UserStore, get_user_store
 router = APIRouter()
 
 
+
+
+
 class OrgCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     owner_username: str = Field(default="", max_length=160)
@@ -245,6 +248,11 @@ def create_org(
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+    from src.config import DEPLOYMENT_MODE
+    if DEPLOYMENT_MODE == 'local' and owner:
+        from src.appliance_access import provision_personal_access, STORAGE_BYTES
+        provision_personal_access(get_user_store(), store, owner)
+        org = store.update_org(org['org_id'], default_storage_bytes=STORAGE_BYTES)
     return _with_counts(org, store.summaries())
 
 

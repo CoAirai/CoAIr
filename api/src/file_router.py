@@ -160,6 +160,7 @@ def _index_document_metadata(
     """Persist the generic document-level research record after extraction."""
     try:
         from .document_index import get_document_index, infer_document_record
+        from .config import LOCAL_LLM
         from .document_rag import generate_doc_id
         enriched = enriched or {}; notice = notice_summary or {}
         parties = list(enriched.get("parties") or [])
@@ -177,6 +178,7 @@ def _index_document_metadata(
             metadata_date=str(notice.get("date") or ""),
             metadata_date_source="content_header" if notice.get("date") else "unknown",
             ocr_pages=ocr_pages, total_pages=len(page_texts),
+            infer_date=not LOCAL_LLM,
         )
         get_document_index().upsert(record)
     except Exception as exc:
@@ -330,9 +332,36 @@ def _process_document(
             file_path, project_id=project_id, file_id=file_id,
         )
 
+        enriched = {}
+        from .config import LOCAL_LLM
+        if LOCAL_LLM and new_docs:
+            from .local_metadata import extract_metadata_for_ingestion
+            from .document_review import ReviewStore
+            report("metadata", 0.40)
+            pages = {int(doc.metadata.get("page_number", 1)): doc.text for doc in new_docs}
+            enriched = extract_metadata_for_ingestion(project_id=project_id, file_id=file_id,
+                                        file_name=filename, pages=pages)
+            review = ReviewStore().get(project_id, file_id)
+            if review and review['version'] > 0:
+                enriched.update(review['metadata'])
+                for key in ('people', 'organizations'):
+                    if isinstance(enriched.get(key), str):
+                        enriched[key] = enriched[key].splitlines()
+                enriched['parties'] = enriched.get('people', []) + enriched.get('organizations', [])
+            for doc in new_docs:
+                doc.metadata.update({
+                    "document_title": enriched.get('title', ''),
+                    "date": enriched.get('date', ''),
+                    "doc_type": enriched.get('doc_type', 'other'),
+                    "people": enriched.get('people', []),
+                    "summary": enriched.get('summary', ''),
+                    "metadata_status": enriched.get('status', ''),
+                })
+
         if new_docs:
             report("embedding", 0.55)        # chunk + local embed + Qdrant upsert + lexical
-            rag.insert_documents(new_docs, project_id=project_id, file_id=file_id)
+            if not rag.insert_documents(new_docs, project_id=project_id, file_id=file_id):
+                raise RuntimeError("document_embedding_failed")
             result.success = True
             report("searchable", 0.78)       # ← document is now queryable; tail is enrichment only
 

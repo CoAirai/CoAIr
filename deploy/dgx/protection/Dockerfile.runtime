@@ -1,0 +1,12 @@
+# Final scratch COPY deliberately flattens the source-bearing development base.
+ARG BASE_IMAGE=coair-api:dgx-local
+FROM ${BASE_IMAGE} AS prepared
+USER root
+RUN rm -rf /app && mkdir /app
+COPY app/ /app/
+FROM scratch
+COPY --from=prepared / /
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata FASTEMBED_CACHE_PATH=/opt/coair/models/fastembed PORT=8080 APP_MODE=api
+EXPOSE 8080
+CMD ["python", "-c", "from coair_protected import run; run()"]

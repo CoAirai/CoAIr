@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import uuid
@@ -426,7 +427,7 @@ def _worker() -> None:
         from src.project_context import set_current_project
         from src.run_store import get_run_store
         from backend.core.security import set_current_user_context
-        set_current_user_context(job["username"])
+        identity = set_current_user_context(job["username"])
         set_current_project(job["project_id"], "editor")
         run = get_run_store(); run.start(
             run_id=job["job_id"], project_id=job["project_id"], username=job["username"],
@@ -436,6 +437,8 @@ def _worker() -> None:
                             else "evidence-report-v1"),
         )
         try:
+            from backend.core.security import authorize_worker
+            authorize_worker(job['username'], job['project_id'])
             request = dict(job["request"] or {})
             if job["module"] == "chronology":
                 request["pipeline_version"] = str(
@@ -510,8 +513,10 @@ def start_report_workers() -> None:
         if any(t.is_alive() for t in _threads):
             return
         _stop.clear(); get_report_job_store().recover()
-        thread = threading.Thread(target=_worker, name="report-worker", daemon=True)
-        thread.start(); _threads.append(thread)
+        count = max(1, min(2, int(os.getenv("REPORT_MAX_CONCURRENCY", "1"))))
+        for index in range(count):
+            thread = threading.Thread(target=_worker, name=f"report-worker-{index}", daemon=True)
+            thread.start(); _threads.append(thread)
 
 
 def stop_report_workers() -> None:

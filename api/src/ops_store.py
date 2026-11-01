@@ -1056,6 +1056,13 @@ class OpsStore:
             )
         return str(row["username"])
 
+    def revoke_invite_tokens(self, email: str, *, org_id: str | None = None) -> None:
+        with self._write_lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE invite_tokens SET used_at=? WHERE email=? AND org_id=? AND used_at IS NULL",
+                [_now_iso(), email.strip().lower(), org_id or ""],
+            )
+
     def create_invite_token(
         self,
         email: str,

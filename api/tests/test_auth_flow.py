@@ -129,3 +129,15 @@ def test_invalid_token(app, store):
     client = TestClient(app)
     resp = client.get("/api/me-test", headers={"Authorization": "Bearer not-a-jwt"})
     assert resp.status_code == 401
+
+
+def test_local_password_login_needs_no_cloud_email(app, store, monkeypatch):
+    monkeypatch.setenv("DEPLOYMENT_MODE", "local")
+    monkeypatch.setenv("AUTH_PROVIDER", "local")
+    store.create_user("local-owner", "a-long-local-password", token_limit=0)
+    client = TestClient(app)
+    response = client.post("/api/auth/login", json={"username":"local-owner", "password":"a-long-local-password"})
+    assert response.status_code == 200
+    assert response.json()["mfa_required"] is False
+    assert response.json()["access_token"]
+    assert client.post("/api/auth/login", json={"username":"local-owner", "password":"incorrect"}).status_code == 401

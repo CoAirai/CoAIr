@@ -12,6 +12,7 @@ import { saveMfaChallenge } from "@/lib/coair/liveLogin";
 import { postLoginUrl } from "@/lib/auth/postLoginPath";
 
 const SignInPage = () => {
+    const isLocal = process.env.NEXT_PUBLIC_DEPLOYMENT_MODE === "local";
     const router = useRouter();
     const searchParams = useSearchParams();
     const signedOut = searchParams.get("signedOut") === "1";
@@ -83,7 +84,7 @@ const SignInPage = () => {
     return (
         <LayoutLogin
             title="Sign in to COAir"
-            description={
+            description={isLocal ? "Sign in with the account supplied with your device." :
                 <>
                     New to the workspace?{" "}
                     <Link className="text-blue-500" href="/auth/sign-up">
@@ -121,7 +122,9 @@ const SignInPage = () => {
                         {submitting ? "Signing in…" : "Sign in"}
                     </Button>
                 </form>
-                <p className="mt-5 text-center">
+                {isLocal ? <p className="mt-5 text-center text-label-sm text-sub-600">
+                    Contact your device administrator for account access or password help.
+                </p> : <><p className="mt-5 text-center">
                     <Link
                         className="text-label-sm text-blue-500 transition-colors hover:text-blue-700"
                         href="/auth/forgot-password"
@@ -135,6 +138,7 @@ const SignInPage = () => {
                         Activate invite
                     </Link>
                 </p>
+                </>}
             </div>
         </LayoutLogin>
     );

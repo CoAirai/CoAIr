@@ -61,6 +61,14 @@ def rebalance_equal_remaining(
     users = users or get_user_store()
     names = _active_usernames(org_id, orgs=orgs, users=users)
     pool_total = int(pool) if pool is not None else company_pool(org_id, orgs=orgs)
+    records = [users.get_user(name) for name in names]
+    if records and all(record.get('access_plan') for record in records):
+        snapshots = {name: users.get_usage(name) for name in names}
+        allocations = {name: value['token_limit'] for name, value in snapshots.items()}
+        return {'org_id': org_id, 'mode': 'fixed_appliance_allowances',
+                'pool': sum(allocations.values()), 'members': len(names),
+                'remaining': sum(max(0, s['token_limit'] - s['used_tokens'] - s.get('reserved_tokens', 0)) for s in snapshots.values()),
+                'allocations': allocations}
     if not names:
         return {
             "org_id": org_id,

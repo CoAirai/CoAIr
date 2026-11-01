@@ -68,3 +68,12 @@ api/.env.production
 # Local paste files with secrets — never commit
 deploy/render.env.paste
 **/render.env.paste
+
+# DGX runtime configuration
+deploy/dgx/.env
+deploy/dgx/inbox/
+
+deploy/dgx/embedding-model/
+# Protected DGX runtime secrets and local build products
+deploy/dgx/protection-secrets/
+deploy/dgx/protection/build/

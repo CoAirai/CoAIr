@@ -1,0 +1,7 @@
+.git
+.next
+node_modules
+.env*
+**/.env*
+api
+!api/THIRD_PARTY_NOTICES.md

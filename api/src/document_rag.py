@@ -263,6 +263,12 @@ class DocumentRAG:
 
     def _setup_llm(self):
         """Configure LLM and embedding models."""
+        from .config import LOCAL_LLM
+        if LOCAL_LLM:
+            from .local_llama import LocalLLM
+            Settings.llm = LocalLLM()
+            Settings.embed_model = self._build_embed_model()
+            return
         log_llm("Setting up Gemini LLM and embeddings", GEMINI_MODEL)
         # Lazy + guarded: the LlamaIndex Gemini wrapper pulls the legacy
         # google.generativeai SDK, which is fragile on newer Pythons. It's only
@@ -755,6 +761,17 @@ class DocumentRAG:
         else:
             logger.warning(f"   Unsupported file type: {extension}")
             return None
+
+        from .config import LOCAL_LLM
+        if LOCAL_LLM and new_docs:
+            from .document_review import ReviewStore
+            review = ReviewStore().get(project_id, file_id)
+            if review and review['version'] > 0:
+                for doc in new_docs:
+                    page = str(doc.metadata.get('page_number', 1))
+                    if page in review['pages']:
+                        doc.set_content(review['pages'][page])
+                        doc.metadata['extraction_method'] = 'reviewed'
 
         if new_docs:
             for doc in new_docs:

@@ -1,0 +1,14 @@
+[Unit]
+Description=Coair customer ingress guard (IPv4, IPv6, Docker)
+After=network-online.target docker.service tailscaled.service
+Wants=network-online.target
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/coair/network_guard.sh apply
+ExecStop=/usr/local/lib/coair/network_guard.sh remove
+
+[Install]
+WantedBy=multi-user.target

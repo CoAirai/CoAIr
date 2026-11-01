@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Coair application tunnel deadlines
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=30
+AccuracySec=1
+
+[Install]
+WantedBy=timers.target

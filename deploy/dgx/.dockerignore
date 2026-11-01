@@ -1,0 +1,6 @@
+.env
+.env.*
+inbox
+embedding-model
+*.tar
+*.tar.sha256

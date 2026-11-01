@@ -31,6 +31,7 @@ const ERRORS: Record<string, string> = {
     invalid_email_challenge: "Request a new activation code",
     otp_attempts_exceeded: "Too many wrong codes — request a new one",
     rate_limited: "Too many attempts — wait a minute and try again",
+    password_requires_12_to_72_bytes: "Use at least 12 characters and at most 72 UTF-8 bytes",
     supabase_sync_failed: "Could not finish account setup — try again",
 };
 
@@ -95,8 +96,8 @@ const AcceptInvitePage = () => {
             setError("Open the invite link from your email (token required)");
             return;
         }
-        if (password.length < 8) {
-            setError("Password must be at least 8 characters");
+        if (password.length < 12 || new TextEncoder().encode(password).length > 72) {
+            setError("Password must have at least 12 characters and at most 72 UTF-8 bytes");
             return;
         }
         if (password !== confirm) {
@@ -155,6 +156,7 @@ const AcceptInvitePage = () => {
                 </>
             }
         >
+            <p className="mb-4 text-label-sm text-sub-600">Demo: 7 days from activation, 5 GB document storage, 1 million total tokens. Each file can be up to 100 MB. Other demo users cannot access your personal project; the authorized company administrator can access company projects. Documents remain after expiry.</p>
             {done ? (
                 <div className="surface-panel px-4 py-5 text-center text-label-sm text-sub-600">
                     <p className="font-medium text-strong-950">Invite activated</p>

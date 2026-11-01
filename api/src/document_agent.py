@@ -723,6 +723,8 @@ class DocumentAgent:
 
                 notices.append(data)
             except Exception as e:
+                from .llm_errors import raise_local_generation_error
+                raise_local_generation_error(e)
                 logger.warning(f"[DocumentAgent] Error loading notice {notice_path.name}: {e}")
 
         profile = self.project_analyzer.analyze_project(notices, project_name)
@@ -918,6 +920,8 @@ class DocumentAgent:
             }
 
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.error(f"[DocumentAgent] LLM project answer failed: {e}")
             return {
                 "answer": f"Project '{profile.project_name}': {profile.doc_count} documents, "
@@ -934,6 +938,8 @@ class DocumentAgent:
                 json.dump(asdict(profile), f, indent=2, ensure_ascii=False)
             logger.info(f"[DocumentAgent] Saved profile: {path.name}")
         except Exception as e:
+            from .llm_errors import raise_local_generation_error
+            raise_local_generation_error(e)
             logger.warning(f"[DocumentAgent] Failed to save profile: {e}")
 
 

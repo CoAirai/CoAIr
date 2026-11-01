@@ -1,0 +1,50 @@
+name: DGX source contracts
+on:
+  push:
+    branches: [codex/dgx-appliance-parity]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dgx-source-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build source-test image without GPU or customer data
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          load: true
+          tags: coair-dgx-source-contracts:local
+          cache-from: type=gha,scope=dgx-source-api
+          cache-to: type=gha,mode=max,scope=dgx-source-api
+      - name: Test local auth, accounting, transport, exports and project isolation
+        run: |
+          docker run --rm --entrypoint sh \
+            -e DEPLOYMENT_MODE=local -e AUTH_PROVIDER=local \
+            -e JWT_SECRET=disposable-ci-local-contracts-only-32chars \
+            -e GOOGLE_API_KEY=unused-unit-test-key \
+            -v "$PWD/api/tests:/app/tests:ro" coair-dgx-source-contracts:local -c \
+            'pip install --quiet pytest pytest-asyncio && python -m pytest -q tests/test_demo_invites.py tests/test_auth_provision.py tests/test_answer_xlsx.py tests/test_appliance_pilot.py tests/test_pilot_inventory_isolation.py tests/test_local_http_recovery.py tests/test_vector_selection_integration.py tests/test_vector_project_isolation.py tests/test_sql_result_history.py tests/test_chronology_date_support.py -k "not structured_retry"'
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_DEPLOYMENT_MODE: local
+          NEXT_PUBLIC_COAIR_API_BASE: /coair-api
+# Source checks do not deploy, compile a device-bound license or qualify Qwen output.

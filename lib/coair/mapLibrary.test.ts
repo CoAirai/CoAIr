@@ -24,6 +24,7 @@ describe("mapLibraryDocuments", () => {
                 companyId: "org-1",
                 name: "Safety.pdf",
                 kind: "document",
+                status: "completed",
                 addedByUserId: "live",
                 addedAt: expect.any(String),
                 status: "completed",

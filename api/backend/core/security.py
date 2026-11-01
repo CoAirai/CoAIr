@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Optional
 
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 
 from src.user_store import (
     ACCOUNT_ACTIVE,
@@ -22,6 +22,7 @@ from src.user_store import (
     VALID_ROLES,
     UserStore,
     account_auth_error,
+    account_expired,
     get_user_store,
     normalize_account_status,
 )
@@ -79,9 +80,15 @@ def set_current_user_context(username: str) -> Optional[UserContext]:
     status = normalize_account_status(
         record.get("account_status"), is_active=bool(record.get("is_active"))
     )
-    if status != ACCOUNT_ACTIVE:
+    if status != ACCOUNT_ACTIVE or account_expired(record):
         current_user_var.set(None)
         return None
+    if record.get('access_plan'):
+        from src.org_store import get_org_store
+        membership = get_org_store().membership_for(username)
+        if not membership or membership.get('archived_at'):
+            current_user_var.set(None)
+            return None
     user = UserContext(
         username=record["username"], role=record["role"],
         display_name=record["display_name"], features=record["features"],
@@ -95,6 +102,28 @@ def hash_password(plain: str) -> str:
     import bcrypt
 
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def authorize_worker(username: str, project_id: str) -> UserContext:
+    """Recheck lifecycle and write membership after a queued job is claimed."""
+    identity = set_current_user_context(username)
+    record = get_user_store().get_user(username) or {}
+    if identity is None or record.get('must_change_password'):
+        raise PermissionError('account_access_unavailable')
+    from src.project_store import get_project_store
+    from src.project_context import set_current_project
+    projects = get_project_store()
+    project = projects.get(project_id) if is_admin(identity.role) else projects.get_visible(project_id, username)
+    role = 'owner' if is_admin(identity.role) else (project or {}).get('role')
+    if not project or project.get('archived_at') or role not in ('owner', 'editor'):
+        raise PermissionError('project_access_unavailable')
+    if record.get('access_plan') and not is_admin(identity.role):
+        from src.org_store import get_org_store
+        membership = get_org_store().membership_for(username)
+        if not membership or project.get('org_id') != membership['org_id']:
+            raise PermissionError('project_access_unavailable')
+    set_current_project(project_id, role)
+    return identity
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -196,6 +225,7 @@ def get_current_user(
     authorization: Optional[str] = Header(default=None),
     x_api_key: Optional[str] = Header(default=None, alias="X-Api-Key"),
     store: UserStore = Depends(get_user_store),
+    request: Request = None,
 ) -> UserContext:
     """Resolve the active user from a Bearer JWT or platform API key."""
     api_key = (x_api_key or "").strip()
@@ -236,6 +266,19 @@ def get_current_user(
 
     if not record:
         raise HTTPException(401, "unknown_user")
+    if account_expired(record):
+        raise HTTPException(403, "account_expired")
+    if record.get('access_plan'):
+        from src.org_store import get_org_store
+        membership = get_org_store().membership_for(record['username'])
+        if not membership or membership.get('archived_at'):
+            raise HTTPException(403, 'organization_membership_unavailable')
+    if record.get("must_change_password") and (
+        request is None or request.url.path not in (
+            "/api/auth/me", "/api/auth/change-password", "/api/auth/logout",
+        )
+    ):
+        raise HTTPException(403, "password_change_required")
     status = normalize_account_status(
         record.get("account_status"), is_active=bool(record.get("is_active"))
     )

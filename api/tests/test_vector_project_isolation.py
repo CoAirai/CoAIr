@@ -172,3 +172,14 @@ def test_notice_search_uses_the_request_scoped_project_by_default():
         assert names == ["mine.pdf"]
     finally:
         set_current_project("")
+
+
+def test_selected_registry_id_matches_file_identity_or_legacy_doc_id():
+    filters = DocumentRAG._build_metadata_filters(['registry-id'], None, project_id='project-a')
+    selector = filters.filters[0]
+    assert str(selector.condition.value) == 'or'
+    assert {f.key: f.value for f in selector.filters} == {
+        'file_id': ['registry-id'], 'doc_id': ['registry-id'],
+    }
+    assert filters.filters[-1].key == 'project_id'
+    assert filters.filters[-1].value == 'project-a'

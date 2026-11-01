@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict
@@ -15,12 +16,21 @@ PROMPT_FILE = Path(BASE_DIR) / "config" / "prompts" / "chronology_v2.yaml"
 V3_PROMPT_FILE = Path(BASE_DIR) / "config" / "prompts" / "chronology_v3.yaml"
 
 
+def _prompt_text(path: Path) -> str:
+    if (Path(BASE_DIR) / "protection/manifest.json").exists():
+        runtime = sys.modules.get("coair_protected")
+        if runtime is None:
+            raise RuntimeError("Protected prompt runtime is not active")
+        return runtime.read_resource(path.relative_to(BASE_DIR).as_posix())
+    return path.read_text(encoding="utf-8")
+
+
 @lru_cache(maxsize=1)
 def load_chronology_prompts() -> Dict[str, str]:
     # JSON is a strict YAML subset.  Keeping the file in that subset avoids a
     # runtime YAML dependency in the API image while retaining the requested
     # human-editable .yaml contract.
-    raw = json.loads(PROMPT_FILE.read_text(encoding="utf-8"))
+    raw = json.loads(_prompt_text(PROMPT_FILE))
     required = {
         "version", "system", "research_planner", "extractor",
         "synthesizer", "verifier", "style_profile",
@@ -39,7 +49,7 @@ def chronology_prompt_hash() -> str:
 @lru_cache(maxsize=1)
 def load_chronology_v3_prompts() -> Dict[str, str]:
     try:
-        data = json.loads(V3_PROMPT_FILE.read_text(encoding="utf-8"))
+        data = json.loads(_prompt_text(V3_PROMPT_FILE))
     except Exception as exc:
         raise RuntimeError(f"Unable to load chronology V3 prompts: {V3_PROMPT_FILE}") from exc
     required = {
@@ -60,17 +70,21 @@ def chronology_v3_prompt_hash() -> str:
 def validate_chronology_runtime() -> None:
     """Fail closed when a deploy omitted a prompt, model profile or price."""
     load_chronology_prompts(); v3 = load_chronology_v3_prompts()
-    if v3.get("version") != "chronology-v3":
+    if not (v3.get("version") == "chronology-v3" or v3.get("version", "").startswith("chronology-v3-")):
         raise RuntimeError("chronology_prompt_version_invalid")
-    from .config import LLM_PRICING
+    from .config import LLM_PRICING, LOCAL_LLM, LLM_BASE_URL, LLM_API_KEY
     from .model_profiles import MODEL_CAPABILITIES, TASK_PROFILES
-    model = "gemini-3.6-flash"
-    if model not in LLM_PRICING or model not in MODEL_CAPABILITIES:
-        raise RuntimeError("chronology_model_contract_missing")
-    expected_price = {"input": 1.50, "cached_input": .15, "output": 7.50}
-    if any(float(LLM_PRICING[model].get(key, -1)) != value
-           for key, value in expected_price.items()):
-        raise RuntimeError("chronology_model_price_invalid")
+    if LOCAL_LLM:
+        from .openai_compatible import validate_endpoint
+        validate_endpoint(LLM_BASE_URL, LLM_API_KEY)
+    else:
+        model = "gemini-3.6-flash"
+        if model not in LLM_PRICING or model not in MODEL_CAPABILITIES:
+            raise RuntimeError("chronology_model_contract_missing")
+        expected_price = {"input": 1.50, "cached_input": .15, "output": 7.50}
+        if any(float(LLM_PRICING[model].get(key, -1)) != value
+               for key, value in expected_price.items()):
+            raise RuntimeError("chronology_model_price_invalid")
     required = {
         "chronology_research_plan", "chronology_extract", "chronology_aggregation",
         "chronology_synthesis", "chronology_verify",

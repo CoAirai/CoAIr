@@ -49,6 +49,14 @@ def get_current_project(
     if not record or record.get("archived_at"):
         # Deliberately use 404 so project identifiers cannot be enumerated.
         raise HTTPException(404, "project_not_found")
+    if not is_admin(user.role):
+        from src.user_store import get_user_store
+        account = get_user_store().get_user(user.username) or {}
+        if account.get('access_plan'):
+            from src.org_store import get_org_store
+            membership = get_org_store().membership_for(user.username)
+            if not membership or membership.get('archived_at') or record.get('org_id') != membership['org_id']:
+                raise HTTPException(404, 'project_not_found')
     configured_profile = str(record.get("embedding_profile") or "local-bge-v1")
     if configured_profile != server_embedding_profile():
         raise HTTPException(409, {

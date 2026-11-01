@@ -1,0 +1,11 @@
+# Apply to the existing protected installation to share the device-wide queue.
+services:
+  api:
+    environment:
+      COAIR_ADMISSION_DATABASE: /app/admission/chat.db
+    volumes:
+      - admission:/app/admission
+volumes:
+  admission:
+    external: true
+    name: coair-chat-admission

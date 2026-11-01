@@ -1,0 +1,10 @@
+server {
+    listen 8081;
+    client_max_body_size 4m;
+    proxy_read_timeout 900s;
+    proxy_send_timeout 900s;
+    location = /tokenize { proxy_pass ${MODEL_UPSTREAM}/tokenize; }
+    location = /v1/chat/completions { proxy_pass ${MODEL_UPSTREAM}/v1/chat/completions; }
+    location = /v1/models { proxy_pass ${MODEL_UPSTREAM}/v1/models; }
+    location / { return 404; }
+}

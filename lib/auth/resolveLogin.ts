@@ -19,6 +19,8 @@ export type AuthSession = {
     impersonator?: string;
     /** Per-user module rights from the API (chronology, forensic, …). */
     features?: Record<string, boolean>;
+    mustChangePassword?: boolean;
+    expiresAt?: string | null;
     /** Org-level module unlocks from GET /org — seed hub gates before LiveWorkspace refresh. */
     moduleGrants?: {
         chronology?: boolean;
@@ -51,6 +53,7 @@ export function homePathForSession(
     company?: { needsCheckout?: boolean } | null
 ): string {
     if (session.source === "live") {
+        if (session.mustChangePassword) return "/auth/change-password";
         if (session.role === "super_admin") return "/admin";
         if (session.needsCheckout || company?.needsCheckout) {
             return "/onboarding/plans";
