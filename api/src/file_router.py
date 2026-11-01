@@ -358,6 +358,10 @@ def _process_document(
                     if isinstance(enriched.get(key), str):
                         enriched[key] = enriched[key].splitlines()
                 enriched['parties'] = enriched.get('people', []) + enriched.get('organizations', [])
+            ReviewStore().baseline(project_id, file_id, pages, enriched, extraction={
+                **enriched, "total_pages": len(pages),
+                "ocr_pages": rag.file_registry.get(filename, {}).get("ocr_pages", 0),
+            })
             for doc in new_docs:
                 doc.metadata.update({
                     "document_title": enriched.get('title', ''),
@@ -424,7 +428,7 @@ def _process_document(
             report("metadata", 0.90)
             _index_document_metadata(
                 file_path, project_id=project_id, page_texts=doc_text_by_page,
-                notice_summary=result.notice_summary, enriched={},
+                notice_summary=result.notice_summary, enriched=enriched,
                 ocr_pages=result.ocr_pages,
             )
             from .document_rag import generate_doc_id

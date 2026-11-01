@@ -41,6 +41,17 @@ class ReviewStore:
             db.execute('INSERT OR IGNORE INTO reviews(project,file,version,payload,author) VALUES (?,?,0,?,?)',
                        (project,file,payload,'extraction'))
 
+    def extraction_stats(self, project):
+        """Read persisted counts without loading full OCR page text into the UI."""
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT file,json_extract(payload,'$.extraction.total_pages'),"
+                "json_extract(payload,'$.extraction.ocr_pages') FROM reviews "
+                "WHERE project=? AND version=0", (project,),
+            ).fetchall()
+        return {file: {'pages': pages, 'ocr_pages': ocr}
+                for file, pages, ocr in rows if pages is not None and ocr is not None}
+
     def save(self, project, file, version, pages, metadata, author):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')

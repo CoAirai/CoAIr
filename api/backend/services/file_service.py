@@ -330,6 +330,16 @@ class FileService:
         except Exception:
             pass
 
+        # Local review baselines survive a restart; RAG's file_registry is
+        # process-local. Read only counts, with an explicit project boundary.
+        from src.config import LOCAL_LLM
+        if LOCAL_LLM and project_id:
+            from src.document_review import ReviewStore
+            stats = ReviewStore().extraction_stats(project_id)
+            for file in files:
+                if file["id"] in stats:
+                    file.update(stats[file["id"]])
+
         # ── ENRICHMENT ONLY: Add metadata from RAG (page counts, OCR) ──
         try:
             from src.document_rag import get_document_rag

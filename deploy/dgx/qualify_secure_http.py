@@ -81,15 +81,20 @@ for _ in range(120):
 else:raise AssertionError('Ingestion did not finish within 240 seconds')
 files=request('/files')
 scan=next(x for x in files if x['name']=='installation-scanned.pdf')
-assert scan['ocr_pages']>0, scan
+# Read through the running API; never open a live DuckDB writer from a second
+# process. The review store persists extracted text across process restarts.
+review=request('/local/documents/'+ids['installation-scanned.pdf']+'/review')
+ocr_text=' '.join(review['pages'].values())
+assert 'North Works' in ocr_text and '2007' in ocr_text, 'Scanned source text was not retained'
 metrics['three_uploads_ready']=True
-metrics['ocr_pages']=scan['ocr_pages']
+metrics['ocr_extracted_text_persisted']=True
+metrics['ocr_display_count_after_restart']=scan['ocr_pages']
 metrics['ingestion_seconds']=round(time.monotonic()-started,2)
 # Download resolves a project-owned original, not a stale cloud URL.
 assert request('/files/'+ids['installation-evidence.pdf']+'/download',raw=True).startswith(b'%PDF')
 metrics['original_document_download']=True
 conv=request('/conversations',{'title':'Installation verification'})['conversation_id']
-query='Using only the selected notice, provide a dated chronology of the Zone A access events as a Markdown table, with source citations. Preserve the exact dates.'
+query='Using only the selected notice, provide a dated chronology of the Zone A access events as a Markdown table, with source citations. Preserve the exact dates. Include reference NW-001. Verification run '+uuid.uuid4().hex[:8]
 body={'message':query,'conversation_id':conv,'doc_ids':[ids['installation-evidence.pdf']]}
 started=time.monotonic();first=None;deltas=[];activities=[];response=None
 req=urllib.request.Request(origin+'/chat/stream',data=json.dumps(body).encode(),headers={**headers,'X-Project-ID':access['project_id'],'Content-Type':'application/json'})
