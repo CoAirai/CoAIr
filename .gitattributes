@@ -1,0 +1,4 @@
+# Keep LF everywhere: prompt contracts hash file bytes, and deploy archives
+# built on Windows must match what CI tested.
+* text=auto eol=lf
+*.ps1 text eol=crlf

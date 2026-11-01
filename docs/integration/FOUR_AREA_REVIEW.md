@@ -664,3 +664,8 @@ The real public corpus remains the three-PDF staging sample; long-input unit
 coverage and synthetic provider fixtures do not certify complete native-archive
 recall. These features introduce no account/payment/database schema migration or
 new runtime library, and do not qualify fully local DGX/vLLM inference.
+
+
+## Main synchronization — 2026-11-01
+
+Imported the UK/US spreadsheet column-date policy, auth test isolation, fresh PostgreSQL startup fix and LF-safe VPS deployment updates from main. The later streaming, long-evidence and source validation work remains intact. Already converted spreadsheet dates require deliberate re-import; no customer corpus was rewritten.
