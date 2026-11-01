@@ -26,7 +26,9 @@ def test_local_queries_never_recursively_expand_glossary(monkeypatch):
     monkeypatch.setattr(config,'LOCAL_LLM',True)
     jargon=get_jargon_manager()
     text='Who sent the EOT letter?'
-    assert jargon.expand_query(text) == text
+    # Latest bounded expansion is shared by cloud and local retrieval. It keeps
+    # the original abbreviation and expands it once rather than disabling terms.
+    assert jargon.expand_query(text).count('Extension of Time') == 1
     expanded=jargon.replace_query_terms_with_meanings(text)
     assert len(expanded) < len(text) + 2000
 

@@ -63,10 +63,13 @@ services:
       S3_BUCKET_NAME: ''
       GCS_BUCKET_NAME: ''
       PYTHONDONTWRITEBYTECODE: '1'
+      COAIR_ENV: production
+      COAIR_DEBUG_MFA: '0'
     volumes:
       - documents:/app/data
       - storage:/app/storage
       - cache:/app/cache
+      - ocr-cache:/app/.cache
       - logs:/app/logs
       - temporary:/tmp
       - ./secrets/device.key:/run/secrets/coair-protection.key:ro
@@ -115,3 +118,4 @@ volumes:
   cache: {}
   logs: {}
   temporary: {}
+  ocr-cache: {}

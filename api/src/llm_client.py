@@ -1137,7 +1137,7 @@ def _generate_text(
             # Gemini 3 draws reasoning tokens from max_output_tokens, so a tight
             # budget can return zero visible text with finish_reason=MAX_TOKENS.
             # Retry once with thinking off and a wider budget before failing.
-            if (not text and finish_reason == "MAX_TOKENS"
+            if (not LOCAL_LLM and not text and finish_reason == "MAX_TOKENS"
                     and not thinking_degraded and attempt < retry_count):
                 thinking_degraded = True
                 widened = clamp_output_tokens(model, max_tokens * 4, profile)
@@ -1168,6 +1168,10 @@ def _generate_text(
                 raise LLMIncompleteResponseError("model_output_incomplete")
             if finish_reason and finish_reason not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
                 raise LLMIncompleteResponseError(f"model_finish_{finish_reason.lower()}")
+            if LOCAL_LLM and not text:
+                if attempt == 0:
+                    continue
+                raise LLMIncompleteResponseError("model_output_empty")
             if not cacheable:
                 raise LLMInvalidStructuredOutputError("model_output_invalid")
 
@@ -1441,6 +1445,7 @@ def generate_response_json(
             model=_model_for_task(task_type, active),
             provider=active,
             json_mode=True,
+            response_schema=schema if active == "vllm" else None,
             thinking_level=thinking_level or get_task_profile(task_type).thinking_level,
             task_type=task_type,
             cache_key=cache_key,
