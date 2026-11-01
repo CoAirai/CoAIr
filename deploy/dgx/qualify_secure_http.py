@@ -70,6 +70,16 @@ for name,encoded in samples.items():
     payload=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()+base64.b64decode(encoded)+f'\r\n--{boundary}--\r\n'.encode())
     uploaded=request('/upload',payload,extra={'Content-Type':'multipart/form-data; boundary='+boundary})
     ids[name]=uploaded['file_id']
+# Upgrade only this script's own fixtures if they predate review baselines.
+for name in ('installation-evidence.pdf','installation-scanned.pdf'):
+    if name not in existing:
+        continue
+    try:
+        request('/local/documents/'+ids[name]+'/review')
+    except urllib.error.HTTPError as exc:
+        if exc.code != 409:
+            raise
+        request('/files/'+ids[name]+'/reindex', {}, method='POST')
 started=time.monotonic()
 for _ in range(120):
     states=request('/indexing/status')
@@ -88,7 +98,8 @@ ocr_text=' '.join(review['pages'].values())
 assert 'North Works' in ocr_text and '2007' in ocr_text, 'Scanned source text was not retained'
 metrics['three_uploads_ready']=True
 metrics['ocr_extracted_text_persisted']=True
-metrics['ocr_display_count_after_restart']=scan['ocr_pages']
+assert scan['ocr_pages']==1 and scan['pages']==1, scan
+metrics['ocr_display_count']=scan['ocr_pages']
 metrics['ingestion_seconds']=round(time.monotonic()-started,2)
 # Download resolves a project-owned original, not a stale cloud URL.
 assert request('/files/'+ids['installation-evidence.pdf']+'/download',raw=True).startswith(b'%PDF')

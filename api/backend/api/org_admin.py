@@ -304,6 +304,11 @@ async def update_org_user(
     if req.display_name is not None:
         payload["display_name"] = req.display_name
     if req.password is not None:
+        from src.user_store import validate_local_password
+        try:
+            validate_local_password(req.password)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         payload["password"] = req.password
     if req.is_active is not None:
         payload["is_active"] = req.is_active

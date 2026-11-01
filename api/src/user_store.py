@@ -118,6 +118,13 @@ class UserQuotaExceededError(RuntimeError):
         )
 
 
+def validate_local_password(plain: str) -> None:
+    """Apply appliance credentials consistently, including company-owned users."""
+    from .config import DEPLOYMENT_MODE
+    if DEPLOYMENT_MODE == "local" and (len(plain) < 12 or len(plain.encode("utf-8")) > 72):
+        raise ValueError("password_requires_12_characters_and_at_most_72_bytes")
+
+
 class UserStore:
     """SQLite-backed singleton user store. Thread-safe via per-connection locks."""
 
@@ -209,6 +216,7 @@ class UserStore:
 
     @staticmethod
     def _hash_password(plain: str) -> str:
+        validate_local_password(plain)
         return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
     @staticmethod
