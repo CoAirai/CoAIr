@@ -30,6 +30,7 @@ services:
   secure-model-proxy:
     <<: *harden
     image: nginx:1.28-alpine
+    user: "101:101"
     environment:
       MODEL_UPSTREAM: http://100.91.121.116:8000
     volumes:
@@ -98,7 +99,8 @@ services:
   secure-gateway:
     <<: *harden
     image: nginx:1.28-alpine
-    ports: ['100.91.121.116:18082:80']
+    user: "101:101"
+    ports: ['100.91.121.116:18082:8080']
     volumes: ['./nginx.secure.conf:/etc/nginx/conf.d/default.conf:ro']
     tmpfs: [/tmp, /var/cache/nginx, /var/run]
     networks: [data, edge]
