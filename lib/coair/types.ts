@@ -77,7 +77,6 @@ export type CoairCitation = {
 export type CoairChatResponse = {
     ui_intent?: string;
     assistant_text: string;
-    sql_artifact?: import("@/lib/chat/types").SqlArtifact | null;
     citations?: CoairCitation[];
     sql_artifact?: SqlArtifact | null;
 };
