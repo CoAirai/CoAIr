@@ -1157,6 +1157,13 @@ def _generate_text(
                     )
                 continue
 
+            if (LOCAL_LLM and finish_reason == "MAX_TOKENS" and attempt == 0
+                    and profile.retry_output_tokens > max_tokens):
+                # Regenerate from the same evidence once, with reserved context.
+                # Both attempts have already been accounted; never cache a fragment.
+                max_tokens = profile.retry_output_tokens
+                continue
+
             if finish_reason == "MAX_TOKENS":
                 raise LLMIncompleteResponseError("model_output_incomplete")
             if finish_reason and finish_reason not in ("STOP", "FINISH_REASON_UNSPECIFIED"):

@@ -1,6 +1,8 @@
 server {
     listen 8081;
     client_max_body_size 4m;
+    proxy_buffering off;
+    proxy_request_buffering off;
     proxy_read_timeout 900s;
     proxy_send_timeout 900s;
     location = /tokenize { proxy_pass ${MODEL_UPSTREAM}/tokenize; }

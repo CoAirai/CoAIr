@@ -117,19 +117,29 @@ def route_file(
 
     # Update registry with result
     if result.success:
+        if file_type == "data":
+            _index_data_document(
+                file_path, project_id=project_id, doc_id=doc_id, result=result,
+            )
+            from .config import LOCAL_LLM
+            if LOCAL_LLM:
+                try:
+                    from .local_spreadsheets import index_spreadsheet
+                    index_spreadsheet(file_path, project_id=project_id, file_id=file_id)
+                except Exception as exc:
+                    result.success = False
+                    result.error = f"spreadsheet_embedding_failed: {exc}"
+                    registry.mark_error(doc_id, result.error)
+                    return result
+            _prepare_event_artifact(
+                result, file_path=file_path, project_id=project_id, doc_id=doc_id,
+                file_name=Path(file_path).name, source_kind="data",
+            )
         registry.mark_completed(
             doc_id,
             table_names=list(result.table_names),
             notice_extracted=result.notice_extracted,
         )
-        if file_type == "data":
-            _index_data_document(
-                file_path, project_id=project_id, doc_id=doc_id, result=result,
-            )
-            _prepare_event_artifact(
-                result, file_path=file_path, project_id=project_id, doc_id=doc_id,
-                file_name=Path(file_path).name, source_kind="data",
-            )
         # Topic clustering assignment — fire-and-forget; needs the freshly
         # upserted chunks in Pinecone, which is why we run it after
         # mark_completed and off the request thread. Data-only files don't
