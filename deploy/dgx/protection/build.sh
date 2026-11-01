@@ -10,6 +10,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 python=${PROTECTION_PYTHON:-python3}
 secrets=${COAIR_SIGNING_HOME:-$HOME/.coair-release-secrets/dgx-pilot}
 identity=${DGX_SSH_KEY:-$HOME/.ssh/dgx_spark}
+builder=${COAIR_PROTECTION_BUILDER:-default}
+[[ "$builder" =~ ^[a-zA-Z0-9._-]+$ ]] || exit 2
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 ssh_args=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -i "$identity")
@@ -32,7 +34,7 @@ ssh "${ssh_args[@]}" "$host" "set -e
  docker rm 'coair-protected-stage-$release' > /dev/null
  cp '$remote/tools/coair_protected.py' '$remote/tools/compile.py' '$remote/app/'
  cp '$remote/tools/chronology_prompts.py' '$remote/app/src/'
- docker build --build-arg BASE_IMAGE='$base' -t 'coair-protection-compiler:$release' -f '$remote/tools/Dockerfile.compiler' '$remote/tools' > '$remote/compiler-build.log' 2>&1
+ docker buildx build --builder '$builder' --load --build-arg BASE_IMAGE='$base' -t 'coair-protection-compiler:$release' -f '$remote/tools/Dockerfile.compiler' '$remote/tools' > '$remote/compiler-build.log' 2>&1
  docker run --rm --network none -v '$remote/app:/build' 'coair-protection-compiler:$release' python compile.py > '$remote/compile.log' 2>&1
  docker run --rm -v '$remote/app:/staging' '$base' chown -R \"\$(id -u):\$(id -g)\" /staging
  tar -C '$remote' -czf '$remote/compiled-app.tgz' app"
@@ -45,7 +47,7 @@ scp -i "$identity" "$work/runtime.tgz" "$host:$remote/runtime.tgz"
 ssh "${ssh_args[@]}" "$host" "set -e
  mkdir -p '$remote/runtime'
  tar -xzf '$remote/runtime.tgz' -C '$remote/runtime'
- docker build --build-arg BASE_IMAGE='$base' -t 'coair-api:protected-$release' '$remote/runtime' > '$remote/runtime-build.log' 2>&1
+ docker buildx build --builder '$builder' --load --build-arg BASE_IMAGE='$base' -t 'coair-api:protected-$release' '$remote/runtime' > '$remote/runtime-build.log' 2>&1
  touch '$remote/complete'"
 echo "Built coair-api:protected-$release. No running service was changed. Signing key stayed on this machine."
 echo 'Run protected checks and negative tests before tagging dgx-protected-pilot and enabling.'
