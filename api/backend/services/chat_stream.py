@@ -55,6 +55,9 @@ def stream_chat(run):
                     status, detail = 402, str(exc)
                 elif isinstance(exc, ProviderCredentialError):
                     status, detail = 503, "The dedicated AI service credential is unavailable."
+                if status == 500:
+                    import logging
+                    logging.getLogger(__name__).exception("chat_stream_failed")
                 await queue.put({"type": "error", "status": status, "message": detail})
             finally:
                 answer_stream_var.reset(token)

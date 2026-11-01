@@ -123,7 +123,10 @@ class ChatOrchestrator:
             module="chatbot", query=query, prompt_version="chat-v2",
         )
         query_request_var.set(request_id)
-        query_progress.start(request_id)
+        from src.config import LOCAL_LLM
+        # The local admission queue has already claimed this request for its
+        # owner. Preserve that activity instead of treating handoff as reuse.
+        query_progress.start(request_id, username or "", resume=LOCAL_LLM)
 
         # 1. Save user message
         user_msg = Message(role="user", content=query, timestamp=now)
