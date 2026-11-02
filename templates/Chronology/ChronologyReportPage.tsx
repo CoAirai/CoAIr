@@ -105,7 +105,7 @@ const ChronologyReportPage = ({ reportId }: Props) => {
     const events = useMemo(() => report?.events ?? [], [report]);
 
     const openSource = useCallback(
-        (event: ChronologyEvent | null, source: ChronologyEventSource | ChronologyCitation) => {
+        (event: ChronologyEvent | null, source: ChronologyEventSource | ChronologyCitation, focusText?: string) => {
             const srcId = source.srcId;
             setSelected(event ? { ref: event.ref, srcId } : null);
             openDocumentPreview({
@@ -113,7 +113,7 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                 name: source.name,
                 page: source.page,
                 excerpt: ("excerpt" in source ? source.excerpt : "") || event?.claims.map(claim => claim.text).join(" ") || "",
-                focusText: event?.summary,
+                focusText: focusText || event?.summary,
             });
         },
         [openDocumentPreview]
@@ -300,7 +300,7 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                                                                 <SourceChip
                                                                     key={source.srcId}
                                                                     source={source}
-                                                                    onOpen={(chosen) => openSource(null, chosen)}
+                                                                    onOpen={(chosen) => openSource(null, chosen, claim.text)}
                                                                 />
                                                             ))}
                                                         </span>
