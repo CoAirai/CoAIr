@@ -16,6 +16,7 @@ export type Citation = {
     name: string;
     page: number;
     excerpt: string;
+    focusText?: string;
 };
 
 export type Message = {

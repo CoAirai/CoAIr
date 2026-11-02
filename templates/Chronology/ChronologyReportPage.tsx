@@ -112,7 +112,8 @@ const ChronologyReportPage = ({ reportId }: Props) => {
                 documentId: source.documentId,
                 name: source.name,
                 page: source.page,
-                excerpt: "excerpt" in source ? source.excerpt : "",
+                excerpt: ("excerpt" in source ? source.excerpt : "") || event?.claims.map(claim => claim.text).join(" ") || "",
+                focusText: event?.summary,
             });
         },
         [openDocumentPreview]

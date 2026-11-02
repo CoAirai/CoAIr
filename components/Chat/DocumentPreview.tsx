@@ -19,22 +19,14 @@ import {
     type CoairDocContent,
 } from "@/lib/coair/documents";
 
+import { sourceHighlight } from "@/lib/chat/sourceHighlight";
+
 const PANEL_WIDTH = 352;
 
-function highlightSnippet(text: string, highlight: string) {
-    if (!highlight?.trim()) return text;
-    const idx = text.toLowerCase().indexOf(highlight.toLowerCase().slice(0, 80));
-    if (idx === -1) return text;
-    const end = idx + Math.min(highlight.length, 120);
-    return (
-        <>
-            {text.slice(0, idx)}
-            <mark className="rounded bg-yellow-100 px-0.5 text-strong-950">
-                {text.slice(idx, end)}
-            </mark>
-            {text.slice(end)}
-        </>
-    );
+function highlightSnippet(text: string, highlight: string, focus = "") {
+    const match = sourceHighlight(text, highlight, focus);
+    if (!match) return text;
+    return <>{text.slice(0, match.start)}<mark data-source-highlight className="rounded bg-yellow-200 px-0.5 text-strong-950">{text.slice(match.start, match.end)}</mark>{text.slice(match.end)}</>;
 }
 
 const DocumentPreview = () => {
@@ -61,6 +53,8 @@ const DocumentPreview = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
+    const inlinePageRef = useRef<HTMLParagraphElement>(null);
+    const expandedPageRef = useRef<HTMLParagraphElement>(null);
 
     useEffect(() => {
         if (openCitation) setPage(openCitation.page);
@@ -146,6 +140,12 @@ const DocumentPreview = () => {
     const pageCount = isLive
         ? live?.total_pages ?? Math.max(page, citation?.page ?? 1)
         : mockPreview?.pageCount ?? 1;
+    useEffect(() => {
+        if (!open || loading) return;
+        const paragraph = expanded ? expandedPageRef.current : inlinePageRef.current;
+        paragraph?.querySelector<HTMLElement>("[data-source-highlight]")?.scrollIntoView({ block: "nearest" });
+    }, [open, loading, live, page, expanded, citation?.excerpt, citation?.focusText]);
+
     const mockPage =
         mockPreview?.pages.find((entry) => entry.page === page) ??
         mockPreview?.pages[0];
@@ -260,10 +260,8 @@ const DocumentPreview = () => {
                                         <div className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
                                             Page {page}
                                         </div>
-                                        <p className="mt-4 whitespace-pre-wrap text-p-md leading-8 text-strong-950">
-                                            {extracted ||
-                                                citation?.excerpt ||
-                                                "No text available for this page."}
+                                        <p ref={expandedPageRef} className="mt-4 whitespace-pre-wrap text-p-md leading-8 text-strong-950">
+                                            {extracted ? highlightSnippet(extracted, citation?.excerpt || "", citation?.focusText) : citation?.excerpt || "No text available for this page."}
                                         </p>
                                     </div>
                                 )}
@@ -410,11 +408,12 @@ const DocumentPreview = () => {
                                                     {mockPage.heading}
                                                 </div>
                                             )}
-                                            <p className="mt-3 whitespace-pre-wrap text-p-sm leading-6 text-strong-950">
+                                            <p ref={inlinePageRef} className="mt-3 whitespace-pre-wrap text-p-sm leading-6 text-strong-950">
                                                 {extracted
                                                     ? highlightSnippet(
                                                           extracted,
-                                                          citation?.excerpt || ""
+                                                          citation?.excerpt || "",
+                                                          citation?.focusText
                                                       )
                                                     : "No text available for this page."}
                                             </p>

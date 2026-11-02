@@ -21,8 +21,10 @@ function AnswerParts({
     parts,
     citations,
     onOpen,
+    focusText,
 }: {
     parts: AnswerPart[];
+    focusText?: string;
     citations?: Citation[];
     onOpen: (citation: Citation) => void;
 }) {
@@ -43,13 +45,10 @@ function AnswerParts({
                             type="button"
                             className="text-blue-500 underline decoration-blue-500/30 underline-offset-2 hover:decoration-blue-500"
                             onClick={() =>
-                                onOpen(
-                                    citationForReference(
-                                        part.name,
-                                        part.page,
-                                        citations
-                                    )
-                                )
+                                onOpen({
+                                    ...citationForReference(part.name, part.page, citations),
+                                    focusText: focusText || parts.filter(p => p.type !== "cite").map(p => "text" in p ? p.text : "").join(" "),
+                                })
                             }
                         >
                             {part.name}
@@ -269,6 +268,7 @@ const MessageBubble = ({ message }: Props) => {
                             ) : (
                                 <p key={index}>
                                     <AnswerParts
+                                        focusText={blocks.slice(Math.max(0, index - 1), index + 1).flatMap(b => "parts" in b ? b.parts.filter(p => p.type !== "cite").map(p => "text" in p ? p.text : "") : []).join(" ")}
                                         parts={block.parts}
                                         citations={message.citations}
                                         onOpen={openDocumentPreview}
