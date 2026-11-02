@@ -5,6 +5,14 @@ function marked(text: string, quote: string, focus = "") {
     return span ? text.slice(span.start, span.end) : null;
 }
 describe("source passage highlighting", () => {
+    it("finds the supporting sentence when a saved snippet contains only the header", () => {
+        const header = "From: Jason. Sent: 08 March 2011. Subject: Additional information requested from tie.";
+        const payment = "tie had paid BSC only £45,000 up to Payment Application 42, up to and including 28 January 2011.";
+        const page = header + "\n\n" + payment;
+        const result = marked(page, header, "tie had paid BSC £45,000 up to Payment Application 42, which covered the period up to and including 28 January 2011.");
+        expect(result).toContain("45,000");
+        expect(result).not.toContain("Subject");
+    });
     it("matches a short phrase rather than requiring a chunk", () => {
         expect(marked("The agreed payment was £45,000 on Friday.", "£45,000")).toBe("45,000");
         expect(marked("Access was provided on 20 January 2007.", "20 January 2007")).toBe("20 January 2007");
