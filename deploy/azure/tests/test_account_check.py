@@ -70,6 +70,16 @@ class AccountCheckTests(unittest.TestCase):
         self.skus[0]["restrictions"] = [{"type": "Location", "values": ["germanywestcentral"]}]
         self.assertIn("vm_sku_restricted_for_subscription", self.assess()["blockers"])
 
+    def test_actual_azure_region_casing_and_string_quota_values(self):
+        self.skus[0]["locations"] = ["GermanyWestCentral"]
+        for row in self.usage:
+            row.update(limit="8", currentValue="2")
+        self.assertTrue(self.assess()["read_only_prerequisites_passed"])
+        self.skus[0]["restrictions"] = [{"type": "Location", "restrictionInfo": {"locations": ["GermanyWestCentral"]}}]
+        self.assertIn("vm_sku_restricted_for_subscription", self.assess()["blockers"])
+        self.skus[0]["restrictions"] = [{"type": "Zone", "restrictionInfo": {"locations": ["GermanyWestCentral"], "zones": ["1"]}}]
+        self.assertIn("vm_zone_restricted_for_subscription", self.assess(zone="1")["blockers"])
+
     def test_zone_restriction_does_not_block_a_different_allowed_zone(self):
         self.skus[0]["restrictions"] = [{"type": "Zone", "restrictionInfo": {"locations": ["germanywestcentral"], "zones": ["1"]}}]
         self.assertTrue(self.assess(zone="2")["read_only_prerequisites_passed"])

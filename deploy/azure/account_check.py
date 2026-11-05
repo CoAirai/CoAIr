@@ -25,6 +25,7 @@ MANUAL_GATES = (
 
 
 def assess(account, providers, skus, usage, *, tenant, subscription, region, size, count=1, zone=None):
+    region = region.lower()
     blockers = []
     if account.get("id", "").lower() != subscription.lower() or account.get("tenantId", "").lower() != tenant.lower():
         blockers.append("subscription_or_tenant_mismatch")
@@ -33,7 +34,7 @@ def assess(account, providers, skus, usage, *, tenant, subscription, region, siz
     for namespace in PROVIDERS:
         if providers.get(namespace) != "Registered":
             blockers.append(f"provider_not_registered:{namespace}")
-    matches = [row for row in skus if row.get("name") == size and region in row.get("locations", [])]
+    matches = [row for row in skus if row.get("name") == size and region in [value.lower() for value in row.get("locations", [])]]
     quota = []
     if len(matches) != 1:
         blockers.append("vm_sku_missing_or_ambiguous")
@@ -41,13 +42,13 @@ def assess(account, providers, skus, usage, *, tenant, subscription, region, siz
         sku = matches[0]
         for restriction in sku.get("restrictions", []):
             info = restriction.get("restrictionInfo") or {}
-            locations = info.get("locations") or restriction.get("values") or []
+            locations = [value.lower() for value in (info.get("locations") or restriction.get("values") or [])]
             if restriction.get("type") == "Location" and (not locations or region in locations):
                 blockers.append("vm_sku_restricted_for_subscription")
-            if restriction.get("type") == "Zone" and zone and zone in info.get("zones", []) and (not info.get("locations") or region in info["locations"]):
+            if restriction.get("type") == "Zone" and zone and zone in info.get("zones", []) and (not locations or region in locations):
                 blockers.append("vm_zone_restricted_for_subscription")
         if zone:
-            zones = [z for info in sku.get("locationInfo", []) if info.get("location") == region for z in info.get("zones", [])]
+            zones = [z for info in sku.get("locationInfo", []) if info.get("location", "").lower() == region for z in info.get("zones", [])]
             if zone not in zones:
                 blockers.append("vm_zone_not_advertised")
         capabilities = {row["name"]: row["value"] for row in sku.get("capabilities", [])}
@@ -59,7 +60,7 @@ def assess(account, providers, skus, usage, *, tenant, subscription, region, siz
                 if len(rows) != 1:
                     blockers.append(f"quota_unknown:{key}")
                     continue
-                available = rows[0]["limit"] - rows[0]["currentValue"]
+                available = int(rows[0]["limit"]) - int(rows[0]["currentValue"])
                 quota.append({"name": key, "available_vcpus": available, "required_vcpus": needed})
                 if available < needed:
                     blockers.append(f"insufficient_vcpu_quota:{key}")
@@ -75,7 +76,9 @@ def assess(account, providers, skus, usage, *, tenant, subscription, region, siz
 def az_json(arguments, subscription):
     result = subprocess.run(["az", *arguments, "--subscription", subscription,
                              "--only-show-errors", "--output", "json"],
-                            capture_output=True, text=True, timeout=60, check=False)
+                            capture_output=True, text=True,
+                            timeout=300 if arguments[:2] == ["vm", "list-skus"] else 60,
+                            check=False)
     if result.returncode:
         # CLI stderr can include identity details or request URLs. Keep it local.
         raise RuntimeError("azure_cli_read_failed:" + "_".join(arguments[:2]))
