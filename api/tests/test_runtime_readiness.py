@@ -14,10 +14,11 @@ def test_health_distinguishes_initializing_failed_and_ready(monkeypatch, ready, 
     import backend.main as main
     monkeypatch.setattr(main, '_health_ready', ready)
     monkeypatch.setattr(main, '_health_error', error)
+    monkeypatch.setenv('COAIR_COMMIT_SHA', 'a' * 40)
     health = next(route.endpoint for route in main.app.routes if getattr(route, 'path', None) == '/api/health')
     response = asyncio.run(health())
     if ready:
-        assert response == {'status': 'ok', 'chronology': 'ready', 'vector_runtime': 'ready'}
+        assert response == {'status': 'ok', 'chronology': 'ready', 'vector_runtime': 'ready', 'commit': 'a' * 40}
     else:
         assert response.status_code == 503
         assert json.loads(response.body)['status'] == status
