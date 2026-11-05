@@ -8,6 +8,10 @@ from fastapi import FastAPI
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from backend.core.state_owner import acquire_state_owner
+    from src.config import STORAGE_DIR
+    acquire_state_owner(STORAGE_DIR)
+
     # Critical path only — Postgres + deploy invariants. Heavy S3/GCS pulls used
     # to block uvicorn for 15–40+ minutes on every restart (nginx 502), so they
     # run in a background thread after the API accepts traffic.

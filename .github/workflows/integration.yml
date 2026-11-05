@@ -1,7 +1,7 @@
 name: Coair AWS integration
 on:
   push:
-    branches: [integration/rag-agent-parity, codex/long-document-evidence]
+    branches: [integration/rag-agent-parity, codex/long-document-evidence, codex/azure-migration-preparation]
   pull_request:
     branches: [main, integration/rag-agent-parity]
   workflow_dispatch:
@@ -28,8 +28,19 @@ jobs:
       - name: Validate the isolated release guard
         run: python -m unittest discover -s deploy/integration/tests -v
       - name: Validate cloud model deployment boundary
-        if: github.ref == 'refs/heads/codex/long-document-evidence' || github.base_ref == 'main'
+        if: github.ref == 'refs/heads/codex/long-document-evidence' || github.ref == 'refs/heads/codex/azure-migration-preparation' || github.base_ref == 'main'
         run: python -m unittest discover -s deploy/cloud/tests -v
+      - name: Validate Azure migration inventory, ports and state ownership
+        run: |
+          python -m unittest discover -s deploy/azure/tests -v
+          mkdir -p /tmp/coair-azure-compose
+          cp deploy/azure/compose.yml deploy/azure/compose.web.yml /tmp/coair-azure-compose/
+          cp deploy/azure/.env.example /tmp/coair-azure-compose/.env
+          touch /tmp/coair-azure-compose/api.env
+          docker compose --project-directory /tmp/coair-azure-compose --profile all-in-one -f /tmp/coair-azure-compose/compose.yml config --quiet
+          docker compose --project-directory /tmp/coair-azure-compose --profile api-host -f /tmp/coair-azure-compose/compose.yml config --quiet
+          docker compose --env-file deploy/azure/web.env.example -f /tmp/coair-azure-compose/compose.web.yml config --quiet
+          docker compose --project-directory /tmp/coair-azure-compose --profile toolkit -f /tmp/coair-azure-compose/compose.yml config --quiet
       - id: images
         env:
           COMMIT: ${{ github.sha }}
