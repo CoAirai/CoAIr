@@ -31,8 +31,12 @@ def _safe(value: str) -> str:
 
 
 def _remote_blob_name(uri: str) -> str:
-    """Translate gs:// or s3://bucket/object URI to this app's object name."""
+    """Resolve a canonical URI to the selected provider's object name."""
     value = str(uri or "")
+    from .gcs_storage import OBJECT_STORAGE_BACKEND
+    if OBJECT_STORAGE_BACKEND == "azure":
+        from .azure_blob_storage import key_from_uri
+        return key_from_uri(value)
     for scheme in ("gs://", "s3://"):
         if value.startswith(scheme):
             rest = value[len(scheme):]
@@ -233,7 +237,7 @@ def write_canonical_artifact(
 
 def read_canonical_artifact(uri: str, *, project_id: str = "", version_id: str = "") -> List[CanonicalSegment]:
     path: Path
-    if str(uri).startswith("gs://") or str(uri).startswith("s3://"):
+    if str(uri).startswith(("gs://", "s3://", "az://")):
         blob = _remote_blob_name(uri)
         path = CANONICAL_ROOT / _safe(project_id) / _safe(version_id) / "canonical-text.jsonl.gz"
         if not path.exists():
@@ -260,7 +264,7 @@ def read_canonical_artifact(uri: str, *, project_id: str = "", version_id: str =
 
 def purge_canonical_artifact(uri: str) -> None:
     version_hint = ""
-    if str(uri).startswith("gs://") or str(uri).startswith("s3://"):
+    if str(uri).startswith(("gs://", "s3://", "az://")):
         blob = _remote_blob_name(uri)
         parts = blob.split("/")
         if len(parts) >= 3:

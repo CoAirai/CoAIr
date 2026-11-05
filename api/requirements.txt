@@ -94,3 +94,7 @@ python-dotenv>=1.0.0
 # inquiry site's WAF filters non-browser TLS fingerprints, so plain
 # requests/urllib get a 403; curl_cffi presents a real Chrome handshake).
 curl_cffi>=0.7.0
+
+# Opt-in Azure Blob storage (credentials never enter the browser).
+azure-storage-blob==12.31.1
+azure-identity==1.27.0

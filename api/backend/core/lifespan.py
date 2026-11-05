@@ -11,6 +11,9 @@ async def lifespan(app: FastAPI):
     from backend.core.state_owner import acquire_state_owner
     from src.config import STORAGE_DIR
     acquire_state_owner(STORAGE_DIR)
+    if os.getenv("OBJECT_STORAGE_BACKEND", "auto").strip().lower() == "azure":
+        from src.azure_blob_storage import settings
+        settings()  # Reject invalid account/container before any state recovery.
 
     # Critical path only — Postgres + deploy invariants. Heavy S3/GCS pulls used
     # to block uvicorn for 15–40+ minutes on every restart (nginx 502), so they
@@ -106,6 +109,9 @@ def _load_local_tables():
 
 def _startup_object_sync():
     """Download shared state from object storage (skips unchanged local files)."""
+    if os.getenv("OBJECT_STORAGE_RESTORE_ON_STARTUP", "true").lower() != "true":
+        print("[Startup] Object-store restore disabled; persistent state is authoritative")
+        return
     # ── Step 1: Download shared state from object storage ──
     # Cloud Run is ephemeral; VPS mounts persist. download_file skips unchanged
     # local files so restarts no longer re-pull multi‑GB parquet trees.

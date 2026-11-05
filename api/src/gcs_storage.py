@@ -3,6 +3,7 @@ Object storage for Parquet, uploads, and catalogs.
 
 Uses Amazon S3 when S3_BUCKET_NAME is set, otherwise Google Cloud Storage when
 GCS_BUCKET_NAME is set. Disabled (local disk only) if neither is configured.
+Azure is explicitly selected with OBJECT_STORAGE_BACKEND=azure; legacy S3/GCS configuration is unchanged.
 """
 import os
 import threading
@@ -13,7 +14,24 @@ from typing import List, Optional
 from .logger import logger
 from .config import BASE_DIR
 
-# S3 takes precedence when both are set.
+OBJECT_STORAGE_BACKEND = os.getenv("OBJECT_STORAGE_BACKEND", "auto").strip().lower()
+if OBJECT_STORAGE_BACKEND not in ("auto", "azure"):
+    raise ValueError("object_storage_backend_invalid")
+
+
+def _azure_operation(name, *args):
+    from . import azure_blob_storage
+    try:
+        return getattr(azure_blob_storage, name)(*args)
+    except Exception as exc:
+        # Azure exception text can contain request URLs. Do not log credentials.
+        logger.warning(f"[Azure] {name} failed: {type(exc).__name__}")
+        if name == "list_blobs":
+            return []
+        return None if name == "object_size" else False
+
+
+# S3 takes precedence when both are set in legacy auto mode.
 S3_BUCKET_NAME = (
     os.getenv("S3_BUCKET_NAME") or os.getenv("AWS_S3_BUCKET") or ""
 ).strip()
@@ -44,13 +62,19 @@ def _s3_credentials_present() -> bool:
 
 
 def is_enabled() -> bool:
-    """Object storage is on when S3 has keys, or GCS bucket is set."""
+    """Use explicit Azure configuration or the legacy S3/GCS selection."""
+    if OBJECT_STORAGE_BACKEND == "azure":
+        from .azure_blob_storage import settings
+        settings()
+        return True
     if S3_BUCKET_NAME and _s3_credentials_present():
         return True
     return bool(GCS_BUCKET_NAME)
 
 
 def backend_name() -> str:
+    if OBJECT_STORAGE_BACKEND == "azure":
+        return "Azure"
     if S3_BUCKET_NAME and _s3_credentials_present():
         return "S3"
     if GCS_BUCKET_NAME:
@@ -63,6 +87,9 @@ def _tag() -> str:
 
 
 def object_uri(blob_name: str) -> str:
+    if OBJECT_STORAGE_BACKEND == "azure":
+        from .azure_blob_storage import object_uri as azure_uri
+        return azure_uri(blob_name)
     if S3_BUCKET_NAME:
         return f"s3://{S3_BUCKET_NAME}/{blob_name}"
     if GCS_BUCKET_NAME:
@@ -92,7 +119,7 @@ def _get_s3():
 
 def _get_bucket():
     """Get GCS bucket client. Returns None if not available."""
-    if S3_BUCKET_NAME or not GCS_BUCKET_NAME:
+    if OBJECT_STORAGE_BACKEND == "azure" or S3_BUCKET_NAME or not GCS_BUCKET_NAME:
         return None
     try:
         from google.cloud import storage
@@ -104,7 +131,9 @@ def _get_bucket():
 
 
 def upload_file(local_path: str, blob_name: str) -> bool:
-    """Upload a local file to S3 or GCS."""
+    """Upload a local file to the selected object store."""
+    if OBJECT_STORAGE_BACKEND == "azure":
+        return _azure_operation("upload_file", local_path, blob_name)
     if S3_BUCKET_NAME:
         try:
             _get_s3().upload_file(local_path, S3_BUCKET_NAME, blob_name)
@@ -133,6 +162,8 @@ def download_file(blob_name: str, local_path: str) -> bool:
     as the remote object (VPS persistent disk). Cloud Run still pulls on empty
     disks; restarts no longer re-download multi‑GB trees.
     """
+    if OBJECT_STORAGE_BACKEND == "azure":
+        return _azure_operation("download_file", blob_name, local_path)
     local = Path(local_path)
     if S3_BUCKET_NAME:
         try:
@@ -175,6 +206,8 @@ def download_file(blob_name: str, local_path: str) -> bool:
 
 def list_blobs(prefix: str) -> List[str]:
     """List object names under a prefix."""
+    if OBJECT_STORAGE_BACKEND == "azure":
+        return _azure_operation("list_blobs", prefix)
     if S3_BUCKET_NAME:
         try:
             names: List[str] = []
@@ -199,7 +232,9 @@ def list_blobs(prefix: str) -> List[str]:
 
 
 def delete_blob(blob_name: str) -> bool:
-    """Delete a single object from S3 or GCS."""
+    """Delete a single object from the selected store."""
+    if OBJECT_STORAGE_BACKEND == "azure":
+        return _azure_operation("delete_blob", blob_name)
     if S3_BUCKET_NAME:
         try:
             _get_s3().delete_object(Bucket=S3_BUCKET_NAME, Key=blob_name)
@@ -488,7 +523,7 @@ _BROWSER_UPLOAD_ORIGINS = [
 def ensure_browser_upload_cors() -> None:
     """Allow the workspace to PUT a file straight to the bucket."""
     global _browser_cors_ready
-    if _browser_cors_ready or not (S3_BUCKET_NAME and _s3_credentials_present()):
+    if OBJECT_STORAGE_BACKEND == "azure" or _browser_cors_ready or not (S3_BUCKET_NAME and _s3_credentials_present()):
         return
     with _sync_guard:
         if _browser_cors_ready:
@@ -534,8 +569,8 @@ def ensure_browser_upload_cors() -> None:
 
 def presign_browser_put(blob_name: str, content_type: str, expires: int = 3600) -> str:
     """Short-lived URL the browser uses to PUT one object. The key is chosen by us."""
-    if not (S3_BUCKET_NAME and _s3_credentials_present()):
-        raise RuntimeError("s3_disabled")
+    if not supports_browser_put():
+        raise RuntimeError("direct_upload_disabled")
     ensure_browser_upload_cors()
     return _get_s3().generate_presigned_url(
         "put_object",
@@ -548,8 +583,15 @@ def presign_browser_put(blob_name: str, content_type: str, expires: int = 3600) 
     )
 
 
+def supports_browser_put() -> bool:
+    """Azure uses the authenticated proxy upload; no browser storage token."""
+    return OBJECT_STORAGE_BACKEND != "azure" and bool(S3_BUCKET_NAME and _s3_credentials_present())
+
+
 def object_size(blob_name: str) -> Optional[int]:
     """Byte size of an object, or None when it is not in the bucket."""
+    if OBJECT_STORAGE_BACKEND == "azure":
+        return _azure_operation("object_size", blob_name)
     if not (S3_BUCKET_NAME and blob_name):
         return None
     try:
@@ -578,7 +620,10 @@ def sync_all_uploads_from_gcs():
     blobs = list_blobs(_UPLOADS_PREFIX)
     count = 0
     for blob_name in blobs:
-        rel = blob_name.replace(_UPLOADS_PREFIX, "")
+        rel = blob_name.removeprefix(_UPLOADS_PREFIX)
+        candidate = Path(rel)
+        if not blob_name.startswith(_UPLOADS_PREFIX) or candidate.is_absolute() or ".." in candidate.parts or "\\" in rel:
+            raise ValueError("unsafe_upload_object_key")
         if not rel:
             continue
         local_path = DATA_DIR / rel
@@ -605,7 +650,7 @@ def clear_gcs_tables():
         return
     try:
         count = 0
-        if S3_BUCKET_NAME:
+        if OBJECT_STORAGE_BACKEND == "azure" or S3_BUCKET_NAME:
             for name in list_blobs(_PARQUET_PREFIX):
                 if delete_blob(name):
                     count += 1

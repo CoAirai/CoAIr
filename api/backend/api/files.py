@@ -334,11 +334,11 @@ async def prepare_direct_upload(
     project: ProjectContext = Depends(require_project_editor),
 ):
     """Hand the browser a one-file Amazon URL. Indexing does not start here."""
-    from src.gcs_storage import is_enabled, presign_browser_put
+    from src.gcs_storage import supports_browser_put, presign_browser_put
     from src.ingestion_billing import enforce_uploader_budget
 
     enforce_uploader_budget(user.username)
-    if not is_enabled():
+    if not supports_browser_put():
         return DirectUploadPlan(mode="proxy", filename=body.filename)
     try:
         plan = _file_service.prepare_direct_upload(
