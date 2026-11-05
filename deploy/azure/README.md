@@ -1,6 +1,8 @@
 # Azure migration preparation
 
-This branch prepares a controlled move of the existing cloud application. It
+This branch prepares a controlled move of the existing cloud application.
+The end-to-end operator procedure is in [MIGRATION_RUNBOOK.md](MIGRATION_RUNBOOK.md),
+with account setup, private Blob, upload/OCR/source acceptance and production cutover. It
 contains no Azure credentials, automatic DNS change, production data-copy or
 cutover command. Base: `codex/long-document-evidence`, which includes current
 main and the qualified cloud agent/report improvements. DGX-only inference and
@@ -169,7 +171,9 @@ The following are required changes, not capabilities claimed by this branch:
   writer or adopt an explicitly qualified shared-search service.
 - Make originals/canonical artifacts/report outputs available to every permitted
   reader through a provider-aware store. Test cold-cache retrieval and expiring
-  upload links; Blob integration remains a separate implementation stage.
+  upload links. The opt-in Azure adapter uses the existing authenticated proxy
+  upload and private Blob objects; real Azure credentials/network/corpus
+  qualification remain required before cutover.
 - Use shared rate limiting/session state where required; preserve auth providers
   and transactional payment/token accounting. Do not fan out API traffic until
   cross-host ownership and idempotency tests pass.
@@ -188,6 +192,10 @@ and retain a qualified rollback with a record of post-cutover writes. This branc
 never performs those operations automatically.
 
 ## Validation
+
+Run in a Python environment with the pinned Azure SDK dependencies installed
+(`azure-storage-blob==12.31.1` and `azure-identity==1.27.0`, constrained by
+`api/requirements.lock`), or inside the qualified API image.
 
 ```sh
 python3 -m unittest discover -s deploy/azure/tests -v

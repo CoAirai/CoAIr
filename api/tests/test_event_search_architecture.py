@@ -142,11 +142,13 @@ def test_event_store_outage_falls_back_only_to_document_index_scope(monkeypatch)
     assert result.audit["partial_reasons"] == ["master_event_store_unavailable"]
 
 
-def test_document_lexical_lane_survives_document_vector_outage(monkeypatch):
+@pytest.mark.parametrize("source_project,expected", [("p1", 1), ("p2", 0), ("", 0)])
+def test_document_lexical_lane_survives_document_vector_outage(monkeypatch, source_project, expected):
     fake_rag = SimpleNamespace(query=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("offline")))
     fake_lexical = SimpleNamespace(search_chunks=lambda *args, **kwargs: [{
         "chunk_id": "chunk-1", "doc_id": "doc-1", "file_name": "notice.pdf",
         "page_number": 4, "text": "The Contractor issued a delay notice.", "lex_score": 8.0,
+        "project_id": source_project,
     }])
     empty_connection = SimpleNamespace(execute=lambda *args, **kwargs: SimpleNamespace(fetchall=lambda: []))
     monkeypatch.setattr("src.document_rag.get_document_rag", lambda: fake_rag)
@@ -155,9 +157,10 @@ def test_document_lexical_lane_survives_document_vector_outage(monkeypatch):
 
     evidence = retrieve_evidence("p1", ["delay notice"], top_k=5)
 
-    assert len(evidence) == 1
-    assert evidence[0].doc_id == "doc-1"
-    assert evidence[0].excerpt == "The Contractor issued a delay notice."
+    assert len(evidence) == expected
+    if expected:
+        assert evidence[0].doc_id == "doc-1"
+        assert evidence[0].excerpt == "The Contractor issued a delay notice."
 
 
 def test_event_and_document_semantic_indexes_are_separate():
