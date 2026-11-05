@@ -70,6 +70,23 @@ def test_ranked_hits_keep_complete_text_and_selected_document_scope(stores):
     assert hits[0]["page_number"] == 9 and hits[0]["lex_score"] > 0
 
 
+def test_bulk_ranking_matches_the_extensions_default_bm25_scores(stores):
+    chunks, index = stores
+    index.warm()
+    _wait_for_index(index)
+    for query in ["tram delay", "utility diversion", "budget council", "tram tram delay"]:
+        with chunks.connection() as conn:
+            reference = conn.execute(
+                "SELECT chunk_id, fts_main_chunks.match_bm25(chunk_id, ?) "
+                "FROM chunks WHERE project_id=?", [query, "p1"],
+            ).fetchall()
+        expected = {r[0]: r[1] for r in reference if r[1] is not None}
+        hits = index.search_chunks(query, project_id="p1")
+        assert {h["chunk_id"] for h in hits} == set(expected)
+        for hit in hits:
+            assert hit["lex_score"] == pytest.approx(expected[hit["chunk_id"]], rel=1e-10)
+
+
 def test_stale_index_keeps_serving_and_rebuilds_in_background(stores, monkeypatch):
     chunks, index = stores
     index.warm()

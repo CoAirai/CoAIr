@@ -126,20 +126,37 @@ class LexicalIndex:
 
         if self._ensure_fts():
             try:
-                where = "project_id = ?"
+                where = "c.project_id = ?"
                 params = [query, project_id]
                 if doc_ids:
-                    where += f" AND doc_id IN ({','.join('?' for _ in doc_ids)})"
+                    where += f" AND c.doc_id IN ({','.join('?' for _ in doc_ids)})"
                     params.extend(list(doc_ids))
                 params.append(top_k)
                 rows = con.execute(
-                    # Rank IDs first. Materializing every matching chunk's full
-                    # text can exhaust RAM even when only a few hits are returned.
-                    "WITH scored AS MATERIALIZED ("
-                    "SELECT chunk_id, "
-                    "fts_main_chunks.match_bm25(chunk_id, ?) AS score "
-                    f"FROM chunks WHERE {where}), ranked AS MATERIALIZED ("
-                    "SELECT chunk_id, score FROM scored WHERE score IS NOT NULL "
+                    # The extension's scalar macro repeats its term aggregation
+                    # for each outer chunk on large persisted indexes. Compute
+                    # the same default BM25 (k=1.2, b=.75) once, using only the
+                    # authorized project/doc IDs, then hydrate ranked hits.
+                    "WITH tokens AS MATERIALIZED ("
+                    "SELECT DISTINCT stem(unnest(fts_main_chunks.tokenize(?)), 'porter') AS term), "
+                    "scoped_docs AS MATERIALIZED ("
+                    "SELECT d.docid, d.name AS chunk_id, d.len "
+                    "FROM fts_main_chunks.docs d JOIN chunks c ON c.chunk_id=d.name "
+                    f"WHERE {where}), term_tf AS MATERIALIZED ("
+                    "SELECT t.docid, t.termid, count(*) AS tf "
+                    "FROM fts_main_chunks.terms t "
+                    "JOIN scoped_docs sd ON sd.docid=t.docid "
+                    "JOIN fts_main_chunks.dict di ON di.termid=t.termid "
+                    "JOIN tokens tok ON tok.term=di.term "
+                    "GROUP BY t.docid, t.termid), scores AS ("
+                    "SELECT sd.chunk_id, sum("
+                    "log((st.num_docs-di.df+0.5)/(di.df+0.5)+1) * "
+                    "((tf.tf*2.2)/(tf.tf+1.2*(0.25+0.75*(sd.len/st.avgdl))))) AS score "
+                    "FROM term_tf tf JOIN scoped_docs sd ON sd.docid=tf.docid "
+                    "JOIN fts_main_chunks.dict di ON di.termid=tf.termid "
+                    "CROSS JOIN fts_main_chunks.stats st GROUP BY sd.chunk_id), "
+                    "ranked AS MATERIALIZED ("
+                    "SELECT chunk_id, score FROM scores "
                     "ORDER BY score DESC, chunk_id LIMIT ?) "
                     "SELECT c.chunk_id, c.doc_id, c.file_name, c.page_number, c.text, r.score "
                     "FROM ranked r JOIN chunks c ON c.chunk_id=r.chunk_id "
