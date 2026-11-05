@@ -1,0 +1,6 @@
+.env
+api.env
+*.inventory.json
+*.comparison.json
+web.env
+__pycache__/
