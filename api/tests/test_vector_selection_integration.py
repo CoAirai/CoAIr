@@ -40,6 +40,44 @@ def test_selected_file_retrieval_and_agent_read_cannot_widen_by_filename(monkeyp
         client.close()
 
 
+def test_bulk_filename_selection_uses_project_inventory_and_only_legacy_vectors(monkeypatch):
+    import duckdb
+    from types import SimpleNamespace
+
+    monkeypatch.setattr('src.document_rag._current_user_corpus', lambda: '')
+    records = []
+    registry = SimpleNamespace(get_all=lambda project_id: [r for r in records if r.project_id == project_id])
+    monkeypatch.setattr('src.document_registry.get_document_registry', lambda: registry)
+    con = duckdb.connect(':memory:')
+    con.execute('CREATE TABLE chunks(doc_id VARCHAR, file_name VARCHAR, project_id VARCHAR)')
+    con.execute("INSERT INTO chunks VALUES ('old-hash', 'ADS00004.pdf', 'a'), ('foreign-hash', 'foreign.pdf', 'b')")
+    monkeypatch.setattr('src.chunk_store.get_chunk_store', lambda: SimpleNamespace(connection=lambda: con))
+    client = QdrantClient(location=':memory:')
+    store = QdrantVectorStore(client=client, collection_name='bulk-qualification')
+    store.add([TextNode(text=text, embedding=[.1, .2], metadata={
+        'file_name': 'ADS00004.pdf', 'project_id': project, 'page_number': 1,
+        **({'file_id': file_id} if file_id else {}),
+    }) for text, project, file_id in [('legacy evidence', 'a', ''),
+                                     ('foreign evidence', 'b', ''),
+                                     ('modern collision', 'a', 'modern')]])
+    rag = object.__new__(DocumentRAG)
+    rag.index = VectorStoreIndex.from_vector_store(store, embed_model=MockEmbedding(embed_dim=2))
+    try:
+        def retrieve(project='a', hints=None):
+            return rag._dense_candidates('evidence', 10, ['ADS00004.pdf'], hints, project_id=project)
+        assert [r['text'] for r in retrieve()] == ['legacy evidence']
+        assert retrieve(project='b') == []
+        assert retrieve(hints=['foreign.pdf']) == []
+        con.execute("INSERT INTO chunks VALUES ('duplicate-hash', 'ADS00004.pdf', 'a')")
+        assert retrieve() == []
+        con.execute("DELETE FROM chunks WHERE doc_id='duplicate-hash'")
+        records.append(SimpleNamespace(doc_id='modern', file_name='ADS00004.pdf', project_id='a'))
+        assert retrieve() == []
+    finally:
+        client.close()
+        con.close()
+
+
 def test_legacy_vectors_require_unambiguous_project_owned_selection(monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr('src.document_rag._current_user_corpus', lambda: '')

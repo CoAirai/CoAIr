@@ -1494,6 +1494,22 @@ class DocumentRAG:
                 selected = [r for r in records if r.doc_id in doc_ids]
                 names = [r.file_name for r in selected if r.file_name and sum(
                     other.file_name == r.file_name for other in records) == 1]
+                # The original bulk library exposes filenames as selector IDs,
+                # without registry rows. Resolve those only through the active
+                # project's durable chunk inventory. A registry identity/name
+                # collision must never turn a modern selection into an alias.
+                registered = {r.doc_id for r in records} | {r.file_name for r in records}
+                bulk_ids = [value for value in doc_ids if value not in registered]
+                if bulk_ids:
+                    from .chunk_store import get_chunk_store
+                    placeholders = ",".join("?" for _ in bulk_ids)
+                    rows = get_chunk_store().connection().execute(
+                        "SELECT file_name FROM chunks WHERE project_id=? "
+                        f"AND file_name IN ({placeholders}) GROUP BY file_name "
+                        "HAVING COUNT(DISTINCT doc_id)=1",
+                        [project_id, *bulk_ids],
+                    ).fetchall()
+                    names.extend(row[0] for row in rows)
             except Exception:
                 names = []
             if names:
