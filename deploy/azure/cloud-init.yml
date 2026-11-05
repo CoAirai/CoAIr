@@ -1,0 +1,17 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - nginx
+  - certbot
+  - python3-certbot-nginx
+  - python3-venv
+  - rsync
+  - jq
+runcmd:
+  - systemctl enable --now docker nginx
+  - usermod -aG docker coair
+  - install -d -o coair -g coair -m 0750 /opt/coair-azure /opt/coair-azure/releases
+  - install -d -m 0750 /srv/coair/data /srv/coair/storage /srv/coair/qdrant
+  - [sh, -c, 'if [ ! -f /swapfile ]; then fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo "/swapfile none swap sw 0 0" >> /etc/fstab; fi']

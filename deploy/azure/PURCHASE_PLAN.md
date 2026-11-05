@@ -68,16 +68,17 @@ Coair users infrastructure access to implement their application roles.
 
 ## 2. Initial resources and monthly estimate
 
-Use Germany West Central as a **provisional** region to keep the existing
-Frankfurt-hosted AWS workload geographically close. The customer must approve
-data residency. If UK hosting is required, choose an approved UK region and
-recheck prices, quota and SKU availability there before provisioning.
+The user approved **West Europe (Netherlands)** on 2026-11-05 after Germany
+West Central rejected the required Basv2-family quota request. West Europe
+approved two family vCPUs and the initial VM deployment succeeded. The four
+selected retail meters were rechecked in West Europe at the same prices below.
+Any subsequent change in data residency still requires an explicit decision.
 
 The budget target is **one Standard_B2als_v2: 2 vCPU, 4 GiB RAM, x64**.
 This replaces the earlier 16 GiB fixed-performance/Premium-disk proposal. The
 user prioritizes a low-cost sales demo comparable to the previous small AWS tier.
 
-All estimates below use Linux Pay-As-You-Go, Germany West Central, USD retail,
+All estimates below use Linux Pay-As-You-Go, West Europe, USD retail,
 730 hours/month, no reservation/Spot/Windows license and one VM:
 
 | Resource | Budget selection | Monthly base estimate USD |
@@ -177,7 +178,7 @@ Qdrant, web and the optional source toolkit; the network-only web split is optio
 ## Türkiye billing, cards and deployment region
 
 - Türkiye is listed as an Azure-supported signup location. Use the real Turkish
-  billing profile; **Germany West Central is the resource location**, not the
+  billing profile; **West Europe is the resource location**, not the
   card's billing country. Availability, subscription policy and quota still need
   checking for that selected region.
 - Microsoft's current supported-payment table lists Visa, Mastercard and
@@ -277,7 +278,7 @@ the personally owned account sign-in normally, then run the read-only checker wi
 az login --tenant <target-tenant-id>
 python3 deploy/azure/account_check.py \
   --tenant <target-tenant-id> --subscription <target-subscription-id> \
-  --region germanywestcentral --vm-size Standard_B2als_v2 --vm-count 1
+  --region westeurope --vm-size Standard_B2als_v2 --vm-count 1
 ```
 
 If a specific zone is required, include `--zone <zone-number>`. If two identical

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {"type": "string", "defaultValue": "westeurope"},
+    "sshPublicKey": {"type": "string"},
+    "adminSourceCidr": {"type": "string"},
+    "migrationSourceCidr": {"type": "string"},
+    "storageName": {"type": "string"},
+    "dnsLabel": {"type": "string", "defaultValue": "coair-azure-kadirsen"},
+    "cloudInit": {"type": "string", "defaultValue": ""}
+  },
+  "variables": {
+    "vnetId": "[resourceId('Microsoft.Network/virtualNetworks', 'vnet-coair')]",
+    "subnetId": "[concat(variables('vnetId'), '/subnets/app')]",
+    "blobScope": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageName'), 'default', 'coair')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkSecurityGroups", "apiVersion": "2023-11-01",
+      "name": "nsg-coair", "location": "[parameters('location')]",
+      "properties": {"securityRules": [
+        {"name": "AdminSSH", "properties": {"priority": 100, "protocol": "Tcp", "access": "Allow", "direction": "Inbound", "sourceAddressPrefix": "[parameters('adminSourceCidr')]", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "22"}},
+        {"name": "MigrationSSH", "properties": {"priority": 105, "protocol": "Tcp", "access": "Allow", "direction": "Inbound", "sourceAddressPrefix": "[parameters('migrationSourceCidr')]", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "22"}},
+        {"name": "WebHTTPS", "properties": {"priority": 110, "protocol": "Tcp", "access": "Allow", "direction": "Inbound", "sourceAddressPrefix": "Internet", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRanges": ["80", "443"]}}
+      ]}
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks", "apiVersion": "2023-11-01",
+      "name": "vnet-coair", "location": "[parameters('location')]",
+      "dependsOn": ["[resourceId('Microsoft.Network/networkSecurityGroups', 'nsg-coair')]"],
+      "properties": {"addressSpace": {"addressPrefixes": ["10.75.0.0/16"]}, "subnets": [
+        {"name": "app", "properties": {"addressPrefix": "10.75.1.0/24", "networkSecurityGroup": {"id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'nsg-coair')]"}, "serviceEndpoints": [{"service": "Microsoft.Storage", "locations": ["[parameters('location')]"]}]}}
+      ]}
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses", "apiVersion": "2023-11-01",
+      "name": "pip-coair", "location": "[parameters('location')]", "sku": {"name": "Standard"},
+      "properties": {"publicIPAllocationMethod": "Static", "publicIPAddressVersion": "IPv4", "dnsSettings": {"domainNameLabel": "[parameters('dnsLabel')]"}}
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces", "apiVersion": "2023-11-01",
+      "name": "nic-coair", "location": "[parameters('location')]",
+      "dependsOn": ["[variables('vnetId')]", "[resourceId('Microsoft.Network/publicIPAddresses', 'pip-coair')]"],
+      "properties": {"ipConfigurations": [{"name": "primary", "properties": {"privateIPAllocationMethod": "Dynamic", "subnet": {"id": "[variables('subnetId')]"}, "publicIPAddress": {"id": "[resourceId('Microsoft.Network/publicIPAddresses', 'pip-coair')]"}}}]}
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines", "apiVersion": "2024-03-01",
+      "name": "vm-coair", "location": "[parameters('location')]", "identity": {"type": "SystemAssigned"},
+      "dependsOn": ["[resourceId('Microsoft.Network/networkInterfaces', 'nic-coair')]"],
+      "properties": {
+        "hardwareProfile": {"vmSize": "Standard_B2als_v2"},
+        "storageProfile": {
+          "imageReference": {"publisher": "Canonical", "offer": "ubuntu-24_04-lts", "sku": "server", "version": "latest"},
+          "osDisk": {"name": "disk-coair-os", "createOption": "FromImage", "diskSizeGB": 64, "managedDisk": {"storageAccountType": "StandardSSD_LRS"}, "deleteOption": "Detach"}
+        },
+        "osProfile": {"computerName": "coair-azure", "adminUsername": "coair", "customData": "[base64(parameters('cloudInit'))]", "linuxConfiguration": {"disablePasswordAuthentication": true, "ssh": {"publicKeys": [{"path": "/home/coair/.ssh/authorized_keys", "keyData": "[parameters('sshPublicKey')]"}]}}},
+        "networkProfile": {"networkInterfaces": [{"id": "[resourceId('Microsoft.Network/networkInterfaces', 'nic-coair')]", "properties": {"primary": true}}]},
+        "diagnosticsProfile": {"bootDiagnostics": {"enabled": true}}
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts", "apiVersion": "2023-05-01",
+      "name": "[parameters('storageName')]", "location": "[parameters('location')]",
+      "sku": {"name": "Standard_LRS"}, "kind": "StorageV2",
+      "dependsOn": ["[variables('vnetId')]"],
+      "properties": {"accessTier": "Hot", "supportsHttpsTrafficOnly": true, "minimumTlsVersion": "TLS1_2", "allowBlobPublicAccess": false, "allowSharedKeyAccess": false, "publicNetworkAccess": "Enabled", "networkAcls": {"defaultAction": "Deny", "bypass": "None", "virtualNetworkRules": [{"id": "[variables('subnetId')]", "action": "Allow"}], "ipRules": []}}
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers", "apiVersion": "2023-05-01",
+      "name": "[concat(parameters('storageName'), '/default/coair')]",
+      "dependsOn": ["[resourceId('Microsoft.Storage/storageAccounts', parameters('storageName'))]"],
+      "properties": {"publicAccess": "None"}
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments", "apiVersion": "2022-04-01",
+      "name": "[guid(variables('blobScope'), 'vm-coair-blob-contributor')]", "scope": "[variables('blobScope')]",
+      "dependsOn": ["[variables('blobScope')]", "[resourceId('Microsoft.Compute/virtualMachines', 'vm-coair')]"],
+      "properties": {"roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]", "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines', 'vm-coair'), '2024-03-01', 'Full').identity.principalId]", "principalType": "ServicePrincipal"}
+    }
+  ],
+  "outputs": {
+    "publicIp": {"type": "string", "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', 'pip-coair')).ipAddress]"},
+    "hostname": {"type": "string", "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', 'pip-coair')).dnsSettings.fqdn]"},
+    "vmId": {"type": "string", "value": "[reference(resourceId('Microsoft.Compute/virtualMachines', 'vm-coair')).vmId]"},
+    "storageAccount": {"type": "string", "value": "[parameters('storageName')]"}
+  }
+}

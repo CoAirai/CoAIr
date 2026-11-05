@@ -15,7 +15,17 @@ it never logs in, switches account, grants access or creates resources.
 The current budget default is a 2-vCPU/4-GiB B2als_v2 VM with one persistent
 64-GiB Standard SSD. A separate data disk and Blob Private Link are optional;
 the demo can use a selected-subnet storage service endpoint with default-deny
-firewall rules and managed identity. No live network policy was changed.
+firewall rules and managed identity. See DEPLOYMENT_STATUS.md for the actual
+target infrastructure and migration state; preparing a VM is not a cutover.
+
+`main.json` provisions the initial VM, persistent disk, private database network,
+selected-subnet Blob container and container-scoped VM identity role. Its
+`cloud-init.yml` installs the Ubuntu-packaged Docker/Compose, reverse proxy,
+TLS tools and a 2-GiB swap file. Supply the SSH public key, exact administrator
+and temporary migration CIDRs, unique storage name and cloud-init contents as
+ARM parameters. No private keys or application secrets belong in the template.
+Remove the temporary migration SSH rule after transfer. Deploy in incremental
+mode; do not replace restored application state through infrastructure updates.
 
 [CONTINUOUS_DEPLOYMENT.md](CONTINUOUS_DEPLOYMENT.md) describes the Azure-only
 push/build/test/release job, initial acceptance gate, private SSH route and
