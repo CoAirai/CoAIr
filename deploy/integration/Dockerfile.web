@@ -11,12 +11,14 @@ COPY templates ./templates
 COPY public ./public
 COPY middleware.ts next.config.ts tsconfig.json postcss.config.mjs vitest.config.ts eslint.config.mjs ./
 ARG PUBLIC_ORIGIN
+ARG UPLOAD_API_BASE=""
 ENV NEXT_TELEMETRY_DISABLED=1 COAIR_STANDALONE=1
 ENV NEXT_PUBLIC_LOGIN_URL=${PUBLIC_ORIGIN} \
     NEXT_PUBLIC_ADMIN_URL=${PUBLIC_ORIGIN} \
     NEXT_PUBLIC_USER_URL=${PUBLIC_ORIGIN} \
     NEXT_PUBLIC_APP_URL=${PUBLIC_ORIGIN} \
     NEXT_PUBLIC_COAIR_API_BASE=/coair-api \
+    NEXT_PUBLIC_COAIR_UPLOAD_BASE=${UPLOAD_API_BASE} \
     NEXT_PUBLIC_COAIR_SHOW_DEBUG_CODES=1
 RUN npx vitest run --dir lib
 RUN npm run build
