@@ -192,3 +192,25 @@ def test_excel_source_anchor_opens_exact_sheet_and_row_range(tmp_path):
     assert result.sheet_name == "Period 01"
     assert (result.row_from, result.row_to) == (42, 45)
     assert [row["Period"] for row in result.rows] == [41, 42, 43, 44]
+
+
+def test_catalog_viewer_prefers_complete_original_cells_over_imported_subset(viewer, monkeypatch):
+    import pandas as pd
+    service, shared = viewer
+    path = shared / 'Book.xlsx'
+    pd.DataFrame([['DEPOT REGISTER', None], ['Notice', 'Amount'], ['N1', 12], ['N2', 18]]).to_excel(
+        path, header=False, index=False,
+    )
+    stale = '/old/Mac/data/Book.xlsx'
+    entry = SimpleNamespace(project_id='project-a', source_type='excel', source_file=stale,
+                            tables=[SimpleNamespace(table_name='partial', sheet_name='Sheet1')])
+    monkeypatch.setattr('src.catalog.get_catalog', lambda: SimpleNamespace(entries={'book': entry}))
+    monkeypatch.setattr('src.sheet_reader._source_path', lambda info: str(path))
+    result = service._get_content_sync(generate_doc_id(stale), '', path.name, 'project-a')
+    assert not result.error
+    assert result.columns == ['A', 'B']
+    assert result.rows[0]['A'] == 'DEPOT REGISTER'
+    assert result.total_rows == 4 and result.row_from == 1 and result.row_to == 4
+    selected = service._serve_excel_file(str(path), 'sheet_Sheet1_rows_3_4', raw_grid=True)
+    assert [row['A'] for row in selected.rows] == ['N1', 'N2']
+    assert selected.row_from == 3 and selected.row_to == 4

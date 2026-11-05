@@ -533,6 +533,16 @@ class DocumentService:
 
                 if entry.tables:
                     try:
+                        from src.sheet_reader import _source_path
+                        original = _source_path({
+                            'source_file': entry.source_file, 'project_id': project_id,
+                        })
+                        preview = self._serve_excel_file(original, anchor, raw_grid=True)
+                        if not preview.error:
+                            return preview
+                    except (OSError, ValueError, PermissionError):
+                        pass
+                    try:
                         analyzer = get_data_analyzer()
                         requested_sheet, row_from, row_to = self._parse_table_anchor(anchor)
                         selected_table = next((
@@ -729,7 +739,7 @@ class DocumentService:
         except Exception as e:
             return DocContent(type="text", error=f"Cannot parse email: {e}")
 
-    def _serve_excel_file(self, file_path: str, anchor: str = "") -> DocContent:
+    def _serve_excel_file(self, file_path: str, anchor: str = "", *, raw_grid: bool = False) -> DocContent:
         """Read an Excel/CSV file directly with pandas and return as table."""
         try:
             import pandas as pd
@@ -737,24 +747,34 @@ class DocumentService:
             ext = fp.suffix.lower()
             requested_sheet, row_from, row_to = self._parse_table_anchor(anchor)
             row_offset = max(0, (row_from or 2) - 2)
+            if raw_grid:
+                row_offset = max(0, (row_from or 1) - 1)
             row_count = min(50, max(1, (row_to or (row_offset + 51)) - row_offset - 1))
+            if raw_grid:
+                row_count = min(50, max(1, (row_to or (row_offset + 50)) - row_offset))
+            read_options = ({'header': None, 'skiprows': row_offset} if raw_grid
+                            else {'skiprows': range(1, row_offset + 1)})
             if ext == ".csv":
                 df = pd.read_csv(
-                    file_path, skiprows=range(1, row_offset + 1), nrows=row_count,
+                    file_path, nrows=row_count, **read_options,
                 )
             else:
                 sheet = requested_sheet or 0
                 df = pd.read_excel(
                     file_path, sheet_name=sheet,
-                    skiprows=range(1, row_offset + 1), nrows=row_count,
+                    nrows=row_count, **read_options,
                 )
+            if raw_grid:
+                from src.sheet_reader import _column_letter
+                df.columns = [_column_letter(index) for index in range(len(df.columns))]
             # Get total row count without loading entire file
             if ext == ".csv":
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                    total_rows = sum(1 for _ in f) - 1  # minus header
+                    total_rows = sum(1 for _ in f) - (0 if raw_grid else 1)
             else:
                 df_full_len = len(pd.read_excel(
                     file_path, usecols=[0], sheet_name=requested_sheet or 0,
+                    **({'header': None} if raw_grid else {}),
                 ))
                 total_rows = df_full_len
             col_jargon, description = self._catalog_schema_hints(fp.name)
@@ -767,8 +787,8 @@ class DocumentService:
                 schema_columns=_build_schema(df, col_jargon),
                 description=description,
                 sheet_name=requested_sheet,
-                row_from=(row_offset + 2),
-                row_to=(row_offset + len(df) + 1),
+                row_from=(row_offset + (1 if raw_grid else 2)),
+                row_to=(row_offset + len(df) + (0 if raw_grid else 1)),
             )
         except Exception as e:
             return DocContent(type="table", error=str(e))

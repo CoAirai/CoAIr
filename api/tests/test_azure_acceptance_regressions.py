@@ -155,6 +155,7 @@ def test_multi_table_result_keeps_rows_columns_and_source_table(monkeypatch):
 
 
 def test_sheet_excerpt_reports_row_cap_and_does_not_impose_a_word_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.catalog._active_project", lambda: "")
     import pandas as pd
     import src.sheet_reader as module
     path = tmp_path / 'records.csv'
@@ -164,3 +165,35 @@ def test_sheet_excerpt_reports_row_cap_and_does_not_impose_a_word_limit(tmp_path
     assert filled == 16
     assert 'partial excerpt: 5 of 16 filled rows shown' in grid
     assert '600 words' not in module.SYSTEM_PROMPT
+
+
+def test_v3_selected_sources_keep_every_passage_and_never_run_global_discovery(monkeypatch):
+    import src.chronology_v3 as v3
+    import src.chronology_v2 as v2
+    from src.evidence_model import EvidenceItem
+    class ExtractionReached(Exception):
+        pass
+    evidence = [EvidenceItem(f's{i}', 'chosen', 'selected.pdf', page=i+1,
+                              excerpt=f'Page {i+1}. ' + ('Evidence ' * 1000)) for i in range(12)]
+    prepared = v2.PreparedChronologyQuery('q', 'q', (), (), (), (), (), ('q',))
+    monkeypatch.setattr(v3, 'prepare_chronology_query', lambda *a, **k: prepared)
+    def read(project, ids):
+        assert project == 'a' and ids == ['chosen']
+        return evidence
+    monkeypatch.setattr(v2, 'evidence_from_documents', read)
+    def no_discovery(*a, **k):
+        raise AssertionError('Explicit source selection was widened')
+    monkeypatch.setattr(v3, 'research_documents', no_discovery)
+    def extract(items, *a, **k):
+        assert {item.source_id for item in items} == {item.source_id for item in evidence}
+        raise ExtractionReached()
+    monkeypatch.setattr(v3, 'extract_events', extract)
+    with pytest.raises(ExtractionReached):
+        v3.generate_chronology_v3(project_id='a', project_name='A', topic='Selected chronology',
+                                  source_doc_ids=['chosen'])
+    def foreign(*a, **k):
+        raise ValueError('source_document_not_in_project')
+    monkeypatch.setattr(v2, 'evidence_from_documents', foreign)
+    with pytest.raises(ValueError, match='source_document_not_in_project'):
+        v3.generate_chronology_v3(project_id='a', project_name='A', topic='Selected chronology',
+                                  source_doc_ids=['foreign'])

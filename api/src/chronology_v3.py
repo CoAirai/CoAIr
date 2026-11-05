@@ -1365,6 +1365,7 @@ def generate_chronology_v3(
     *, project_id: str, project_name: str, topic: str, issue_number: int = 1,
     job_id: str = "", date_from: str = "", date_to: str = "",
     parties: Sequence[str] = (),
+    source_doc_ids: Sequence[str] = (),
     stage_callback: Optional[Callable[[str, float], None]] = None,
     load_step: Optional[Callable[[str, str], Dict | None]] = None,
     save_step: Optional[Callable[[str, str, str, Dict | None, str], None]] = None,
@@ -1404,7 +1405,24 @@ def generate_chronology_v3(
             save_step("topic_preparation", preparation_hash, "ready", asdict(prepared), "")
     stage("document_discovery", .13)
     from .config import CHRONOLOGY_EVENT_DISCOVERY_MODE
-    if CHRONOLOGY_EVENT_DISCOVERY_MODE == "primary_fallback":
+    if source_doc_ids:
+        from .chronology_v2 import evidence_from_documents
+        evidence = evidence_from_documents(project_id, source_doc_ids)
+        selection = select_pack(evidence, facets=COVERAGE_FACETS, max_chars=None)
+        evidence = selection.evidence
+        documents = {item.doc_id: item for item in evidence}
+        selected = [CandidateDocument(
+            doc_id=item.doc_id, file_name=item.file_name, reference='', title=item.title,
+            description='', document_family='other', metadata_date='',
+            metadata_date_source='unknown', ocr_quality='unknown', score=0,
+            role='primary', reasons=['analyst_selection'],
+        ) for item in documents.values()]
+        research_audit = {
+            'selected': [asdict(item) for item in selected],
+            'selection': selection.stats, 'coverage': coverage_matrix(evidence),
+            'warnings': [], 'map_skeleton': [], 'research_leads': [],
+        }
+    elif CHRONOLOGY_EVENT_DISCOVERY_MODE == "primary_fallback":
         from .ai_reports import retrieve_evidence
         from .chronology_discovery import discover_chronology_evidence
         discovery = discover_chronology_evidence(

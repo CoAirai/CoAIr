@@ -24,6 +24,7 @@ QUESTION = ("Using the Excel spreadsheets in the project, what is the Anticipate
 
 @pytest.fixture
 def workbooks(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.catalog._active_project", lambda: "")
     monkeypatch.setattr(sheet_reader, "INDEX_PATH", tmp_path / "sheet_index.json")
     monkeypatch.setattr(sheet_reader, "_index", {})
     monkeypatch.setattr(sheet_reader, "_index_loaded", False)
