@@ -73,12 +73,18 @@ credentials and provider keys are not included in this repository.
   successfully, including the private Blob container and VM identity data role.
 - Blob: `coairkadirsenweuf6cff027`, private container `coair`; shared-key and
   anonymous access disabled, selected-subnet firewall with no bypass.
-- Public ports: HTTP/HTTPS; SSH restricted to exact administrator and temporary
-  AWS migration source CIDRs. API/Qdrant ports are not publicly published.
+- Public ports: HTTP/HTTPS; SSH restricted to the administrator source CIDR.
+  The temporary AWS migration rule, transfer account and transfer keys were
+  removed after verification. Transferred files now belong to the persistent
+  operator. API/Qdrant ports are not publicly published.
 - `AZURE_PUBLIC_ORIGIN` is configured. The qualified image pair is recorded in
   `/opt/coair-azure/release.json` and exact VM/origin acceptance in `target.json`.
-  Branch-only OIDC/Run Command delivery is being activated and its first real
-  workflow outcome must be checked before describing automatic delivery as proven.
+  Automatic releases are enabled only for `codex/azure-migration-preparation`.
+  GitHub Actions checks the target VM and public origin, releases the tested
+  image pair, and requires the public health revision to match. Per-push delivery
+  results are available in the integration workflow's `deploy_azure` job.
+  The initial OIDC name-only subject was corrected to the exact ID-bearing
+  assertion recorded in [continuous deployment](CONTINUOUS_DEPLOYMENT.md).
 - AWS remains authoritative and unchanged. No migration completion or equal
   report quality is implied by successful resource creation.
 
@@ -118,8 +124,7 @@ Verified so far:
 - The separate `login.coair.ai` users, email/OTP and production VPS were explicitly
   excluded by the owner. They have not been merged into this dataset.
 
-Remaining boundaries: automatic OIDC delivery's first real workflow result,
-production load testing, full-corpus report completeness review and final AWS
+Remaining boundaries: production load testing, full-corpus report completeness review and final AWS
 write freeze/delta reconciliation/retirement. No production Coair domain was
 redirected, and the AWS source remains available. New Azure usage and QA records
 must not be overwritten by replaying the old AWS snapshot. Image rollback is

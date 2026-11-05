@@ -73,7 +73,11 @@ Repository variables:
 Configure a federated credential with issuer
 `https://token.actions.githubusercontent.com`, audience
 `api://AzureADTokenExchange`, and the exact case-sensitive subject:
-`repo:CoAirai/CoAIr:ref:refs/heads/codex/azure-migration-preparation`.
+`repo:CoAirai@317926083/CoAIr@1339170652:ref:refs/heads/codex/azure-migration-preparation`.
+This is the subject actually emitted by this repository's OIDC job. Its stable
+owner/repository IDs are significant: the name-only subject rejected the first
+login with `AADSTS700213`. Keep an exact branch match; do not use a wildcard or
+add another repository/environment to work around an assertion mismatch.
 The job deliberately has no GitHub environment so this exact branch subject
 is used. It requires `contents: read`, `packages: read`, and `id-token: write`.
 No Azure environment was present in this repository; its existing `integration`
