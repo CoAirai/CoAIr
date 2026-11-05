@@ -20,6 +20,11 @@ class RunCommandTests(unittest.TestCase):
         self.assertGreater(script.index("COAIR_AZURE_RELEASE="), script.index('python3 "$release/'))
         subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
+    def test_operator_commands_leave_the_private_agent_working_directory(self):
+        script = deploy.script(COMMIT, API, WEB, ORIGIN, b"guard", b"archive")
+        self.assertLess(script.index("--check-only"), script.index("cd /opt/coair-azure"))
+        self.assertLess(script.index("cd /opt/coair-azure"), script.index("runuser -u"))
+
     def test_wrong_pair_or_unqualified_origin_is_rejected(self):
         for web, origin in [(WEB.replace(COMMIT, "b" * 40), ORIGIN), (WEB, "https://azure.invalid")]:
             with self.assertRaises(ValueError):

@@ -31,6 +31,8 @@ temporary=$(mktemp -d)
 trap 'rm -rf -- "$temporary"' EXIT
 printf '%s' '{encoded_guard}' | base64 -d > "$temporary/release.py"
 python3 "$temporary/release.py" {arguments} --check-only
+# Azure agent directories are root-only; Compose must stat an operator-readable cwd.
+cd /opt/coair-azure
 operator=$(stat -c %U /opt/coair-azure)
 release=/opt/coair-azure/releases/{commit}
 runuser -u "$operator" -- mkdir -p "$release"

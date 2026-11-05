@@ -85,6 +85,13 @@ environment remains untouched. Creating a new environment requires repository
 admin permission, which the current operator does not have. The exact-branch
 federation does not require changing repository approval/security settings.
 
+After the identity/target gate, the generated command changes directory to
+`/opt/coair-azure` before running operator commands. Azure agent download
+folders are root-only: inheriting that working directory makes Compose fail
+with `compose-spec.json: stat .: permission denied` even when the operator can
+read the application files. Keep the directory change after target validation
+and before `runuser`; no directory permission should be broadened to fix it.
+
 Assign the deployment identity only these actions, scoped to this one VM:
 `Microsoft.Compute/virtualMachines/read`,
 `Microsoft.Compute/virtualMachines/instanceView/read`, and
