@@ -197,3 +197,19 @@ def test_v3_selected_sources_keep_every_passage_and_never_run_global_discovery(m
     with pytest.raises(ValueError, match='source_document_not_in_project'):
         v3.generate_chronology_v3(project_id='a', project_name='A', topic='Selected chronology',
                                   source_doc_ids=['foreign'])
+
+
+def test_original_sheet_answer_has_clickable_source_without_fabricating_sql(monkeypatch):
+    from backend.services.response_builder import build_chat_response
+    import src.project_context as context
+    monkeypatch.setattr(context, 'get_current_project_id', lambda: '')
+    raw = {'query_type': 'data', 'answer': 'The register contains the supported rows.', 'sql': None,
+           'sources': [{'type': 'structured_data', 'file_name': 'Book.xlsx', 'doc_id': 'stable-id',
+                        'sheet_name': 'INTC Register', 'row_count': 73}]}
+    live = build_chat_response(raw)
+    assert live.sql_artifact is None
+    assert len(live.citations) == 1
+    assert live.citations[0].doc_id == 'stable-id'
+    assert live.citations[0].anchor == 'sheet_INTC Register_rows_1_73'
+    assert raw['sources'][0]['type'] == 'structured_data'
+    assert build_chat_response(raw).citations == live.citations

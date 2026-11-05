@@ -210,7 +210,16 @@ def _build_from_single(raw: Dict[str, Any]) -> ChatResponse:
     # where a data query produced irrelevant email citations).
     if query_type in ("document", "file_list") and _is_bare_refusal(answer_text):
         sources = []
-    citations, related_docs = _extract_citations_and_related(sources, query_type)
+    # Original-sheet answers have no SQL artifact to carry their source link.
+    # Keep the stored source metadata intact, but expose those originals as
+    # citations so the same document panel opens for live and restored answers.
+    reference_sources = sources if sql else [
+        {**source, 'type': 'document',
+         'anchor': f"sheet_{source.get('sheet_name', '')}_rows_1_{source.get('row_count') or 50}"}
+        if source.get('type') == 'structured_data' else source
+        for source in sources
+    ]
+    citations, related_docs = _extract_citations_and_related(reference_sources, query_type)
     # Never surface LlamaIndex's "Empty Response" placeholder: when documents
     # were found (timeline/hybrid/doc_list) replace it with a chronological
     # lead-in; otherwise a graceful no-result message.
@@ -430,7 +439,7 @@ def _extract_citations_and_related(
             citations.append(Citation(
                 doc_id=safe_id,
                 doc_name=file_name,
-                anchor=f"page_{page}",
+                anchor=src.get('anchor') or f"page_{page}",
                 snippet=(
                     src.get("highlight_text", "")
                     or src.get("text_snippet", "")
