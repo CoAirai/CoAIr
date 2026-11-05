@@ -95,11 +95,18 @@ def validate_compose(config, target, api, web):
             if port.get("host_ip") not in ("127.0.0.1", "::1"):
                 raise ValueError("The single-host demo requires loopback application ports")
         for volume in service.get("volumes", []):
-            allowed = {"api": {"/app/data": STATE_ROOT / "data", "/app/storage": STATE_ROOT / "storage"},
+            allowed = {"api": {"/app/data": STATE_ROOT / "data", "/app/storage": STATE_ROOT / "storage",
+                               "/run/secrets/google_keys": ROOT / "provider-keys"},
                        "qdrant": {"/qdrant/storage": STATE_ROOT / "qdrant"}}.get(name, {})
             if volume.get("type") != "bind" or allowed.get(volume.get("target")) != Path(volume.get("source", "")).resolve():
                 raise ValueError("Unexpected host mount; only restored Azure state is allowed")
-    if len(services["api"].get("volumes", [])) != 2 or len(services["qdrant"].get("volumes", [])) != 1:
+            if volume.get("target") == "/run/secrets/google_keys" and volume.get("read_only") is not True:
+                raise ValueError("Provider credentials must be read-only")
+    api_volumes = services["api"].get("volumes", [])
+    api_targets = {volume.get("target") for volume in api_volumes}
+    if (len(api_volumes) != len(api_targets) or
+            not {"/app/data", "/app/storage"}.issubset(api_targets) or
+            len(services["qdrant"].get("volumes", [])) != 1):
         raise ValueError("The persistent API and Qdrant mounts are required")
 
 

@@ -17,6 +17,7 @@ services:
     volumes:
       - ${STATE_ROOT:?Set the persistent managed-disk directory}/data:/app/data
       - ${STATE_ROOT}/storage:/app/storage
+      - /opt/coair-azure/provider-keys:/run/secrets/google_keys:ro
     depends_on: [qdrant]
     stop_grace_period: 120s
     healthcheck:

@@ -76,6 +76,18 @@ class AzureReleaseTests(unittest.TestCase):
                 with patch.object(release, "ROOT", root), patch.object(release, "STATE_ROOT", state), patch.object(release, "read_json_url", return_value={"compute": identity}):
                     with self.assertRaises(ValueError): release.target_config(ORIGIN)
 
+    def test_dedicated_provider_keys_require_an_exact_read_only_mount(self):
+        target = {"qdrant_image": "qdrant/qdrant:v1.15.4"}
+        value = config()
+        secret = {"type": "bind", "source": "/opt/coair-azure/provider-keys",
+                  "target": "/run/secrets/google_keys", "read_only": True}
+        value["services"]["api"]["volumes"].append(secret)
+        release.validate_compose(value, target, API, WEB)
+        secret["read_only"] = False
+        with self.assertRaises(ValueError): release.validate_compose(value, target, API, WEB)
+        secret.update(read_only=True, source="/etc")
+        with self.assertRaises(ValueError): release.validate_compose(value, target, API, WEB)
+
     def test_failed_smoke_rolls_back_images_and_keeps_previous_record(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()
