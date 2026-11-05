@@ -96,7 +96,7 @@ class ConversationStore:
         if not self.index_path.exists():
             try:
                 from .gcs_storage import sync_user_conversations_from_gcs
-                sync_user_conversations_from_gcs(self.username)
+                sync_user_conversations_from_gcs(self.username, project_id=self.project_id or None)
             except Exception:
                 pass
             if not self.index_path.exists():
@@ -639,7 +639,7 @@ class ConversationStore:
         """Upload all conversation files to GCS."""
         try:
             from .gcs_storage import sync_user_conversations_to_gcs
-            sync_user_conversations_to_gcs(self.username)
+            sync_user_conversations_to_gcs(self.username, project_id=self.project_id or None)
         except Exception as e:
             logger.warning(f"[ConvStore] GCS sync failed: {e}")
 

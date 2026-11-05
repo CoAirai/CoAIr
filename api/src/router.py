@@ -2093,6 +2093,9 @@ class QueryRouter:
         project_tables = self._allowed_data_tables()
         if project_tables is not None:
             allowed_tables = [name for name in (allowed_tables or []) if name in project_tables]
+        allowed_tables = self.data_analyzer.constrain_named_sources(
+            self._current_question(query), allowed_tables,
+        )
         if allowed_tables == []:
             return {
                 "query": query,

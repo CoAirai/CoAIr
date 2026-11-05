@@ -6,6 +6,7 @@ GCS_BUCKET_NAME is set. Disabled (local disk only) if neither is configured.
 Azure is explicitly selected with OBJECT_STORAGE_BACKEND=azure; legacy S3/GCS configuration is unchanged.
 """
 import os
+import hashlib
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -375,41 +376,67 @@ def sync_all_parquets_from_gcs():
 # ── Conversation sync ─────────────────────────────────────
 
 _CONVERSATIONS_PREFIX = "conversations/"
+_conversation_hashes = {}
+_conversation_sync_lock = threading.Lock()
 
 
-def sync_user_conversations_to_gcs(username: str):
-    """Upload all conversation JSON files for a user to GCS."""
+def _conversation_root(username: str, project_id=None):
+    from .config import CONVERSATIONS_DIR
+    for value in (username, project_id):
+        if value is not None and (not value or value in ('.', '..') or '/' in value or '\\' in value):
+            raise ValueError('invalid_conversation_scope')
+    root = Path(CONVERSATIONS_DIR).resolve() / username
+    selected = root / project_id if project_id else root
+    if (root.is_symlink() or selected.is_symlink()
+            or not selected.resolve().is_relative_to(Path(CONVERSATIONS_DIR).resolve())):
+        raise ValueError('invalid_conversation_scope')
+    return root, selected
+
+
+def sync_user_conversations_to_gcs(username: str, project_id=None):
+    """Sync changed JSONs while preserving user/project directories."""
     if not is_enabled():
         return
-    from .config import CONVERSATIONS_DIR
-    user_dir = CONVERSATIONS_DIR / username
+    user_root, user_dir = _conversation_root(username, project_id)
     if not user_dir.exists():
         return
     count = 0
-    for json_file in user_dir.glob("*.json"):
-        blob_name = f"{_CONVERSATIONS_PREFIX}{username}/{json_file.name}"
-        if upload_file(str(json_file), blob_name):
-            count += 1
+    with _conversation_sync_lock:
+        for json_file in user_dir.rglob("*.json"):
+            if not json_file.resolve().is_relative_to(user_dir.resolve()) or json_file.is_symlink():
+                continue
+            blob_name = f"{_CONVERSATIONS_PREFIX}{username}/{json_file.relative_to(user_root).as_posix()}"
+            digest = hashlib.sha256(json_file.read_bytes()).hexdigest()
+            if _conversation_hashes.get(blob_name) == digest:
+                continue
+            if upload_file(str(json_file), blob_name):
+                _conversation_hashes[blob_name] = digest
+                count += 1
     if count > 0:
         logger.info(f"[{_tag()}] Uploaded {count} conversation files for {username}")
 
 
-def sync_user_conversations_from_gcs(username: str):
+def sync_user_conversations_from_gcs(username: str, project_id=None):
     """Download conversation JSON files for a user from GCS (if local missing)."""
     if not is_enabled():
         return
-    from .config import CONVERSATIONS_DIR
-    user_dir = CONVERSATIONS_DIR / username
+    user_root, user_dir = _conversation_root(username, project_id)
     user_dir.mkdir(parents=True, exist_ok=True)
     prefix = f"{_CONVERSATIONS_PREFIX}{username}/"
-    blobs = list_blobs(prefix)
+    blobs = list_blobs(prefix + (project_id + '/' if project_id else ''))
     count = 0
     for blob_name in blobs:
-        filename = blob_name.replace(prefix, "")
-        if not filename or not filename.endswith(".json"):
+        if not blob_name.startswith(prefix):
             continue
-        local_path = user_dir / filename
+        filename = blob_name[len(prefix):]
+        if (not filename.endswith('.json') or '\\' in filename
+                or any(part in ('', '.', '..') for part in filename.split('/'))):
+            continue
+        local_path = user_root / filename
+        if not local_path.resolve().is_relative_to(user_dir.resolve()):
+            continue
         if not local_path.exists():
+            local_path.parent.mkdir(parents=True, exist_ok=True)
             if download_file(blob_name, str(local_path)):
                 count += 1
     if count > 0:

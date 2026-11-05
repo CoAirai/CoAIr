@@ -282,6 +282,17 @@ class JargonManager:
             chosen = next((s for s in senses if tag_of(s) == "generic"), senses[0])
         return _TAG_RE.sub("", chosen).strip(" .;,")
 
+    @staticmethod
+    def _query_meaning(meaning: str, query: str) -> str:
+        """P6 table names are ordinary words outside an explicit P6 question."""
+        senses = [part.strip() for part in meaning.split(' | ')]
+        p6 = [sense for sense in senses if sense.startswith('P6 XER table ')]
+        if not p6:
+            return meaning
+        if re.search(r'\b(?:P6|Primavera|XER)\b', query, re.I):
+            return p6[0]
+        return ''
+
     def prepare_query(
         self, query: str, *, max_terms: int = 12, max_context_chars: int = 2000,
         domain_hint: str = "",
@@ -304,6 +315,10 @@ class JargonManager:
         accepted: List[Tuple[str, str, int, int]] = []
         used = len("Relevant domain terminology:\n")
         for hit in hits:
+            meaning = self._query_meaning(hit[1], original)
+            if not meaning:
+                continue
+            hit = (hit[0], meaning, hit[2], hit[3])
             line = f"- {hit[0]}: {hit[1]}"
             if used + len(line) + 1 > max_context_chars:
                 continue
@@ -585,9 +600,9 @@ class JargonManager:
             return query
 
         domain_hint = project_domain_hint()
-        meanings = {abbr.casefold(): (self.retrieval_sense(meaning, domain_hint)
-                                     if domain_hint else meaning)
-                    for abbr, meaning in self._abbr_to_meaning.items() if abbr and meaning}
+        meanings = {abbr.casefold(): self.retrieval_sense(meaning, domain_hint)
+                    for abbr, raw in self._abbr_to_meaning.items()
+                    if abbr and (meaning := self._query_meaning(raw, query))}
         if not meanings:
             return query
         terms = "|".join(re.escape(abbr) for abbr in sorted(meanings, key=len, reverse=True))
@@ -640,6 +655,7 @@ class JargonManager:
         def expand_original(match):
             word = match.group()
             meaning = self.expand(word)
+            meaning = self._query_meaning(meaning, query) if meaning else ''
             if meaning and domain_hint:
                 meaning = self.retrieval_sense(meaning, domain_hint)
             if meaning and meaning.lower() not in original_lower:

@@ -26,6 +26,13 @@ RULE = "D1D5DB"
 INK = "111827"
 BODY = "374151"
 
+_INVALID_XML_TEXT = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
+def xml_text(value) -> str:
+    """Keep visible text and normal whitespace, excluding XML 1.0-invalid bytes."""
+    return _INVALID_XML_TEXT.sub("", str(value))
+
 
 def shared():
     """python-docx's unit helpers, imported on demand."""

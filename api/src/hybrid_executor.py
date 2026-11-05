@@ -433,11 +433,25 @@ class HybridExecutor:
                 f"**{tname}**: {r.get('answer', 'No result')}" for tname, r in table_results.items()
             )
 
+        result_rows = {}
+        result_columns = ['_source_table']
+        for name, result in table_results.items():
+            rows = result.get('result_data')
+            if not isinstance(rows, list):
+                continue
+            result_rows[name] = [{**row, '_source_table': name}
+                                 for row in rows if isinstance(row, dict)]
+            for row in result_rows[name]:
+                for column in row:
+                    if column not in result_columns:
+                        result_columns.append(column)
+
         return {
             "answer": combined_answer,
             "sources": all_sources,
             "sql": {tname: r.get("sql") for tname, r in table_results.items()},
-            "result_data": None,
+            "result_data": result_rows,
+            "result_columns": result_columns,
             "query_type": "data",
             "multi_table": True,
         }

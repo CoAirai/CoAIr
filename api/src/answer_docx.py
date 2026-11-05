@@ -59,7 +59,7 @@ def _table(doc, header: Sequence[str], rows: Sequence[Sequence[Any]]) -> None:
     """A real Word table, from the same pipe table the chat now renders with
     remark-gfm — so the exported file and the screen show the same thing."""
     Pt, RGBColor, _ = kit.shared()
-    header = [str(h) for h in header][:MAX_COLS]
+    header = [kit.xml_text(h) for h in header][:MAX_COLS]
     if not header:
         return
     table = doc.add_table(rows=1, cols=len(header))
@@ -74,7 +74,7 @@ def _table(doc, header: Sequence[str], rows: Sequence[Sequence[Any]]) -> None:
         values += [""] * (len(header) - len(values))   # pad, never drop
         for cell, value in zip(cells, values):
             cell.paragraphs[0].paragraph_format.space_after = Pt(0)
-            run = cell.paragraphs[0].add_run("" if value is None else str(value))
+            run = cell.paragraphs[0].add_run("" if value is None else kit.xml_text(value))
             run.font.size = Pt(8)
             run.font.color.rgb = RGBColor.from_string(kit.INK)
 
@@ -135,18 +135,18 @@ def _citations(doc, citations: Sequence[Dict[str, Any]]) -> None:
     kit.label(doc, f"Sources · {len(citations)}")
     Pt, RGBColor, Cm = kit.shared()
     for c in citations[:MAX_CITATIONS]:
-        name = str(c.get("doc_name") or c.get("file_name") or "").strip()
+        name = kit.xml_text(c.get("doc_name") or c.get("file_name") or "").strip()
         if not name:
             continue
         # "page_37" → "p.37". The anchor is what makes a citation checkable, so
         # it travels with the name rather than being dropped as plumbing.
-        anchor = str(c.get("anchor") or "")
+        anchor = kit.xml_text(c.get("anchor") or "")
         page = anchor.split("_", 1)[1] if anchor.startswith("page_") else ""
         p = doc.add_paragraph()
         p.paragraph_format.space_after = Pt(1)
         kit.mono(p.add_run(f"{name}{f'  p.{page}' if page else ''}"),
                  size=9, colour=kit.INK)
-        snippet = str(c.get("snippet") or "").strip()
+        snippet = kit.xml_text(c.get("snippet") or "").strip()
         if snippet:
             sp = doc.add_paragraph()
             sp.paragraph_format.left_indent = Cm(0.5)
@@ -175,7 +175,10 @@ def build_answer_docx(
     about the query — a restored answer only ever kept 20 and has no memory of
     the total, and inventing one would be worse than admitting it.
     """
-    answer = (answer or "")[:MAX_ANSWER_CHARS]
+    question = kit.xml_text(question or "")
+    answer = kit.xml_text(answer or "")[:MAX_ANSWER_CHARS]
+    sql = kit.xml_text(sql or "")
+    title_text = kit.xml_text(title_text or "")
     citations = list(citations or [])
     rows = list(table_rows or [])
     cols = list(table_columns or [])

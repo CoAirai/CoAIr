@@ -101,6 +101,38 @@ def _cell_text(value: Any) -> str:
     return "" if text.lower() in ("nan", "nat", "none") else text
 
 
+def _source_path(info: Dict[str, Any]) -> str:
+    """Rebase trusted catalog paths without changing their canonical identity."""
+    from .catalog import _active_project
+    from .config import DATA_DIR
+
+    source = str(info['source_file'])
+    project = str(info.get('project_id') or '')
+    active = _active_project()
+    if active and project != active:
+        raise PermissionError('spreadsheet_project_mismatch')
+    # Preserve standalone/legacy maintenance reads with no tenant context.
+    if not project and not active:
+        return source
+    root = Path(DATA_DIR).resolve()
+    candidates = [Path(source)]
+    normalized = source.replace('\\', '/')
+    if '/data/' in normalized:
+        relative = normalized.split('/data/', 1)[1]
+        if '..' not in Path(relative).parts:
+            candidates.append(root / relative)
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(root):
+            continue
+        relative = resolved.relative_to(root).parts
+        if len(relative) > 1 and relative[0] == 'projects' and relative[1] != project:
+            continue
+        if resolved.is_file():
+            return str(resolved)
+    raise FileNotFoundError('spreadsheet_original_unavailable')
+
+
 def _read_grids(source_file: str, sheet: Optional[str], nrows: Optional[int]):
     """{sheet_name: DataFrame} with no header row assumed."""
     import pandas as pd
@@ -141,20 +173,23 @@ def build_index(tables: Dict[str, Dict[str, Any]]) -> int:
     _building = True
     try:
         by_file: Dict[str, List[str]] = {}
+        source_infos = {}
         for info in _sheet_candidates(tables).values():
+            source_infos[str(info['source_file'])] = info
             by_file.setdefault(str(info["source_file"]), []).append(
                 str(info.get("sheet_name") or "")
             )
         added = 0
         for source_file, sheets in by_file.items():
             try:
-                mtime = os.path.getmtime(source_file)
-            except OSError:
+                physical = _source_path(source_infos[source_file])
+                mtime = os.path.getmtime(physical)
+            except (OSError, PermissionError):
                 continue
             if all(_index.get(_key(source_file, s), {}).get("mtime") == mtime for s in sheets):
                 continue
             try:
-                grids = _read_grids(source_file, None, HEAD_ROWS)
+                grids = _read_grids(physical, None, HEAD_ROWS)
             except Exception as e:
                 logger.warning(f"[SheetReader] cannot read {Path(source_file).name}: {e}")
                 continue
@@ -273,7 +308,7 @@ def sheet_grid(info: Dict[str, Any], question: str = "") -> Tuple[str, int]:
     """The sheet as numbered rows of lettered cells, plus the row count read."""
     source = str(info["source_file"])
     sheet = str(info.get("sheet_name") or "")
-    grids = _read_grids(source, sheet or None, None)
+    grids = _read_grids(_source_path(info), sheet or None, None)
     frame = next(iter(grids.values()))
     rows: List[Tuple[int, List[Tuple[str, str]]]] = []
     for position, row in enumerate(frame.itertuples(index=False), 1):

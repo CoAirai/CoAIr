@@ -2311,7 +2311,7 @@ class DataAnalyzerSQL:
         Uses lazy summary for small results.
         If allowed_tables is provided, only consider those tables.
         """
-        allowed_tables = self._project_tables(allowed_tables)
+        allowed_tables = self.constrain_named_sources(question, allowed_tables)
         if allowed_tables == [] or (table_name is not None and allowed_tables is not None and table_name not in allowed_tables):
             return {"answer": "No data tables are available for this project and document selection.",
                     "sources": [], "sql": None, "result_data": None}
@@ -2703,6 +2703,35 @@ class DataAnalyzerSQL:
             return self.query_with_provider(enriched, provider, table_name, allowed_tables=allowed_tables) if provider != "gemini" else self.query(enriched, table_name, allowed_tables=allowed_tables)
         return self.query_with_provider(question, provider, table_name, allowed_tables=allowed_tables) if provider != "gemini" else self.query(question, table_name, allowed_tables=allowed_tables)
 
+    def constrain_named_sources(self, question: str, allowed_tables=None):
+        """Intersect literal workbook names with authorized tables before ranking.
+
+        Unknown or ambiguous source names fail closed. Multiple worksheets of
+        one source remain available; canonical source identities are unchanged.
+        """
+        allowed = self._project_tables(allowed_tables)
+        text = re.split(r"Current question:\s*", question or "", flags=re.I)[-1]
+        if not re.search(r"\.(?:xlsx?|csv)\b", text, re.I):
+            return allowed
+        candidates = {name: info for name, info in self.tables.items()
+                      if allowed is None or name in allowed}
+        matches = {}
+        remaining = text
+        for name, info in candidates.items():
+            source = str(info.get('source_file') or info.get('file_path') or '')
+            filename = source.replace('\\', '/').rsplit('/', 1)[-1]
+            if not filename or not re.search(r"\.(?:xlsx?|csv)$", filename, re.I):
+                continue
+            pattern = r"(?<![\w.-])" + re.escape(filename) + r"(?![\w.-])"
+            if re.search(pattern, text, re.I):
+                matches.setdefault(filename.casefold(), []).append((name, source))
+                remaining = re.sub(pattern, '', remaining, flags=re.I)
+        if re.search(r"\.(?:xlsx?|csv)\b", remaining, re.I):
+            return []
+        if any(len({source for _, source in group}) != 1 for group in matches.values()):
+            return []
+        return [name for group in matches.values() for name, _ in group]
+
     def get_tables_for_doc_ids(self, doc_ids: List[str]) -> List[str]:
         """Get DuckDB table names belonging to the given doc_ids."""
         from .document_rag import generate_doc_id
@@ -3006,7 +3035,7 @@ class DataAnalyzerSQL:
         Used for multi-table queries that may need data from several sources.
         Filters out _clean/_raw view duplicates to avoid querying same data twice.
         """
-        allowed_tables = self._project_tables(allowed_tables)
+        allowed_tables = self.constrain_named_sources(question, allowed_tables)
         search_space = self.tables
         if allowed_tables is not None:
             search_space = {k: v for k, v in self.tables.items() if k in allowed_tables}
