@@ -344,6 +344,9 @@ def sheet_grid(info: Dict[str, Any], question: str = "") -> Tuple[str, int]:
             break
         lines.append(line)
         used += len(line)
+    shown = sum(line.startswith('Row ') for line in lines)
+    if shown < len(rows) and not any(line.startswith('(further rows') for line in lines):
+        lines.append(f'(partial excerpt: {shown} of {len(rows)} filled rows shown)')
     return "\n".join(lines), len(rows)
 
 
@@ -365,8 +368,10 @@ SYSTEM_PROMPT = (
     "6. Write plain sentences. Start each section with a numbered heading on its own line, "
     "such as '1. Summary'. Use one markdown table for a breakdown, with a header row, a "
     "separator row of dashes, one row per item, and the source in the last column.\n"
-    "7. Keep the answer under about 600 words. Put the main lines of a breakdown in the table, "
-    "not every sub-line of the sheet."
+    "7. Follow the requested scope rather than a fixed word limit. When asked for all records, "
+    "include every supported record; if the excerpt is partial, state that limitation.\n"
+    "8. Distinguish data records from title, header, blank, subtotal and total rows. "
+    "Do not call a count of filled spreadsheet rows a count of records."
 )
 
 
@@ -389,7 +394,9 @@ def answer_from_sheets(question: str, table_names: Sequence[str],
             continue
         file_name = Path(str(info["source_file"])).name
         sheet = str(info.get("sheet_name") or "")
-        blocks.append(f"FILE: {file_name}\nSHEET: {sheet or '(only sheet)'}\n{grid}")
+        shown = sum(line.startswith('Row ') for line in grid.splitlines())
+        blocks.append(f"FILE: {file_name}\nSHEET: {sheet or '(only sheet)'}\n"
+                      f"COVERAGE: {shown} of {row_count} filled rows; this includes headings and totals.\n{grid}")
         sources.append({
             "file_name": file_name,
             "file_path": str(info["source_file"]),

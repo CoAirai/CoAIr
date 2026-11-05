@@ -152,3 +152,15 @@ def test_multi_table_result_keeps_rows_columns_and_source_table(monkeypatch):
     assert artifact.row_count == 2
     assert artifact.columns == ['_source_table', 'amount', 'count']
     assert artifact.preview_rows == [{'amount': 12, '_source_table': 'detail'}, {'count': 41, '_source_table': 'summary'}]
+
+
+def test_sheet_excerpt_reports_row_cap_and_does_not_impose_a_word_limit(tmp_path, monkeypatch):
+    import pandas as pd
+    import src.sheet_reader as module
+    path = tmp_path / 'records.csv'
+    pd.DataFrame({'record': list(range(15))}).to_csv(path, index=False)
+    monkeypatch.setattr(module, 'GRID_MAX_ROWS', 5)
+    grid, filled = module.sheet_grid({'source_file': str(path)}, 'show all records')
+    assert filled == 16
+    assert 'partial excerpt: 5 of 16 filled rows shown' in grid
+    assert '600 words' not in module.SYSTEM_PROMPT
