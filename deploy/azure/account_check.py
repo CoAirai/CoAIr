@@ -18,7 +18,7 @@ MANUAL_GATES = (
     "effective_deployment_and_role_assignment_permissions",
     "azure_policy_allowed_regions_skus_tags_and_network_rules",
     "actual_vm_capacity_in_selected_region_or_zone",
-    "private_blob_dns_rbac_and_explicit_internet_egress",
+    "blob_network_rules_rbac_and_explicit_internet_egress",
     "qualified_images_and_complete_consistent_data_restore",
     "application_acceptance_and_reconciled_rollback",
 )
@@ -87,7 +87,7 @@ def main():
     parser.add_argument("--subscription", required=True, type=uuid.UUID)
     parser.add_argument("--tenant", required=True, type=uuid.UUID)
     parser.add_argument("--region", default="germanywestcentral")
-    parser.add_argument("--vm-size", default="Standard_D4as_v5")
+    parser.add_argument("--vm-size", default="Standard_B2als_v2")
     parser.add_argument("--vm-count", type=int, default=1)
     parser.add_argument("--zone")
     args = parser.parse_args()

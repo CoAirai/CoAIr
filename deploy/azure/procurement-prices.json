@@ -5,16 +5,16 @@
   "hours_per_month": 730,
   "prices": {
     "production_vm": {
-      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Virtual+Machines+Dasv5+Series%27+and+armSkuName+eq+%27Standard_D4as_v5%27+and+meterName+eq+%27D4as+v5%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27germanywestcentral%27&currencyCode=USD",
-      "productName": "Virtual Machines Dasv5 Series",
-      "skuName": "Standard_D4as_v5",
-      "meterName": "D4as v5",
+      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Virtual+Machines+Basv2+Series%27+and+armSkuName+eq+%27Standard_B2als_v2%27+and+meterName+eq+%27B2als+v2%27+and+armRegionName+eq+%27germanywestcentral%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
+      "productName": "Virtual Machines Basv2 Series",
+      "skuName": "Standard_B2als_v2",
+      "meterName": "B2als v2",
       "armRegionName": "germanywestcentral",
-      "unitPrice": 0.208,
+      "unitPrice": 0.0432,
       "unitOfMeasure": "1 Hour",
-      "effectiveStartDate": "2021-11-01T00:00:00Z",
+      "observed_on": "2026-11-05",
       "estimated_quantity_per_month": 730,
-      "monthly_estimate_usd": 151.84
+      "monthly_estimate_usd": 31.536
     },
     "optional_test_vm": {
       "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Virtual+Machines+Dasv5+Series%27+and+armSkuName+eq+%27Standard_D2as_v5%27+and+meterName+eq+%27D2as+v5%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27germanywestcentral%27&currencyCode=USD",
@@ -29,16 +29,16 @@
       "monthly_estimate_usd": 75.92
     },
     "os_disk": {
-      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Standard+SSD+Managed+Disks%27+and+meterName+eq+%27E10+LRS+Disk%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27germanywestcentral%27&currencyCode=USD",
+      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Standard+SSD+Managed+Disks%27+and+meterName+eq+%27E6+LRS+Disk%27+and+armRegionName+eq+%27germanywestcentral%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
       "productName": "Standard SSD Managed Disks",
-      "skuName": "E10 LRS",
-      "meterName": "E10 LRS Disk",
+      "skuName": "E6 LRS",
+      "meterName": "E6 LRS Disk",
       "armRegionName": "germanywestcentral",
-      "unitPrice": 9.6,
+      "unitPrice": 4.8,
       "unitOfMeasure": "1/Month",
-      "effectiveStartDate": "2019-09-01T00:00:00Z",
+      "observed_on": "2026-11-05",
       "estimated_quantity_per_month": 1,
-      "monthly_estimate_usd": 9.6
+      "monthly_estimate_usd": 4.8
     },
     "production_data_disk": {
       "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Premium+SSD+Managed+Disks%27+and+meterName+eq+%27P15+LRS+Disk%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27germanywestcentral%27&currencyCode=USD",
@@ -73,8 +73,8 @@
       "unitPrice": 0.0196,
       "unitOfMeasure": "1 GB/Month",
       "effectiveStartDate": "2019-09-01T00:00:00Z",
-      "estimated_quantity_per_month": 100,
-      "monthly_estimate_usd": 1.96
+      "estimated_quantity_per_month": 20,
+      "monthly_estimate_usd": 0.392
     },
     "public_ip": {
       "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27IP+Addresses%27+and+skuName+eq+%27Standard%27+and+meterName+eq+%27Standard+IPv4+Static+Public+IP%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27germanywestcentral%27&currencyCode=USD",
@@ -116,14 +116,20 @@
   "initial_required_items": [
     "production_vm",
     "os_disk",
-    "production_data_disk",
     "blob_storage",
-    "public_ip",
-    "private_endpoint",
-    "private_dns"
+    "public_ip"
   ],
-  "base_monthly_estimate_usd": 216.66,
+  "base_monthly_estimate_usd": 40.38,
   "subscription_specific_quote_verified": false,
   "taxes_model_calls_traffic_io_backup_logging_and_discounts_included": false,
-  "resources_created": false
+  "resources_created": false,
+  "price_snapshot_date": "2026-11-05",
+  "recorded_at_utc": "2026-11-05T16:43:41.300605+00:00",
+  "refresh_note": "Successful Microsoft API observations from this session; subsequent refresh was rate-limited.",
+  "target_memory_gib": 4,
+  "target_os_disk_gib": 64,
+  "storage_network_mode": "service_endpoint_selected_subnet_default_deny",
+  "separate_data_disk_required": false,
+  "private_endpoint_required": false,
+  "representative_4gib_full_stack_test_passed": false
 }

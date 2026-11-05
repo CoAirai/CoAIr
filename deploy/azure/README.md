@@ -12,6 +12,10 @@ Before purchasing/provisioning, use [PURCHASE_PLAN.md](PURCHASE_PLAN.md) for the
 individual demo account/role/quota checklist and a dated, itemized retail estimate. The
 read-only `account_check.py` requires explicit target tenant/subscription IDs;
 it never logs in, switches account, grants access or creates resources.
+The current budget default is a 2-vCPU/4-GiB B2als_v2 VM with one persistent
+64-GiB Standard SSD. A separate data disk and Blob Private Link are optional;
+the demo can use a selected-subnet storage service endpoint with default-deny
+firewall rules and managed identity. No live network policy was changed.
 
 ## Supported topology
 
@@ -119,7 +123,9 @@ a toolkit endpoint with `check=toolkit_health` as appropriate for the selected s
 
 ## 4. Prepare the Azure VM deployment
 
-1. Select Linux x86_64 and a persistent managed data disk. Preserve `/app/data`
+1. Select Linux x86_64 and a persistent managed disk backing application state.
+   The budget demo can use the persistent OS disk; a separate data disk is optional.
+   Preserve `/app/data`
    and `/app/storage` container paths. Do not put active databases on a temporary
    VM disk or assume Azure Files makes them safe for multiple API writers.
 2. Copy `.env.example` to a private `.env`; set qualified immutable API/web image

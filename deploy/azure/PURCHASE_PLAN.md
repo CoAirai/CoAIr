@@ -41,8 +41,8 @@ resource, subscription, role assignment or payment was created.
    quota and expiration must not become a dependency of a scheduled sales meeting.
 4. Enable MFA and recovery on the owner account. Keep the university-managed
    sign-in separate from ownership of the long-term paid demo subscription.
-5. Create a monthly budget with actual/forecast alerts. With the selected 16 GiB
-   VM always running, the base estimate is USD 216.66/month; plan an additional
+5. Create a monthly budget with actual/forecast alerts. With the selected 4 GiB
+   VM always running, the base estimate is USD 40.38/month; plan an additional
    operational allowance for variable traffic, backup/logging, model usage and
    taxes. **A budget alert does not stop spending.**
 6. Record and verify the personally owned subscription's exact tenant ID and
@@ -73,54 +73,72 @@ Frankfurt-hosted AWS workload geographically close. The customer must approve
 data residency. If UK hosting is required, choose an approved UK region and
 recheck prices, quota and SKU availability there before provisioning.
 
-All estimates below use Linux Pay-As-You-Go, USD retail, 730 hours/month, no
-reservation/Spot/Windows license and one VM. Do not add the optional test VM to
-the total unless it will actually run.
+The budget target is **one Standard_B2als_v2: 2 vCPU, 4 GiB RAM, x64**.
+This replaces the earlier 16 GiB fixed-performance/Premium-disk proposal. The
+user prioritizes a low-cost sales demo comparable to the previous small AWS tier.
 
-| Resource | Initial selection | Monthly base estimate USD |
+All estimates below use Linux Pay-As-You-Go, Germany West Central, USD retail,
+730 hours/month, no reservation/Spot/Windows license and one VM:
+
+| Resource | Budget selection | Monthly base estimate USD |
 | --- | --- | ---: |
-| Authoritative application VM | `Standard_D4as_v5`, 4 vCPU, 16 GiB, Ubuntu 24.04 LTS x64/Gen2 | 151.84 |
-| OS disk | 128 GiB Standard SSD LRS, E10 | 9.60 |
-| Persistent application/data disk | 256 GiB Premium SSD LRS, P15; non-shared, separate from OS | 41.81 |
-| Blob objects | StorageV2, flat namespace, Hot LRS, 100 GB **usage assumption** | 1.96 |
+| Application VM | `Standard_B2als_v2`, 2 vCPU, 4 GiB, Ubuntu 24.04 LTS x64/Gen2 | 31.54 |
+| Persistent OS/application disk | 64 GiB Standard SSD LRS, E6; non-ephemeral | 4.80 |
+| Blob objects | StorageV2, flat namespace, Hot LRS, 20 GB usage assumption | 0.39 |
 | Public ingress/explicit egress IP | One Standard static IPv4 attached to the VM NIC | 3.65 |
-| Blob private endpoint | One Standard private endpoint | 7.30 |
-| Blob private DNS | One private zone linked to the VNet | 0.50 |
-| **Base subtotal** | **One initial target VM** | **216.66** |
+| Blob subnet service endpoint | `Microsoft.Storage`, selected-subnet/default-deny firewall | No additional endpoint charge |
+| Separate data disk / Private Endpoint / private DNS zone | Not selected for the initial budget demo | 0.00 |
+| **Base subtotal** | **Single 4 GiB demo VM** | **40.38** |
 
-The 100 GB Blob figure is an estimate of consumption, not a prepaid storage
-package or a required minimum allocation. Separate containers in one account do
-not each require another private endpoint; separate accounts usually do.
+The 20 GB Blob figure is an estimate of consumption, not a prepaid storage
+package. Increasing storage consumption to 100 GB makes this base approximately
+USD 41.95/month, before variable charges. Source API/web/toolkit images observed
+on AWS total approximately 1.6 GB; the approximately 20 GB application dataset,
+OS, images and temporary processing need a measured free-space budget on 64 GiB.
+Do not copy the whole 90 GiB shared AWS root into this smaller target.
 
-Variable items not included: disk I/O transaction meters, Blob read/write
-operations, Private Link data processing, DNS queries, internet/inter-region
-egress, snapshots/backups, log ingestion/alerts, paid security/support services,
-model/embedding calls, source AWS egress, exchange rates and taxes. Retained
-versions and soft-deleted objects count toward storage consumption.
+Variable items not included: disk transactions, Blob operations, DNS/traffic
+charges where applicable, internet/inter-region egress, snapshots/backups, logs,
+optional paid services, model/embedding calls, AWS source egress, FX and taxes.
+The retail API later rate-limited refresh requests; the price record preserves
+successful observations from the same day/session. Recheck the subscription
+quote before purchasing.
 
-The Premium disk estimate is for an ordinary non-shared disk, not the additional
-shared-disk mount meter. Source databases/Qdrant stay on a mounted persistent
-managed disk; putting originals in Blob does not move a live SQLite/DuckDB file
-into a distributed database.
+### What changed from the expensive estimate
 
-### How many VMs to buy initially
+- A 4 GiB burstable B-series replaces the 16 GiB D-series VM.
+- One persistent 64 GiB Standard SSD hosts OS and application state. The existing
+  `/srv/coair` bind mounts remain persistent; no extra Premium data disk is needed.
+- Blob uses an authenticated, selected-subnet service endpoint/firewall path.
+  A paid Private Endpoint and private DNS zone are optional alternatives.
+- One VM hosts API, Qdrant, web and the existing toolkit when required. No new
+  paid database, search cluster, GPU, registry or public load balancer is assumed.
 
-Start with **one D4as_v5 Azure target**, while AWS remains the production
-authority. Use an isolated target dataset, staging hostname and provider test
-modes for the migration rehearsal. After acceptance, restore the final source
-delta into the separate production state root/container and qualify the
-production hostname/image configuration before traffic cutover.
+Do not make Blob anonymous or enable unrestricted network access to save money.
+The normal Blob HTTPS endpoint remains public-addressed, but the storage firewall
+allows the selected Azure subnet only and the API identity needs its data role.
+Service endpoints are not Private Link: they do not allocate a private Blob IP.
 
-For ongoing independent staging, an **optional** `Standard_D2as_v5` (2 vCPU,
-8 GiB) has a retail compute estimate of USD 75.92/month if always running. A
-256 GiB E15 Standard SSD adds USD 19.20/month plus transactions; OS/IP/private
-networking may add costs too. This smaller VM is not qualified for equivalent
-concurrent OCR/report load. Schedule/deallocate it when unused; disks, public
-IPs, private endpoints, DNS and retained backups can continue billing.
+### Demo schedule and 4 GiB qualification
 
-Multiple stateless web hosts can be added later. Do not purchase several API
-VMs expecting local queues/databases to synchronize automatically. This release
-deliberately permits only one authoritative stateful API owner.
+VM compute is approximately USD 0.0432/hour. As an illustration, 40 VM-running
+hours/month cost USD 1.73 compute plus approximately USD 8.84 retained disk/IP/
+20-GB-Blob base: about USD 10.57/month before variable usage. Deallocate the VM
+when unused; shutting down only inside Linux is not the same billing action.
+Retained disks/IP/Blob/backups keep billing. Allow startup and warm-up before a
+meeting; use images already built by CI rather than building on the small VM.
+
+**4 GiB full-stack performance is not yet qualified.** Validate representative
+chat/SQL, chronology, Word/Excel output, source opening and scanned upload/OCR
+with the actual corpus. Include the toolkit, warm/cold runs, process RSS, host
+free memory, OOM events, swap and Azure CPU credit balance.
+
+Keep ingestion/OCR concurrency at one and avoid simultaneous bulk ingestion,
+large reports and multiple demo users until measured. B-series CPU credits can
+run out during sustained OCR/indexing; that affects throughput/latency. Do not
+silently shorten reports, lower evidence coverage, change embeddings or disable
+agents to force the small VM to pass. Off-VM consistent backups and rollback
+remain required. Add storage or change size only if measurements justify it.
 
 ## AWS baseline and matching Azure selection
 
@@ -128,21 +146,21 @@ The AWS host was rechecked read-only on 2026-11-05:
 
 | Requirement | Current AWS host | Selected Azure target |
 | --- | --- | --- |
-| CPU | 2 vCPU, Intel Xeon Platinum 8175M | 4 vCPU, `Standard_D4as_v5` |
-| RAM | 7,818 MiB reported, approximately 8 GB tier | 16 GiB |
+| CPU | 2 vCPU, Intel Xeon Platinum 8175M | 2 burstable vCPU, `Standard_B2als_v2` |
+| RAM | 7,818 MiB reported, approximately 8 GB tier | 4 GiB budget demo target |
 | Instruction architecture | x86_64 | x64; do not substitute ARM |
 | Host OS | Ubuntu 24.04.4 LTS | Ubuntu 24.04 LTS Gen2 |
 | Application Python | 3.11.16 in the source API container | The qualified Python 3.11 API image |
-| Current root filesystem | Approximately 154 GiB usable, 90 GiB occupied across several applications | Separate 128 GiB OS + 256 GiB persistent app data disk |
+| Current root filesystem | Approximately 154 GiB usable, 90 GiB occupied across several applications | Single 64 GiB persistent OS/application disk |
 | RAG data | Approximately 17 GiB originals + 1.9 GiB storage + 1.3 GiB Qdrant | Persistent restored state + private Blob originals/canonical assets |
 | API/Qdrant memory limits | No explicit Docker limit; bounded by host memory | No new API/Qdrant Docker RAM cap in this profile |
 | Toolkit | Separate container, 2 GiB memory cap, observed approximately 183 MiB idle | Preserve upstream toolkit image and its 2 GiB cap |
 | Inference/embeddings | Cloud generation; CPU fastembed and Qdrant | Preserve providers/models/embedding dimensions; no GPU purchase |
 
-The Azure candidate exceeds the observed AWS host's CPU count and RAM and has
-more disk capacity. This is a hardware requirement match, **not a measured claim
-of twice the speed or equivalent answers**. CPU generation/vendor, network path,
-provider latency and disk behaviour differ. Equal-corpus chat/chronology/toolkit,
+The current AWS host has more RAM than the budget Azure target. The 4 GiB
+selection follows the user's prior small-AWS experience and demo cost preference;
+it is not proof of equal peak concurrency or response time. CPU credit behaviour,
+network, disk and process memory differ. Equal-corpus chat/chronology/toolkit,
 OCR, report delivery and warm/cold query measurements remain acceptance gates.
 
 The old AWS RAG application is not byte-identical to the Coair integration branch.
@@ -190,8 +208,8 @@ existing resources:
 1. Resource groups: `rg-coair-prod-<region>`, and a separate staging group when
    independently operated. Tags: Application, Environment, Owner, CostCenter,
    DataClassification. Check policy before selecting names or region.
-2. VNet/subnets with non-overlapping address ranges. Reserve separate application
-   and private-endpoint subnets; preserve room for future web hosts.
+2. VNet/subnets with non-overlapping address ranges. Use an application subnet with a Microsoft.Storage service endpoint;
+   reserve extra subnet space only for future private endpoints/web hosts.
 3. Network security group and one Standard static public IP. Public ingress:
    HTTPS 443; HTTP 80 only if the chosen TLS/redirect method needs it. SSH 22 only
    from the approved administrator IP/VPN. API 8000, Qdrant 6333 and toolkit 8501
@@ -200,13 +218,17 @@ existing resources:
    provides an explicit method. New private-only hosts will need an approved
    NAT Gateway/firewall/other egress method and an updated cost estimate. Do not
    assume Azure assigns usable default internet egress on a new subnet.
-5. The x64 Ubuntu VM with the chosen supported security profile and its separate
-   persistent data disk, mounted by UUID. Preserve `/app/data` and `/app/storage`
-   container paths. Avoid temporary/ephemeral disk for application state.
-6. StorageV2 account, private containers, HTTPS/TLS policy, private endpoint and
-   private DNS zone `privatelink.blob.core.windows.net` linked to the VNet. The
-   app still uses `https://<account>.blob.core.windows.net`; verify its private
-   resolution **inside the API container**.
+5. The x64 Ubuntu VM with a persistent 64 GiB Standard SSD OS disk. Put the
+   host application state in `/srv/coair` and preserve `/app/data` and
+   `/app/storage` container paths. Keep off-VM backups. No ephemeral disk or
+   writable container layer may be the sole application state store.
+6. StorageV2 account, private containers and HTTPS/TLS. Enable the application
+   subnet's Microsoft.Storage service endpoint, set the storage firewall default
+   to Deny and allow that subnet. Public network access is limited to selected
+   networks, not Disabled and not All networks. The standard Blob hostname
+   resolves normally; verify authorized reads from the API and denial outside
+   approved networks. If Private Link is later selected, add its private DNS
+   and costs explicitly instead.
 7. Enable managed identity and approve container-scoped Blob data access. The
    browser uploads to the authenticated API, not directly to a public Blob/SAS
    endpoint. Never solve a 403 by allowing anonymous access.
@@ -255,7 +277,7 @@ the personally owned account sign-in normally, then run the read-only checker wi
 az login --tenant <target-tenant-id>
 python3 deploy/azure/account_check.py \
   --tenant <target-tenant-id> --subscription <target-subscription-id> \
-  --region germanywestcentral --vm-size Standard_D4as_v5 --vm-count 1
+  --region germanywestcentral --vm-size Standard_B2als_v2 --vm-count 1
 ```
 
 If a specific zone is required, include `--zone <zone-number>`. If two identical
@@ -277,15 +299,15 @@ Complete the following account-specific gates before provisioning:
 | Creation/RBAC | Effective permission to deploy and to approve intended role assignments | Subscription/RBAC administrator |
 | Providers | Compute, Network and Storage registered; enable additional selected services deliberately | Authorized subscription operator |
 | Region/policy | Data residency, allowed regions/SKUs, mandatory tags, permitted public IP and private endpoint policy | Account owner/customer when applicable |
-| vCPU quota | At least four **available** regional and Dasv5-family vCPUs for this VM; include all simultaneous hosts | Subscription operator |
+| vCPU quota | At least two **available** regional and Basv2-family vCPUs for this VM; include all simultaneous hosts | Subscription operator |
 | VM capacity | Selected SKU/zone can actually allocate; a public price or sufficient quota is not a capacity reservation | Deployment operator/Azure support |
 | Storage name | Proposed globally unique storage account name is available | Operator |
 | DNS/TLS | Control over the production/staging DNS zone and ability to issue/renew TLS | Domain owner |
 | Image pulls | GHCR access from the target and matching tested API/web commit | Deployment operator |
-| Runtime network | Private Blob DNS, managed identity, outbound HTTPS, model/mail/database endpoints | Network/operator |
+| Runtime network | Blob service-endpoint/firewall/identity access, DNS and explicit outbound HTTPS | Network/operator |
 
-If the initial SKU lacks capacity, evaluate the documented D4s_v5 x64 alternative
-or another approved region and reprice/retest it. Do not switch silently to ARM,
+If the initial SKU lacks capacity, evaluate another available 4 GiB x64 SKU
+or an approved region, and reprice/retest it. Do not switch silently to ARM,
 Spot, another jurisdiction or a smaller RAM tier to make a deployment succeed.
 
 ## 6. Information to have ready before migration day
@@ -344,3 +366,9 @@ Additional account/payment references checked 2026-11-05:
 - [Declined cards and virtual/prepaid restrictions](https://learn.microsoft.com/en-us/azure/cost-management-billing/troubleshoot-billing/troubleshoot-declined-card)
 - [Signup and address verification](https://learn.microsoft.com/en-us/azure/cost-management-billing/troubleshoot-subscription/troubleshoot-azure-sign-up)
 - [Direct MCA billing currencies](https://learn.microsoft.com/en-us/azure/cost-management-billing/microsoft-customer-agreement/microsoft-customer-agreement-faq)
+
+Budget-profile references:
+
+- [B2als_v2 size and CPU credit behaviour](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/basv2-series)
+- [Service endpoints have no additional endpoint charge](https://learn.microsoft.com/en-us/azure/virtual-network/virtual-networks-faq)
+- [Selected-subnet Blob firewall access](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security-virtual-networks)

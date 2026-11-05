@@ -61,13 +61,25 @@ records; creating an Azure tenant does not migrate or replace their logins.
 
 ## 3. Create private Blob storage and grant the API identity access
 
+For the current budget demo, the selected network path is a **Microsoft.Storage
+service endpoint** on the application subnet, with storage public network access
+limited to selected networks, firewall default Deny, an explicit allowed subnet,
+private containers and managed-identity data authorization. This uses the normal
+public-addressed Blob hostname; it is not a Private Link/private-IP endpoint.
+There is no separate private endpoint or private DNS zone charge in that profile.
+Verify both authorized API access and rejected unapproved-network access.
+
+The Private Link steps below are an optional stricter network alternative. Do
+not disable public network access when using only a service endpoint: that would
+block the selected access path. Never choose All networks or anonymous access.
+
 1. In the Azure portal, create a Standard StorageV2 account. Use the flat Blob
    namespace for this migration; do not introduce ADLS Gen2/HNS as another
    simultaneous change. Select Hot storage and the agreed redundancy policy.
 2. Require HTTPS and TLS 1.2+, disable anonymous Blob access, and create private
    containers. Separate staging and production; do not share the staging
    container with a running production API.
-3. Create the Blob private endpoint and private DNS zone linked to the API VNet.
+3. If selecting Private Link, create its endpoint and private DNS zone linked to the API VNet.
    Put the migration host on an authorized network path too. Disable public
    storage network access after the private path is verified; an Entra login
    alone does not bypass network policy.

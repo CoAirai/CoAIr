@@ -47,6 +47,17 @@ class AccountCheckTests(unittest.TestCase):
     def test_planned_second_vm_counts_towards_both_quotas(self):
         self.assertFalse(self.assess(count=2)["read_only_prerequisites_passed"])
 
+    def test_budget_bseries_uses_its_own_family_and_two_vcpus(self):
+        self.skus[0].update(name="Standard_B2als_v2", family="standardBASv2Family",
+                            capabilities=[{"name": "vCPUs", "value": "2"}])
+        self.usage = [{"name": {"value": name}, "limit": 2, "currentValue": 0}
+                      for name in ["cores", "standardBASv2Family"]]
+        report = check.assess(self.account, self.providers, self.skus, self.usage,
+                              tenant="company", subscription="subscription",
+                              region="germanywestcentral", size="Standard_B2als_v2")
+        self.assertTrue(report["read_only_prerequisites_passed"])
+        self.assertTrue(all(row["required_vcpus"] == 2 for row in report["vcpu_quotas"]))
+
     def test_missing_provider_sku_and_quota_are_not_silently_accepted(self):
         self.providers["Microsoft.Storage"] = "NotRegistered"
         self.usage.pop()
