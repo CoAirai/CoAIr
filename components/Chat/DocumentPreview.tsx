@@ -60,10 +60,14 @@ const DocumentPreview = () => {
     const [live, setLive] = useState<CoairDocContent | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [tableAnchor, setTableAnchor] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
-        if (openCitation) setPage(openCitation.page);
+        if (openCitation) {
+            setPage(openCitation.page);
+            setTableAnchor(null);
+        }
     }, [openCitation]);
 
     useEffect(() => {
@@ -98,7 +102,7 @@ const DocumentPreview = () => {
             session.accessToken,
             session.projectId,
             citation.documentId,
-            { anchor: `page_${page}`, fileName: citation.name }
+            { anchor: tableAnchor ?? `page_${page}`, fileName: citation.name }
         )
             .then((data) => {
                 if (cancelled) return;
@@ -137,6 +141,7 @@ const DocumentPreview = () => {
         citation?.documentId,
         citation?.name,
         page,
+        tableAnchor,
         session?.accessToken,
         session?.projectId,
     ]);
@@ -254,7 +259,7 @@ const DocumentPreview = () => {
                                         className="mx-auto w-full"
                                     />
                                 )}
-                                {!loading && !error && live?.type === "table" && <SourceTable content={live} />}
+                                {!loading && !error && live?.type === "table" && <SourceTable content={live} onRowsChange={setTableAnchor} />}
                                 {!loading && !hasImage && live?.type !== "table" && (
                                     <div>
                                         <div className="text-label-xs uppercase tracking-[0.18em] text-soft-400">
@@ -395,7 +400,7 @@ const DocumentPreview = () => {
                                     !hasImage &&
                                     isLive &&
                                     live?.type === "table" && (
-                                        <SourceTable content={live} />
+                                        <SourceTable content={live} onRowsChange={setTableAnchor} />
                                     )}
                                 {!loading &&
                                     !hasImage &&

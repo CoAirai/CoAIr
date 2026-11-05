@@ -3169,11 +3169,14 @@ class DataAnalyzerSQL:
 
 # Singleton
 _data_analyzer: Optional[DataAnalyzerSQL] = None
+_data_analyzer_lock = threading.Lock()
 
 
 def get_data_analyzer() -> DataAnalyzerSQL:
     """Get or create DataAnalyzerSQL singleton."""
     global _data_analyzer
     if _data_analyzer is None:
-        _data_analyzer = DataAnalyzerSQL()
+        with _data_analyzer_lock:
+            if _data_analyzer is None:
+                _data_analyzer = DataAnalyzerSQL()
     return _data_analyzer

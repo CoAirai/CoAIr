@@ -5,6 +5,7 @@ DuckDB-backed correspondence table for fast SQL queries on notices.
 No external graph database required.
 """
 import json
+import threading
 import re
 from pathlib import Path
 from datetime import datetime
@@ -151,8 +152,8 @@ class LightGraph:
     def _sync_notices_to_duckdb(self):
         """Create and populate the notices DuckDB table from graph nodes."""
         try:
-            self._db.execute("DROP TABLE IF EXISTS notices")
-            self._db.execute("""
+            self._db.cursor().execute("DROP TABLE IF EXISTS notices")
+            self._db.cursor().execute("""
                 CREATE TABLE notices (
                     doc_id VARCHAR,
                     date VARCHAR,
@@ -172,7 +173,7 @@ class LightGraph:
             for doc_id, node in self.graph.nodes.items():
                 topics_str = ", ".join(node.get("topics", []) or [])
                 actions_str = ", ".join(node.get("actions", []) or [])
-                self._db.execute(
+                self._db.cursor().execute(
                     "INSERT INTO notices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         doc_id,
@@ -220,7 +221,7 @@ class LightGraph:
                 sql = sql.replace(f"{{{i}}}", g)
 
             try:
-                result = self._db.execute(sql).fetchdf()
+                result = self._db.cursor().execute(sql).fetchdf()
                 if result.empty:
                     continue
 
@@ -295,7 +296,7 @@ class LightGraph:
             try:
                 topics_str = ", ".join(notice.key_topics or [])
                 actions_str = ", ".join(getattr(notice, 'actions', []) or [])
-                self._db.execute(
+                self._db.cursor().execute(
                     "INSERT INTO notices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         notice.doc_id, notice.date, notice.sender,
@@ -940,7 +941,7 @@ class LightGraph:
             """
             params.append(limit)
 
-            rows = self._db.execute(sql, params).fetchall()
+            rows = self._db.cursor().execute(sql, params).fetchall()
             cols = ["doc_id", "date", "sender", "recipient", "subject",
                     "doc_type", "direction", "file_name", "topics", "actions"]
 
@@ -1514,7 +1515,7 @@ class LightGraph:
                 LIMIT ?
             """
             # Membership is applied in SQL before ranking and limiting.
-            rows = self._db.execute(
+            rows = self._db.cursor().execute(
                 sql, params + sorted(scope) + where_params + [limit]
             ).fetchall()
             cols = ["doc_id", "file_name", "date", "sender", "recipient",
@@ -1612,13 +1613,16 @@ class LightGraph:
 
 # Singleton
 _graph: Optional[LightGraph] = None
+_graph_lock = threading.Lock()
 
 
 def get_light_graph() -> LightGraph:
     """Get or create LightGraph singleton."""
     global _graph
     if _graph is None:
-        _graph = LightGraph()
+        with _graph_lock:
+            if _graph is None:
+                _graph = LightGraph()
     return _graph
 
 

@@ -214,3 +214,18 @@ def test_catalog_viewer_prefers_complete_original_cells_over_imported_subset(vie
     selected = service._serve_excel_file(str(path), 'sheet_Sheet1_rows_3_4', raw_grid=True)
     assert [row['A'] for row in selected.rows] == ['N1', 'N2']
     assert selected.row_from == 3 and selected.row_to == 4
+
+
+def test_original_workbook_pages_keep_sheet_and_cover_every_row(tmp_path):
+    pd = pytest.importorskip("pandas")
+    path = tmp_path / "all-rows.xlsx"
+    pd.DataFrame({"A": range(1, 74)}).to_excel(path, sheet_name="Register", header=False, index=False)
+    service = DocumentService()
+    first = service._serve_excel_file(str(path), raw_grid=True)
+    assert first.sheet_name == "Register"
+    assert (first.row_from, first.row_to, first.total_rows) == (1, 50, 73)
+    last = service._serve_excel_file(str(path), "sheet_Register_rows_51_100", raw_grid=True)
+    assert (last.row_from, last.row_to, last.total_rows) == (51, 73, 73)
+    back = service._serve_excel_file(str(path), "sheet_Register_rows_1_50", raw_grid=True)
+    assert back.rows == first.rows
+    assert [row["A"] for row in first.rows + last.rows] == list(range(1, 74))

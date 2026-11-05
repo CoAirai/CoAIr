@@ -645,7 +645,7 @@ class DocumentService:
         match = re.fullmatch(r"sheet_(.+)_rows_(\d+)_(\d+)", anchor or "")
         if not match:
             return "", None, None
-        row_from = max(2, int(match.group(2)))
+        row_from = max(1, int(match.group(2)))
         row_to = max(row_from, int(match.group(3)))
         return match.group(1), row_from, row_to
 
@@ -759,7 +759,10 @@ class DocumentService:
                     file_path, nrows=row_count, **read_options,
                 )
             else:
-                sheet = requested_sheet or 0
+                if not requested_sheet:
+                    with pd.ExcelFile(file_path) as workbook:
+                        requested_sheet = workbook.sheet_names[0]
+                sheet = requested_sheet
                 df = pd.read_excel(
                     file_path, sheet_name=sheet,
                     nrows=row_count, **read_options,

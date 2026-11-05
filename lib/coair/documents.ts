@@ -10,6 +10,8 @@ export type CoairDocContent = {
     columns?: string[];
     rows?: Record<string, unknown>[];
     total_rows?: number;
+    row_from?: number;
+    row_to?: number;
     error?: string | null;
     sheet_name?: string;
 };
@@ -29,4 +31,12 @@ export async function fetchDocContent(
         `/docs/${id}/content${qs ? `?${qs}` : ""}`,
         { token, projectId }
     );
+}
+
+/** Fetch one bounded row window while keeping the source workbook and sheet. */
+export function sourceRowAnchor(content: CoairDocContent, direction: -1 | 1): string {
+    const start = direction === 1
+        ? (content.row_to ?? (content.rows?.length ?? 0)) + 1
+        : Math.max(1, (content.row_from ?? 1) - 50);
+    return `sheet_${content.sheet_name || "Sheet1"}_rows_${start}_${start + 49}`;
 }

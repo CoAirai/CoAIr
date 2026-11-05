@@ -125,6 +125,9 @@ class _StubGraph:
         self._notices_table_ready = True
         self._db = self
 
+    def cursor(self):
+        return self
+
     def execute(self, sql, params):  # noqa: D401 - DuckDB stand-in
         return SimpleNamespace(fetchall=lambda: self._rows)
 

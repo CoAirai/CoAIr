@@ -213,3 +213,54 @@ def test_original_sheet_answer_has_clickable_source_without_fabricating_sql(monk
     assert live.citations[0].anchor == 'sheet_INTC Register_rows_1_73'
     assert raw['sources'][0]['type'] == 'structured_data'
     assert build_chat_response(raw).citations == live.citations
+
+
+def test_parallel_graph_searches_keep_separate_results_and_project_scope():
+    import duckdb
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from src.light_graph import LightGraph
+    con = duckdb.connect(':memory:')
+    con.execute('CREATE TABLE notices(doc_id VARCHAR,file_name VARCHAR,date VARCHAR,sender VARCHAR,recipient VARCHAR,subject VARCHAR,doc_type VARCHAR,topics VARCHAR,actions VARCHAR,direction VARCHAR)')
+    con.execute("INSERT INTO notices VALUES ('a','a.pdf','2008-01-01','s','r','utilities notice','notice','utilities','action','in'),('b','b.pdf','2009-01-01','s','r','utilities notice','notice','utilities','action','in')")
+    barrier = threading.Barrier(2, timeout=5)
+    class Cursor:
+        def __init__(self):
+            self.real = con.cursor()
+        def execute(self, *a, **kw):
+            result = self.real.execute(*a, **kw)
+            barrier.wait()
+            return result
+    graph = object.__new__(LightGraph)
+    graph._db = SimpleNamespace(cursor=Cursor)
+    graph._notices_table_ready = True
+    graph._project_doc_ids = lambda project: {project}
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(graph.search_broad, ['utilities'], project_id=project) for project in ['a','b']]
+            results = [f.result(timeout=10) for f in futures]
+        assert [[row['doc_id'] for row in values] for values in results] == [['a'], ['b']]
+    finally:
+        con.close()
+
+
+@pytest.mark.parametrize('module_name,attribute,class_name,getter', [
+    ('src.light_graph', '_graph', 'LightGraph', 'get_light_graph'),
+    ('src.data_analyzer_sql', '_data_analyzer', 'DataAnalyzerSQL', 'get_data_analyzer'),
+])
+def test_concurrent_initialization_keeps_one_database_instance(monkeypatch,module_name,attribute,class_name,getter):
+    import importlib,time,threading
+    from concurrent.futures import ThreadPoolExecutor
+    module=importlib.import_module(module_name)
+    created=[]
+    def construct():
+        time.sleep(.02)
+        value=object();created.append(value);return value
+    monkeypatch.setattr(module,attribute,None)
+    monkeypatch.setattr(module,class_name,construct)
+    barrier=threading.Barrier(6,timeout=5)
+    def get():
+        barrier.wait();return getattr(module,getter)()
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        values=list(pool.map(lambda _:get(),range(6)))
+    assert len(created)==1 and all(v is created[0] for v in values)
