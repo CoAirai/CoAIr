@@ -133,11 +133,17 @@ class LexicalIndex:
                     params.extend(list(doc_ids))
                 params.append(top_k)
                 rows = con.execute(
+                    # Rank IDs first. Materializing every matching chunk's full
+                    # text can exhaust RAM even when only a few hits are returned.
                     "WITH scored AS MATERIALIZED ("
-                    "SELECT chunk_id, doc_id, file_name, page_number, text, "
+                    "SELECT chunk_id, "
                     "fts_main_chunks.match_bm25(chunk_id, ?) AS score "
-                    f"FROM chunks WHERE {where}) "
-                    "SELECT * FROM scored WHERE score IS NOT NULL ORDER BY score DESC LIMIT ?",
+                    f"FROM chunks WHERE {where}), ranked AS MATERIALIZED ("
+                    "SELECT chunk_id, score FROM scored WHERE score IS NOT NULL "
+                    "ORDER BY score DESC, chunk_id LIMIT ?) "
+                    "SELECT c.chunk_id, c.doc_id, c.file_name, c.page_number, c.text, r.score "
+                    "FROM ranked r JOIN chunks c ON c.chunk_id=r.chunk_id "
+                    "ORDER BY r.score DESC, c.chunk_id",
                     params,
                 ).fetchall()
                 return [

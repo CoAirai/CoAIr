@@ -52,6 +52,24 @@ def test_warm_builds_a_bm25_index_scoped_to_the_project(stores):
     assert index._fts_available is True
 
 
+def test_ranked_hits_keep_complete_text_and_selected_document_scope(stores):
+    chunks, index = stores
+    text = ("utility diversion tram " + "supporting evidence " * 4000).rstrip()
+    chunks.add_chunks([
+        {"doc_id": "long", "file_name": "long.pdf", "page_number": 9,
+         "text": text, "project_id": "p1"},
+        {"doc_id": "outside", "file_name": "outside.pdf", "page_number": 1,
+         "text": "utility diversion tram", "project_id": "p2"},
+    ])
+    index.warm()
+    _wait_for_index(index)
+    hits = index.search_chunks("utility diversion", top_k=1,
+                               project_id="p1", doc_ids=["long", "outside"])
+    assert len(hits) == 1 and hits[0]["doc_id"] == "long"
+    assert hits[0]["text"] == text
+    assert hits[0]["page_number"] == 9 and hits[0]["lex_score"] > 0
+
+
 def test_stale_index_keeps_serving_and_rebuilds_in_background(stores, monkeypatch):
     chunks, index = stores
     index.warm()
