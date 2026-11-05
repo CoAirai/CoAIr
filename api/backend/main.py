@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 
 import sys
+import os
 import threading
 from pathlib import Path
 
@@ -282,7 +283,8 @@ def create_app() -> FastAPI:
                          "component": "runtime",
                          "error": _health_error or "runtime_initializing"},
             )
-        return {"status": "ok", "chronology": "ready", "vector_runtime": "ready"}
+        return {"status": "ok", "chronology": "ready", "vector_runtime": "ready",
+                "commit": os.getenv("COAIR_COMMIT_SHA", "development")}
 
     # Serve React frontend in production
     if _frontend_dist.exists():

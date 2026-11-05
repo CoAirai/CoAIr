@@ -1,0 +1,8 @@
+{
+  "environment": "azure-demo",
+  "subscription_id": "replace-with-the-actual-azure-subscription-id",
+  "vm_id": "replace-with-the-actual-azure-vm-id",
+  "public_origin": "https://replace-with-the-qualified-demo-hostname.example",
+  "qdrant_image": "qdrant/qdrant:v1.15.4",
+  "acceptance_complete": false
+}

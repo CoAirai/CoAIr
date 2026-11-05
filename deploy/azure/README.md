@@ -17,6 +17,10 @@ The current budget default is a 2-vCPU/4-GiB B2als_v2 VM with one persistent
 the demo can use a selected-subnet storage service endpoint with default-deny
 firewall rules and managed identity. No live network policy was changed.
 
+[CONTINUOUS_DEPLOYMENT.md](CONTINUOUS_DEPLOYMENT.md) describes the Azure-only
+push/build/test/release job, initial acceptance gate, private SSH route and
+application rollback. It remains disabled until the actual target is qualified.
+
 ## Supported topology
 
 - `all-in-one`: web + one authoritative API + private Qdrant on one Linux VM.
