@@ -74,8 +74,6 @@ CREATE INDEX IF NOT EXISTS idx_billing_ledger_user_time
     ON billing_ledger(username, created_at);
 CREATE INDEX IF NOT EXISTS idx_billing_ledger_project_time
     ON billing_ledger(project_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_billing_ledger_provider_key
-    ON billing_ledger(provider_key_ref, created_at);
 CREATE TRIGGER IF NOT EXISTS billing_ledger_no_update
 BEFORE UPDATE ON billing_ledger
 BEGIN

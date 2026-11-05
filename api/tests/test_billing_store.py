@@ -9,6 +9,30 @@ from src.billing_store import (
 from src.commerce_store import gb_to_bytes
 
 
+def test_legacy_ledger_is_upgraded_before_provider_key_index_without_rewriting_rows(tmp_path):
+    path = tmp_path / "legacy-users.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript("""
+            CREATE TABLE users(username TEXT PRIMARY KEY);
+            INSERT INTO users VALUES ('legacy');
+            CREATE TABLE billing_ledger (
+                event_id TEXT PRIMARY KEY, username TEXT NOT NULL,
+                project_id TEXT, created_at TEXT NOT NULL
+            );
+            INSERT INTO billing_ledger VALUES ('preserved', 'legacy', 'p1', '2026-10-21');
+        """)
+    BillingStore(path)
+    BillingStore(path)  # Restarting must remain idempotent.
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT * FROM billing_ledger").fetchall() == [
+            ('preserved', 'legacy', 'p1', '2026-10-21', '')
+        ]
+        indexes = {row[1] for row in conn.execute("PRAGMA index_list(billing_ledger)")}
+        assert 'idx_billing_ledger_provider_key' in indexes
+        with pytest.raises(sqlite3.IntegrityError, match='append-only'):
+            conn.execute("DELETE FROM billing_ledger")
+
+
 @pytest.fixture
 def billing(tmp_path):
     path = tmp_path / "users.db"
