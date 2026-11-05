@@ -54,6 +54,13 @@ services:
     environment:
       GEMINI_API_KEY: ${TOOLKIT_GEMINI_API_KEY:-}
       COAIR_URL: /
+    volumes:
+      - type: bind
+        source: /opt/coair-azure/toolkit-secrets.toml
+        target: /app/.streamlit/secrets.toml
+        read_only: true
+        bind:
+          create_host_path: false
     # Preserve the upstream session model; do not mount API secrets/documents.
     mem_limit: 2g
     healthcheck:

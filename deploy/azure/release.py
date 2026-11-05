@@ -97,10 +97,11 @@ def validate_compose(config, target, api, web):
         for volume in service.get("volumes", []):
             allowed = {"api": {"/app/data": STATE_ROOT / "data", "/app/storage": STATE_ROOT / "storage",
                                "/run/secrets/google_keys": ROOT / "provider-keys"},
-                       "qdrant": {"/qdrant/storage": STATE_ROOT / "qdrant"}}.get(name, {})
+                       "qdrant": {"/qdrant/storage": STATE_ROOT / "qdrant"},
+                       "toolkit": {"/app/.streamlit/secrets.toml": ROOT / "toolkit-secrets.toml"}}.get(name, {})
             if volume.get("type") != "bind" or allowed.get(volume.get("target")) != Path(volume.get("source", "")).resolve():
                 raise ValueError("Unexpected host mount; only restored Azure state is allowed")
-            if volume.get("target") == "/run/secrets/google_keys" and volume.get("read_only") is not True:
+            if volume.get("target") in {"/run/secrets/google_keys", "/app/.streamlit/secrets.toml"} and volume.get("read_only") is not True:
                 raise ValueError("Provider credentials must be read-only")
     api_volumes = services["api"].get("volumes", [])
     api_targets = {volume.get("target") for volume in api_volumes}

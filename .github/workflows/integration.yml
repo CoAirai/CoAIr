@@ -184,65 +184,28 @@ jobs:
       github.event_name != 'pull_request' &&
       vars.AZURE_DEPLOY_ENABLED == 'true' &&
       vars.AZURE_PUBLIC_ORIGIN != ''
-    environment: azure-demo
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     concurrency:
       group: coair-azure-release
       cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Connect the deploy runner to the approved private management network
-        if: vars.AZURE_USE_TAILSCALE == 'true'
-        uses: tailscale/github-action@v4
+      - name: Authenticate only the Azure demo deployment identity
+        uses: azure/login@v2
         with:
-          oauth-client-id: ${{ secrets.AZURE_TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.AZURE_TS_OAUTH_SECRET }}
-          tags: tag:coair-azure-ci
-      - name: Deploy the tested image pair only to the qualified Azure demo
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Release through the Azure control plane without runner SSH access
         env:
-          DEPLOY_HOST: ${{ secrets.AZURE_HOST }}
-          DEPLOY_USER: ${{ secrets.AZURE_SSH_USER }}
-          DEPLOY_KEY: ${{ secrets.AZURE_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.AZURE_KNOWN_HOSTS }}
+          VM_ID: ${{ vars.AZURE_VM_RESOURCE_ID }}
           PUBLIC_ORIGIN: ${{ vars.AZURE_PUBLIC_ORIGIN }}
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USER: ${{ github.actor }}
           API_IMAGE: ${{ needs.build.outputs.api_image }}
           WEB_IMAGE: ${{ needs.build.outputs.web_image }}
-          COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          : "${DEPLOY_HOST:?}" "${DEPLOY_USER:?}" "${DEPLOY_KEY:?}" "${KNOWN_HOSTS:?}"
-          python3 - <<'PY'
-          import os, re, sys
-          sys.path.insert(0, 'deploy/azure')
-          from release import public_origin
-          public_origin(os.environ['PUBLIC_ORIGIN'])
-          assert re.fullmatch(r'[A-Za-z0-9._-]+', os.environ['DEPLOY_HOST'])
-          assert re.fullmatch(r'[a-z_][a-z0-9_-]*', os.environ['DEPLOY_USER'])
-          PY
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/azure_key"
-          chmod 600 "$HOME/.ssh/azure_key"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          target="$DEPLOY_USER@$DEPLOY_HOST"
-          release="/opt/coair-azure/releases/$COMMIT"
-          azure_target_verified=0
-          cleanup() {
-            if [ "$azure_target_verified" = 1 ]; then
-              ssh -o StrictHostKeyChecking=yes -i "$HOME/.ssh/azure_key" "$target" \
-                "rm -rf -- '$release/registry'" || true
-            fi
-            rm -f "$HOME/.ssh/azure_key"
-          }
-          trap cleanup EXIT
-          # Verify Azure identity before uploading files or registry credentials.
-          ssh -o StrictHostKeyChecking=yes -i "$HOME/.ssh/azure_key" "$target" \
-            "python3 - --api-image '$API_IMAGE' --web-image '$WEB_IMAGE' --origin '$PUBLIC_ORIGIN' --check-only" < deploy/azure/release.py
-          azure_target_verified=1
-          ssh -o StrictHostKeyChecking=yes -i "$HOME/.ssh/azure_key" "$target" "mkdir -p '$release'"
-          git archive HEAD deploy/azure | ssh -o StrictHostKeyChecking=yes -i "$HOME/.ssh/azure_key" "$target" "tar -xf - -C '$release'"
-          printf '%s' "$REGISTRY_TOKEN" | ssh -o StrictHostKeyChecking=yes -i "$HOME/.ssh/azure_key" "$target" \
-            "docker --config '$release/registry' login ghcr.io -u '$REGISTRY_USER' --password-stdin"
-          ssh -o StrictHostKeyChecking=yes -i "$HOME/.ssh/azure_key" "$target" \
-            "DOCKER_CONFIG='$release/registry' python3 '$release/deploy/azure/release.py' --api-image '$API_IMAGE' --web-image '$WEB_IMAGE' --origin '$PUBLIC_ORIGIN'"
+        run: >-
+          python3 deploy/azure/run_command.py --vm-id "$VM_ID"
+          --api-image "$API_IMAGE" --web-image "$WEB_IMAGE" --origin "$PUBLIC_ORIGIN"

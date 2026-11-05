@@ -85,6 +85,15 @@ class AzureReleaseTests(unittest.TestCase):
         release.validate_compose(value, target, API, WEB)
         secret["read_only"] = False
         with self.assertRaises(ValueError): release.validate_compose(value, target, API, WEB)
+
+    def test_legacy_toolkit_secret_is_read_only_and_outside_customer_state(self):
+        value = config(); target = {"qdrant_image": "qdrant/qdrant:v1.15.4"}
+        secret = {"type": "bind", "source": "/opt/coair-azure/toolkit-secrets.toml",
+                  "target": "/app/.streamlit/secrets.toml", "read_only": True}
+        value["services"]["toolkit"] = {"volumes": [secret]}
+        release.validate_compose(value, target, API, WEB)
+        secret["read_only"] = False
+        with self.assertRaises(ValueError): release.validate_compose(value, target, API, WEB)
         secret.update(read_only=True, source="/etc")
         with self.assertRaises(ValueError): release.validate_compose(value, target, API, WEB)
 

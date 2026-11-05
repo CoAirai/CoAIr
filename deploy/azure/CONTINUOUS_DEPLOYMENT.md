@@ -53,62 +53,68 @@ deployment until the account, VM, restored data and initial acceptance exist.
    and acceptance above. The release script checks Azure's local IMDS response
    before Docker mutations; an AWS/DGX host or wrong Azure VM is rejected.
 
-## GitHub configuration
+## GitHub configuration: branch-scoped Azure OIDC
 
-Set up the `azure-demo` GitHub environment with the approved deployment operator
-and these secrets. Keep credentials out of Git and chat:
+The actual target uses Azure Run Command with a user-assigned managed identity.
+No GitHub SSH key, Tailscale OAuth client or internet-wide SSH rule is required.
+The existing AWS `integration` environment and deployment job are unchanged.
 
-| Secret | Purpose |
+Repository variables:
+
+| Variable | Purpose |
 | --- | --- |
-| `AZURE_HOST` | Azure VM's stable SSH hostname or IPv4 address |
-| `AZURE_SSH_USER` | Dedicated approved deployment user |
-| `AZURE_SSH_KEY` | Its SSH private key; grant only the intended VM access |
-| `AZURE_KNOWN_HOSTS` | Host-key record verified through a trusted VM/console path |
+| `AZURE_CLIENT_ID` | Deployment managed identity client ID |
+| `AZURE_TENANT_ID` | Approved Azure tenant |
+| `AZURE_SUBSCRIPTION_ID` | Approved Azure subscription |
+| `AZURE_VM_RESOURCE_ID` | Exact approved VM resource ID |
+| `AZURE_PUBLIC_ORIGIN` | Exact qualified HTTPS application origin |
+| `AZURE_DEPLOY_ENABLED` | Set to `true` only after initial acceptance |
 
-The operator needs access to its deployment files and Docker. No Docker socket
-or deployment/SSH secrets are mounted into the application containers. GitHub
-uses a temporary job token to pull the same repository's GHCR packages; verify
-the organization package access rules. The temporary remote registry credentials
-are deleted when the job exits. Host key checking stays enabled.
+Configure a federated credential with issuer
+`https://token.actions.githubusercontent.com`, audience
+`api://AzureADTokenExchange`, and the exact case-sensitive subject:
+`repo:CoAirai/CoAIr:ref:refs/heads/codex/azure-migration-preparation`.
+The job deliberately has no GitHub environment so this exact branch subject
+is used. It requires `contents: read`, `packages: read`, and `id-token: write`.
+No Azure environment was present in this repository; its existing `integration`
+environment remains untouched. Creating a new environment requires repository
+admin permission, which the current operator does not have. The exact-branch
+federation does not require changing repository approval/security settings.
 
-### Management network from GitHub to the VM
+Assign the deployment identity only these actions, scoped to this one VM:
+`Microsoft.Compute/virtualMachines/read`,
+`Microsoft.Compute/virtualMachines/instanceView/read`, and
+`Microsoft.Compute/virtualMachines/runCommand/action`.
+It receives no subscription-wide Contributor role and no Blob data role.
+The API VM's separate system-assigned identity retains container-scoped Blob
+access. Run Command is host execution authority; restrict the identity to the
+trusted deployment branch and this VM. It cannot reach AWS or DGX through this
+route.
 
-The GitHub-hosted runner needs an approved SSH route; an NSG allowing only the
-operator's home IP will block it. Do not open SSH to the entire internet to make
-the workflow pass. The prepared private option is `AZURE_USE_TAILSCALE=true`:
+`run_command.py` requires the checkout and image SHAs to match, sends only the
+release guard and Compose archive through the Azure control plane, checks VM
+identity/acceptance before changing release directories, and runs the normal
+release controller as the operator owning `/opt/coair-azure`. The current GHCR
+image packages were qualified for anonymous pulls on the target; no registry
+credential enters the command payload. Package visibility is not changed here.
+The helper requires an explicit success marker plus an independent public
+revision/HTML smoke check; Azure agent completion alone is not release success.
 
-- Join the Azure VM to the approved tailnet and set `AZURE_HOST` to its Tailscale
-  IPv4/MagicDNS hostname, with matching verified SSH host-key entry.
-- Approve a narrowly scoped Tailscale OAuth client for ephemeral CI nodes with
-  `tag:coair-azure-ci`. Store `AZURE_TS_OAUTH_CLIENT_ID` and `AZURE_TS_OAUTH_SECRET`
-  in the GitHub environment. Approve its tags/permissions at setup time.
-- Restrict the tailnet access rule to this CI tag -> this Azure demo host on
-  TCP 22. It must not grant access to AWS, DGX or unrelated devices.
-  Existing broad wildcard grants must not give this tag wider access; include
-  negative access checks when qualifying the management route.
-- Verify the route from an actual workflow runner before enabling deployment.
-  The optional Tailscale action does not modify tailnet access policy by itself.
-
-If using another approved fixed/private runner route, leave that variable false
-and qualify its NSG/routing separately. Check the applicable tailnet plan/terms;
-no new paid VPN service or broad access grant is included in the VM estimate.
-Official reference: https://tailscale.com/docs/integrations/github/github-action.
-
-Set repository variable `AZURE_DEPLOY_ENABLED=true` only after all one-time
-setup/acceptance steps pass. It defaults to disabled. If per-push human approval
-is not desired, do not add an environment reviewer requirement; branch tests,
-VM identity, mount/image checks and post-release smoke remain mandatory.
+Official references:
+- https://github.com/Azure/login#login-with-openid-connect-oidc-recommended
+- https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust-user-assigned-managed-identity
+- https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/compute
 
 ## What each enabled push does
 
 1. Run release-guard, Azure readiness/inventory/storage and cloud boundary tests.
 2. Build the immutable API and origin-specific web images; run the existing API,
    account/role/billing, PostgreSQL, OCR and web checks before publishing.
-3. Connect only through the Azure-specific SSH secrets. Run the target/IMDS check
-   from Python stdin before uploading files or registry credentials, then upload
-   that commit's small deployment bundle to its immutable release directory.
+3. Authenticate through the exact-branch Azure identity. Use Run Command on the
+   approved VM and run the target/IMDS check before extracting the immutable
+   Compose/release bundle. No registry/application credentials are uploaded.
 4. Verify target acceptance, Azure VM/subscription identity, matching image
-   commits, single API ownership, loopback ports, expected persistent mounts,
+   commits, single API ownership, loopback ports, expected persistent/secret mounts,
    unchanged Qdrant image and web origin/build labels. Serialize deployments.
 5. Pull/recreate **API and web only**. Qdrant/toolkit are not restarted/upgraded
    by application pushes, and no customer state is deleted or recopied.

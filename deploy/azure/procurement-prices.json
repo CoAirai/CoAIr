@@ -1,15 +1,15 @@
 {
   "retrieved_at_utc": "2026-11-05T16:20:06.989746+00:00",
   "currency": "USD",
-  "region": "germanywestcentral",
+  "region": "westeurope",
   "hours_per_month": 730,
   "prices": {
     "production_vm": {
-      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Virtual+Machines+Basv2+Series%27+and+armSkuName+eq+%27Standard_B2als_v2%27+and+meterName+eq+%27B2als+v2%27+and+armRegionName+eq+%27germanywestcentral%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
+      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Virtual+Machines+Basv2+Series%27+and+armSkuName+eq+%27Standard_B2als_v2%27+and+meterName+eq+%27B2als+v2%27+and+armRegionName+eq+%27westeurope%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
       "productName": "Virtual Machines Basv2 Series",
       "skuName": "Standard_B2als_v2",
       "meterName": "B2als v2",
-      "armRegionName": "germanywestcentral",
+      "armRegionName": "westeurope",
       "unitPrice": 0.0432,
       "unitOfMeasure": "1 Hour",
       "observed_on": "2026-11-05",
@@ -29,11 +29,11 @@
       "monthly_estimate_usd": 75.92
     },
     "os_disk": {
-      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Standard+SSD+Managed+Disks%27+and+meterName+eq+%27E6+LRS+Disk%27+and+armRegionName+eq+%27germanywestcentral%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
+      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Standard+SSD+Managed+Disks%27+and+meterName+eq+%27E6+LRS+Disk%27+and+armRegionName+eq+%27westeurope%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
       "productName": "Standard SSD Managed Disks",
       "skuName": "E6 LRS",
       "meterName": "E6 LRS Disk",
-      "armRegionName": "germanywestcentral",
+      "armRegionName": "westeurope",
       "unitPrice": 4.8,
       "unitOfMeasure": "1/Month",
       "observed_on": "2026-11-05",
@@ -65,28 +65,30 @@
       "monthly_estimate_usd": 19.2
     },
     "blob_storage": {
-      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27General+Block+Blob+v2%27+and+skuName+eq+%27Hot+LRS%27+and+meterName+eq+%27Hot+LRS+Data+Stored%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27germanywestcentral%27&currencyCode=USD",
+      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27General+Block+Blob+v2%27+and+skuName+eq+%27Hot+LRS%27+and+meterName+eq+%27Hot+LRS+Data+Stored%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27westeurope%27&currencyCode=USD",
       "productName": "General Block Blob v2",
       "skuName": "Hot LRS",
       "meterName": "Hot LRS Data Stored",
-      "armRegionName": "germanywestcentral",
+      "armRegionName": "westeurope",
       "unitPrice": 0.0196,
       "unitOfMeasure": "1 GB/Month",
       "effectiveStartDate": "2019-09-01T00:00:00Z",
       "estimated_quantity_per_month": 20,
-      "monthly_estimate_usd": 0.392
+      "monthly_estimate_usd": 0.392,
+      "observed_on": "2026-11-05"
     },
     "public_ip": {
-      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27IP+Addresses%27+and+skuName+eq+%27Standard%27+and+meterName+eq+%27Standard+IPv4+Static+Public+IP%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27germanywestcentral%27&currencyCode=USD",
+      "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27IP+Addresses%27+and+skuName+eq+%27Standard%27+and+meterName+eq+%27Standard+IPv4+Static+Public+IP%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27westeurope%27&currencyCode=USD",
       "productName": "IP Addresses",
       "skuName": "Standard",
       "meterName": "Standard IPv4 Static Public IP",
-      "armRegionName": "germanywestcentral",
+      "armRegionName": "westeurope",
       "unitPrice": 0.005,
       "unitOfMeasure": "1 Hour",
       "effectiveStartDate": "2018-06-01T00:00:00Z",
       "estimated_quantity_per_month": 730,
-      "monthly_estimate_usd": 3.65
+      "monthly_estimate_usd": 3.65,
+      "observed_on": "2026-11-05"
     },
     "private_endpoint": {
       "source_url": "https://prices.azure.com/api/retail/prices?%24filter=productName+eq+%27Virtual+Network+Private+Link%27+and+skuName+eq+%27Standard%27+and+meterName+eq+%27Standard+Private+Endpoint%27+and+priceType+eq+%27Consumption%27+and+armRegionName+eq+%27Global%27&currencyCode=USD",
@@ -122,10 +124,10 @@
   "base_monthly_estimate_usd": 40.38,
   "subscription_specific_quote_verified": false,
   "taxes_model_calls_traffic_io_backup_logging_and_discounts_included": false,
-  "resources_created": false,
+  "resources_created": true,
   "price_snapshot_date": "2026-11-05",
-  "recorded_at_utc": "2026-11-05T16:43:41.300605+00:00",
-  "refresh_note": "Successful Microsoft API observations from this session; subsequent refresh was rate-limited.",
+  "recorded_at_utc": "2026-11-05T19:16:14.750923+00:00",
+  "refresh_note": "The four selected meters were rechecked successfully in West Europe at the same recorded rates after approved regional quota allocation. Unselected optional meter observations retain their original explicit regions. Public retail prices are not an account invoice.",
   "target_memory_gib": 4,
   "target_os_disk_gib": 64,
   "storage_network_mode": "service_endpoint_selected_subnet_default_deny",

@@ -89,7 +89,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--subscription", required=True, type=uuid.UUID)
     parser.add_argument("--tenant", required=True, type=uuid.UUID)
-    parser.add_argument("--region", default="germanywestcentral")
+    parser.add_argument("--region", default="westeurope")
     parser.add_argument("--vm-size", default="Standard_B2als_v2")
     parser.add_argument("--vm-count", type=int, default=1)
     parser.add_argument("--zone")

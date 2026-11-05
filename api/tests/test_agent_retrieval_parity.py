@@ -27,23 +27,29 @@ def store_at(path):
 
 
 class RetrievalParityTests(unittest.TestCase):
-    def test_bm25_side_effecting_score_is_materialized_before_filtering(self):
+    def test_bm25_scores_and_document_selection_stay_project_scoped(self):
         with TemporaryDirectory() as directory:
             store = store_at(Path(directory) / 'chunks.db')
             try:
                 with patch.object(store, '_persist'):
                     store.add_chunks([dict(doc_id=doc, file_name=doc + '.pdf', page_number=1,
-                        text='source text without query token', project_id=project)
+                        text='utility diversion source evidence', project_id=project)
                         for doc, project in [('a1', 'a'), ('a2', 'a'), ('b1', 'b')]])
-                store._con.create_function('test_rank', lambda cid, query: 9.0,
-                                           [str, str], float, side_effects=True)
-                store._con.execute('CREATE SCHEMA fts_main_chunks')
-                store._con.execute('CREATE MACRO fts_main_chunks.match_bm25(cid, q) AS test_rank(cid, q)')
+                store._con.execute('LOAD fts')
+                store._con.execute("PRAGMA create_fts_index('chunks', 'chunk_id', 'text')")
+                cid = store._con.execute(
+                    "SELECT chunk_id FROM chunks WHERE project_id='a' AND doc_id='a1'"
+                ).fetchone()[0]
+                expected = store._con.execute(
+                    "SELECT fts_main_chunks.match_bm25(?, ?)", [cid, 'utility diversion']
+                ).fetchone()[0]
                 index = object.__new__(LexicalIndex)
                 with patch('src.chunk_store.get_chunk_store', return_value=store), \
                      patch.object(index, '_ensure_fts', return_value=True):
-                    rows = index.search_chunks('unmatchedtoken', project_id='a', doc_ids=['a1'])
-                self.assertEqual([(row['doc_id'], row['lex_score']) for row in rows], [('a1', 9.0)])
+                    rows = index.search_chunks('utility diversion', project_id='a', doc_ids=['a1', 'b1'])
+                self.assertEqual([row['doc_id'] for row in rows], ['a1'])
+                self.assertIsNotNone(expected)
+                self.assertAlmostEqual(rows[0]['lex_score'], expected)
             finally:
                 store._con.close()
 
