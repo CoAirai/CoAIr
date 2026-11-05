@@ -70,7 +70,10 @@ async function handler(
 
     const method = request.method.toUpperCase();
     const hasBody = method !== "GET" && method !== "HEAD";
-    const body = hasBody ? await request.arrayBuffer() : undefined;
+    const streamUpload = method === "POST" && path.join("/") === "upload" &&
+        request.headers.get("content-type")?.startsWith("multipart/form-data");
+    const bufferedBody = hasBody && !streamUpload ? await request.arrayBuffer() : undefined;
+    const body = streamUpload ? request.body : bufferedBody?.byteLength ? bufferedBody : undefined;
 
     try {
         // Retry only idempotent GETs, and only when the API says it is busy.
@@ -81,7 +84,9 @@ async function handler(
             res = await fetch(url.toString(), {
                 method,
                 headers: outgoingHeaders(request),
-                body: body && body.byteLength > 0 ? body : undefined,
+                body,
+                // Node fetch requires half-duplex for a streamed request body.
+                ...(streamUpload && body ? { duplex: "half" } : {}),
                 redirect: "manual",
                 cache: "no-store",
             });
