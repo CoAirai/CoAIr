@@ -8,6 +8,11 @@ cutover command. Base: `codex/long-document-evidence`, which includes current
 main and the qualified cloud agent/report improvements. DGX-only inference and
 local authentication settings are not imported.
 
+Before purchasing/provisioning, use [PURCHASE_PLAN.md](PURCHASE_PLAN.md) for the
+company account/role/quota checklist and a dated, itemized retail estimate. The
+read-only `account_check.py` requires explicit company tenant/subscription IDs;
+it never logs in, switches account, grants access or creates resources.
+
 ## Supported topology
 
 - `all-in-one`: web + one authoritative API + private Qdrant on one Linux VM.
