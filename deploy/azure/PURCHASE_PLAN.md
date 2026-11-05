@@ -9,10 +9,11 @@ resource, subscription, role assignment or payment was created.
 - The Azure portal opened under the university tenant. Its home displayed the
   subscription onboarding options. The subscription list, billing permissions,
   VM quota and resource inventory were **not verified**: subsequent portal UI
-  access stopped responding. Do not infer that the university or future company
+  access stopped responding. Do not infer that the university or future personally owned
   subscription has the required capacity or permissions.
-- The user will use a separate company account for production; the university
-  session is only a reference. No customer documents were uploaded there.
+- Current scope: a personally owned paid Azure demo for sales demonstrations;
+  incorporation and a company-owned account are not prerequisites for this phase.
+  The university session is only a reference. No customer documents were uploaded there.
 - Read-only AWS inspection found approximately 17 GiB originals, 1.9 GiB app
   storage and 1.3 GiB Qdrant data in the selected RAG installation. The small
   Coair integration installation is a different test dataset, not a substitute.
@@ -23,37 +24,37 @@ resource, subscription, role assignment or payment was created.
   API checks, local OCR, PostgreSQL adapter checks and web build/tests succeeded.
 - Microsoft public retail prices were retrieved for Germany West Central.
   [procurement-prices.json](procurement-prices.json) records exact meters,
-  quantities, timestamps and source URLs. Company contract prices are pending.
+  quantities, timestamps and source URLs. The actual subscription quote is pending.
 
 ## 1. Account and subscription to obtain
 
-1. Use a company-owned **Microsoft Entra workforce tenant** and named work
-   accounts. Reuse the company's existing tenant if suitable; do not create
-   another directory unnecessarily. Azure infrastructure identities and Coair
-   customer accounts remain separate.
-2. Obtain a commercial Azure subscription billed to the company: Pay-As-You-Go
-   under its billing agreement or the company's existing CSP/MCA arrangement.
-   Record legal entity, billing country, tax details, finance owner, recovery
-   owner and the currency displayed by that agreement. Complete payment and
-   contract acceptance as the authorized company owner.
-3. A Microsoft 365 subscription, Entra P1/P2, Azure OpenAI or an Azure SQL
-   subscription is not a prerequisite just to host this VM + private Blob setup.
-   Follow the company's identity/security policy if it requires extra licenses.
-4. Enable MFA and company recovery arrangements. Avoid a university/student
-   account as the owner of production resources, customer data or billing.
-5. Create a monthly cost budget with actual and forecast notifications; for this
-   configuration start planning around USD 250–300 for base infrastructure plus
-   a modest operational allowance. **A budget alert does not stop spending.**
-   LLM calls, traffic, backup growth and taxes require their own allowance.
-6. Obtain the exact tenant ID and subscription ID. Do not purchase resources
-   until both are verified in the intended company directory.
+1. Use a Microsoft account you personally control and a normal **Pay-As-You-Go**
+   Azure subscription for the demonstration. No incorporated company, separate
+   Microsoft 365 purchase or corporate workforce directory is required for the
+   selected deployment. Azure still associates the subscription with an Entra
+   directory; record that actual tenant instead of creating redundant directories.
+2. Set the billing profile country to **Türkiye** when that matches the real card
+   billing address. Use your own accurate name, address and contact information.
+   The owner completes card verification and agreement acceptance directly.
+3. Use the normal paid subscription for ongoing sales demos. An eligible free
+   trial can be useful for initial experiments, but trial eligibility, credit,
+   quota and expiration must not become a dependency of a scheduled sales meeting.
+4. Enable MFA and recovery on the owner account. Keep the university-managed
+   sign-in separate from ownership of the long-term paid demo subscription.
+5. Create a monthly budget with actual/forecast alerts. With the selected 16 GiB
+   VM always running, the base estimate is USD 216.66/month; plan an additional
+   operational allowance for variable traffic, backup/logging, model usage and
+   taxes. **A budget alert does not stop spending.**
+6. Record and verify the personally owned subscription's exact tenant ID and
+   subscription ID before provisioning. Existing Coair user/demo/project roles
+   remain in the application; they do not require Azure user licenses.
 
 ### Permissions to arrange
 
 | Identity | Required responsibility | Proposed scope |
 | --- | --- | --- |
-| Company billing owner | Activate subscription, payment, budget and invoices | Company billing account/subscription |
-| Tenant administrator | Workforce accounts, MFA/recovery and identity policy | Company Entra tenant |
+| Personal subscription owner | Activate subscription, payment, budget and invoices | Personally owned billing account/subscription |
+| Subscription/directory owner | Owner sign-in, MFA/recovery and any delegated operators | Selected subscription/directory |
 | Bootstrap subscription owner or authorized RBAC administrator | Resource setup and approved role assignments | Intended subscription or delegated resource groups |
 | Deployment operator | Create/update approved resources | Contributor on Coair resource groups; separate approved role-assignment authority when needed |
 | API VM managed identity | Read/write/delete application Blob objects | Storage Blob Data Contributor on its own container |
@@ -121,9 +122,69 @@ Multiple stateless web hosts can be added later. Do not purchase several API
 VMs expecting local queues/databases to synchronize automatically. This release
 deliberately permits only one authoritative stateful API owner.
 
+## AWS baseline and matching Azure selection
+
+The AWS host was rechecked read-only on 2026-11-05:
+
+| Requirement | Current AWS host | Selected Azure target |
+| --- | --- | --- |
+| CPU | 2 vCPU, Intel Xeon Platinum 8175M | 4 vCPU, `Standard_D4as_v5` |
+| RAM | 7,818 MiB reported, approximately 8 GB tier | 16 GiB |
+| Instruction architecture | x86_64 | x64; do not substitute ARM |
+| Host OS | Ubuntu 24.04.4 LTS | Ubuntu 24.04 LTS Gen2 |
+| Application Python | 3.11.16 in the source API container | The qualified Python 3.11 API image |
+| Current root filesystem | Approximately 154 GiB usable, 90 GiB occupied across several applications | Separate 128 GiB OS + 256 GiB persistent app data disk |
+| RAG data | Approximately 17 GiB originals + 1.9 GiB storage + 1.3 GiB Qdrant | Persistent restored state + private Blob originals/canonical assets |
+| API/Qdrant memory limits | No explicit Docker limit; bounded by host memory | No new API/Qdrant Docker RAM cap in this profile |
+| Toolkit | Separate container, 2 GiB memory cap, observed approximately 183 MiB idle | Preserve upstream toolkit image and its 2 GiB cap |
+| Inference/embeddings | Cloud generation; CPU fastembed and Qdrant | Preserve providers/models/embedding dimensions; no GPU purchase |
+
+The Azure candidate exceeds the observed AWS host's CPU count and RAM and has
+more disk capacity. This is a hardware requirement match, **not a measured claim
+of twice the speed or equivalent answers**. CPU generation/vendor, network path,
+provider latency and disk behaviour differ. Equal-corpus chat/chronology/toolkit,
+OCR, report delivery and warm/cold query measurements remain acceptance gates.
+
+The old AWS RAG application is not byte-identical to the Coair integration branch.
+The target is the Coair branch with the transferred agent/report improvements;
+its complete source corpus and stores must be restored explicitly. Moving only
+the three-document Coair staging fixture would not recreate the AWS demo.
+
+Infrastructure differences to qualify are S3 versus Blob authorization/object
+keys, Azure private DNS/RBAC, explicit outbound internet, TLS/origin routing and
+job/data restore. Cloud account location does not by itself change prompts or
+require a different LLM. Current `compose.yml` retains one authoritative API,
+Qdrant, web and the optional source toolkit; the network-only web split is optional.
+
+## Türkiye billing, cards and deployment region
+
+- Türkiye is listed as an Azure-supported signup location. Use the real Turkish
+  billing profile; **Germany West Central is the resource location**, not the
+  card's billing country. Availability, subscription policy and quota still need
+  checking for that selected region.
+- Microsoft's current supported-payment table lists Visa, Mastercard and
+  American Express for Türkiye. Prefer an ordinary supported credit/debit card;
+  Microsoft's signup guidance excludes virtual and prepaid cards.
+- Name, billing address and card information must match bank records. Confirm
+  the card is active, has sufficient available funds/limit and supports the
+  required international online charges. A supported card brand alone cannot
+  guarantee that the issuing bank approves the authorization.
+- Signup may place a temporary USD 1 or equivalent authorization hold. This is
+  separate from recurring Pay-As-You-Go usage charges.
+- Microsoft's direct MCA billing-currency table lists Türkiye in USD. Confirm
+  the actual offer/account currency shown at signup; inspect the bank's foreign
+  currency conversion/fee terms rather than treating the retail estimate as a
+  guaranteed TRY debit.
+- On a declined payment, first check card type, billing-country/address matching,
+  available limit and issuer restrictions, then use Azure billing/signup support.
+  Do not change the country to Germany just to match the VM's region, and do not
+  use another person's or fabricated billing information to bypass validation.
+- No card number, CVV, private identity document, password or OTP belongs in the
+  repository or chat. The owner completes those fields at the official Azure site.
+
 ## 3. Resource layout and creation order
 
-Use company naming rules and mandatory tags; example names are proposals, not
+Use consistent project naming and any subscription-mandated tags; example names are proposals, not
 existing resources:
 
 1. Resource groups: `rg-coair-prod-<region>`, and a separate staging group when
@@ -182,18 +243,18 @@ existing resources:
 - A long reservation/savings commitment before the real workload and stable
   target SKU have been measured. Keep initial purchasing reversible.
 
-Existing enterprise policy may require additional services. Review that policy
+Existing subscription/directory policy may require additional services. Review that policy
 before treating any item as optional or changing a mandated protection.
 
-## 5. Checks immediately after receiving the company account
+## 5. Checks immediately after opening the individual subscription
 
 Install the official Azure CLI on the operator machine if needed. Complete
-company sign-in normally, then run the read-only checker with explicit IDs:
+the personally owned account sign-in normally, then run the read-only checker with explicit IDs:
 
 ```sh
-az login --tenant <company-tenant-id>
+az login --tenant <target-tenant-id>
 python3 deploy/azure/account_check.py \
-  --tenant <company-tenant-id> --subscription <company-subscription-id> \
+  --tenant <target-tenant-id> --subscription <target-subscription-id> \
   --region germanywestcentral --vm-size Standard_D4as_v5 --vm-count 1
 ```
 
@@ -203,19 +264,19 @@ and other planned resources need an aggregate quota calculation too.
 
 The checker never changes the selected CLI account. It reads account state,
 Compute/Network/Storage provider registration, the exact SKU's restrictions and
-both regional and per-family vCPU quotas. It blocks a university/company tenant
-mismatch, missing quota data and missing providers. It does not create resources,
+both regional and per-family vCPU quotas. It blocks an unexpected university/target
+tenant mismatch, missing quota data and missing providers. It does not create resources,
 register providers, request quota, assign roles or certify policy/RBAC/capacity.
 
 Complete the following account-specific gates before provisioning:
 
 | Gate | Required evidence | Who resolves it |
 | --- | --- | --- |
-| Billing activation | Correct commercial subscription is Enabled and payment/credit policy permits the planned resources | Company billing owner |
-| Tenant/subscription | Both expected IDs match the intended company context | Owner/operator |
+| Billing activation | Correct personally owned paid subscription is Enabled and payment/credit policy permits the planned resources | Personal subscription owner |
+| Tenant/subscription | Both expected IDs match the intended personally owned context | Owner/operator |
 | Creation/RBAC | Effective permission to deploy and to approve intended role assignments | Subscription/RBAC administrator |
 | Providers | Compute, Network and Storage registered; enable additional selected services deliberately | Authorized subscription operator |
-| Region/policy | Data residency, allowed regions/SKUs, mandatory tags, permitted public IP and private endpoint policy | Customer/tenant governance owner |
+| Region/policy | Data residency, allowed regions/SKUs, mandatory tags, permitted public IP and private endpoint policy | Account owner/customer when applicable |
 | vCPU quota | At least four **available** regional and Dasv5-family vCPUs for this VM; include all simultaneous hosts | Subscription operator |
 | VM capacity | Selected SKU/zone can actually allocate; a public price or sufficient quota is not a capacity reservation | Deployment operator/Azure support |
 | Storage name | Proposed globally unique storage account name is available | Operator |
@@ -229,7 +290,7 @@ Spot, another jurisdiction or a smaller RAM tier to make a deployment succeed.
 
 ## 6. Information to have ready before migration day
 
-- Company tenant/subscription, authorized operators, billing owner and governance
+- Personally owned target tenant/subscription, authorized operators, billing owner and any governance
   requirements; no passwords or private keys in this repository.
 - Approved region, VM/zone decision and exact current subscription quote.
 - Source application installation, consistent DB/queue/catalog/registry backup,
@@ -265,7 +326,7 @@ find those blockers before the production maintenance window.
 
 Refresh the exact public meter queries in `procurement-prices.json` and review
 the actual subscription quote before creating resources. Public USD list prices
-are not the company invoice or a promise that exchange rates/taxes stay fixed.
+are not the actual account invoice or a promise that exchange rates/taxes stay fixed.
 
 - [Microsoft retail pricing API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices)
 - [Dasv5 machine specifications](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dasv5-series)
@@ -275,3 +336,11 @@ are not the company invoice or a promise that exchange rates/taxes stay fixed.
 - [Explicit outbound connectivity](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/default-outbound-access)
 - [Private Link pricing](https://azure.microsoft.com/en-us/pricing/details/private-link/)
 - [Private DNS pricing](https://azure.microsoft.com/en-us/pricing/details/dns/)
+
+Additional account/payment references checked 2026-11-05:
+
+- [Azure account signup requirements and supported countries](https://azure.microsoft.com/en-us/pricing/purchase-options/azure-account)
+- [Supported payment methods, including Türkiye](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/supported-payment-methods)
+- [Declined cards and virtual/prepaid restrictions](https://learn.microsoft.com/en-us/azure/cost-management-billing/troubleshoot-billing/troubleshoot-declined-card)
+- [Signup and address verification](https://learn.microsoft.com/en-us/azure/cost-management-billing/troubleshoot-subscription/troubleshoot-azure-sign-up)
+- [Direct MCA billing currencies](https://learn.microsoft.com/en-us/azure/cost-management-billing/microsoft-customer-agreement/microsoft-customer-agreement-faq)

@@ -9,8 +9,8 @@ main and the qualified cloud agent/report improvements. DGX-only inference and
 local authentication settings are not imported.
 
 Before purchasing/provisioning, use [PURCHASE_PLAN.md](PURCHASE_PLAN.md) for the
-company account/role/quota checklist and a dated, itemized retail estimate. The
-read-only `account_check.py` requires explicit company tenant/subscription IDs;
+individual demo account/role/quota checklist and a dated, itemized retail estimate. The
+read-only `account_check.py` requires explicit target tenant/subscription IDs;
 it never logs in, switches account, grants access or creates resources.
 
 ## Supported topology

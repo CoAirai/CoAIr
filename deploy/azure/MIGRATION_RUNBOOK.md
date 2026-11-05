@@ -5,11 +5,13 @@ creation commands have not been run. Azure connectivity, identity permissions,
 customer data restore and production acceptance require the real target account.
 Keep this branch separate from main until cloud qualification is complete.
 
-## 1. Open the organization-owned Azure account
+## 1. Open the owner-controlled Azure account
 
-1. Open the Azure account under the company's Microsoft Entra tenant. Confirm
-   the subscription, billing owner, recovery owner and MFA. Invite operators
-   with named accounts rather than sharing the owner's password.
+1. For the current sales demo, use a personally owned Microsoft account and a
+   normal Pay-As-You-Go subscription; incorporation is not required. Confirm
+   the actual tenant, subscription, billing owner, recovery owner and MFA. If
+   operators are added, use named access rather than sharing the owner's password.
+   See PURCHASE_PLAN.md for the Türkiye signup/payment and AWS sizing comparison.
 2. Record the subscription ID and tenant ID privately. Verify them with
    `az login` and `az account show`; select the intended subscription with
    `az account set --subscription <subscription-id>` before any resource change.

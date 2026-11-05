@@ -1,4 +1,5 @@
 """Read-only Azure CLI checks before buying/provisioning Coair resources.
+Supports the selected individual or organization-owned subscription.
 
 No login, account switch, provider registration, quota request, role grant or
 resource creation. Subscription and tenant must be specified explicitly.
