@@ -1,0 +1,63 @@
+# Supported: one stateful API host; one or more stateless web hosts.
+name: coair-azure
+services:
+  api:
+    profiles: [all-in-one, api-host]
+    image: ${API_IMAGE:?Set a qualified immutable cloud API image}
+    restart: unless-stopped
+    env_file: api.env
+    environment:
+      PORT: '8000'
+      COAIR_ENFORCE_STATE_OWNER: 'true'
+      COAIR_STATEFUL_API_REPLICAS: '1'
+      COAIR_WORKER_MODE: embedded
+      WEB_CONCURRENCY: '1'
+      QDRANT_URL: http://qdrant:6333
+    ports: ['${API_BIND_IP:-127.0.0.1}:${API_HOST_PORT:-8000}:8000']
+    volumes:
+      - ${STATE_ROOT:?Set the persistent managed-disk directory}/data:/app/data
+      - ${STATE_ROOT}/storage:/app/storage
+    depends_on: [qdrant]
+    stop_grace_period: 120s
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8000/api/health']
+      start_period: 90s
+      interval: 15s
+      timeout: 5s
+      retries: 12
+  qdrant:
+    profiles: [all-in-one, api-host]
+    image: qdrant/qdrant:v1.15.4
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?Set the existing restored Qdrant key}
+    volumes: ['${STATE_ROOT}/qdrant:/qdrant/storage']
+    # No public vector database port.
+  web:
+    profiles: [all-in-one]
+    image: ${WEB_IMAGE:?Set a cloud web image built for the target PUBLIC_ORIGIN}
+    restart: unless-stopped
+    environment:
+      COAIR_API_ORIGIN: ${API_ORIGIN:-http://api:8000}
+    ports: ['${WEB_BIND_IP:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000']
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3000/auth/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+  toolkit:
+    profiles: [toolkit]
+    image: ${TOOLKIT_IMAGE:-coair-toolkit:unconfigured}
+    restart: unless-stopped
+    ports: ['${TOOLKIT_BIND_IP:-127.0.0.1}:${TOOLKIT_HOST_PORT:-8501}:8501']
+    environment:
+      GEMINI_API_KEY: ${TOOLKIT_GEMINI_API_KEY:-}
+      COAIR_URL: /
+    # Preserve the upstream session model; do not mount API secrets/documents.
+    mem_limit: 2g
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8501/toolkit/_stcore/health']
+      start_period: 30s
+      interval: 20s
+      timeout: 5s
+      retries: 5

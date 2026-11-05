@@ -1,0 +1,14 @@
+# Stateless web host: no state mounts, API credentials or Qdrant key required.
+name: coair-azure-web
+services:
+  web:
+    image: ${WEB_IMAGE:?Set a cloud web image built for the target PUBLIC_ORIGIN}
+    restart: unless-stopped
+    environment:
+      COAIR_API_ORIGIN: ${API_ORIGIN:?Set the authoritative API private IP/FQDN}
+    ports: ['${WEB_BIND_IP:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000']
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3000/auth/sign-in').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10

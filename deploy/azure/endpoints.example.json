@@ -1,0 +1,7 @@
+{
+  "stateful_api_replicas": 1,
+  "endpoints": [
+    {"name": "api-from-web-host", "url": "http://10.1.0.4:8000/api/health", "expected_port": 8000, "check": "api_health", "scope": "cross_host"},
+    {"name": "web-from-proxy-host", "url": "http://127.0.0.1:3000/auth/sign-in", "expected_port": 3000, "check": "web", "scope": "local"}
+  ]
+}
