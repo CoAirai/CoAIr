@@ -1,5 +1,13 @@
 # AWS / Azure application comparison
 
+> Historical comparison before the fixes of 2026-11-06. Current remediation and
+> qualification results are recorded in [Azure deployment status](../../deploy/azure/DEPLOYMENT_STATUS.md).
+> Correction: the five SQL detail rows described below are an incomplete import,
+> not the complete original workbook. The original INTC Register has 73 raw rows;
+> a later answer retained 53 listed entries, including pre-filled/incomplete rows.
+> The summary count of 41 must not be equated with either imported or template
+> row counts. Source viewing and direct-sheet answering now use the original file.
+
 Observed on 2026-11-05. This is an application acceptance report, not a declaration
 that production cutover is complete. The separate live Coair account database
 has deliberately not been merged into the original AWS/RAG dataset.
