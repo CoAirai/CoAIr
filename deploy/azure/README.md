@@ -1,5 +1,10 @@
 # Azure migration preparation
 
+**Existing deployment / team handover:** start with [TEAM_HANDOVER.md](TEAM_HANDOVER.md).
+The Azure target is already running and branch delivery is enabled. That page
+contains the verified resource identifiers, access prerequisites and domain task;
+do not repeat the initial provisioning steps against restored state.
+
 This branch prepares a controlled move of the existing cloud application.
 The end-to-end operator procedure is in [MIGRATION_RUNBOOK.md](MIGRATION_RUNBOOK.md),
 with account setup, private Blob, upload/OCR/source acceptance and production cutover. It
@@ -29,7 +34,8 @@ mode; do not replace restored application state through infrastructure updates.
 
 [CONTINUOUS_DEPLOYMENT.md](CONTINUOUS_DEPLOYMENT.md) describes the Azure-only
 push/build/test/release job, initial acceptance gate, private SSH route and
-application rollback. It remains disabled until the actual target is qualified.
+application rollback. The actual target is qualified and delivery is enabled;
+new targets must pass the initial acceptance gate before enabling releases.
 
 ## Supported topology
 
