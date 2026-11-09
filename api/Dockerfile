@@ -52,6 +52,9 @@ RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BA
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 
 # Copy application code
+# Match the extension ABI to the locked DuckDB version before runtime.
+RUN python -c "import duckdb; duckdb.connect().execute('INSTALL fts')"
+
 COPY src/ ./src/
 COPY backend/ ./backend/
 COPY vendor/ ./vendor/

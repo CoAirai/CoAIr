@@ -285,7 +285,7 @@ const MessageBubble = ({ message }: Props) => {
                             values={message.sqlArtifact?.preview_rows.map(row => headers.map(column => row[column] ?? null))} />}
                     </SqlResult>
                 ) : null}
-                {!isUser && session?.accessToken && session.projectId ? (
+                {!isUser && !message.streaming && session?.accessToken && session.projectId ? (
                     <div className="mt-3">
                         <button type="button" disabled={exporting} onClick={() => void exportWord()} className="rounded-lg border border-stroke-soft-200 px-2.5 py-1 text-label-xs disabled:opacity-50">{exporting ? "Exporting…" : "Download Word"}</button>
                         {exportError ? <p role="alert" className="mt-1 text-label-xs text-red-600">{exportError}</p> : null}

@@ -281,20 +281,391 @@ Live reference RAG graph inspection returned 77 nodes and 1,304 edge records (da
 - Real public API report on the three existing Edinburgh test documents: job `c0063aee68e94429b1e7`, **57.75 seconds**, 13 entries including the overview, 8 evidence passages / 15,813 characters, 39,087-byte Word file with real footnotes. Observed queued/planning → extraction → synthesis → verification → ready progression. Coverage remained **partial** with `uncovered_facets`, correctly reflecting the sample evidence. This is a small live-provider functional check, not a 600,000-character live-provider benchmark; large-pack/100-event preservation is covered by the controlled regression fixtures above. No comparison to previous runs on different evidence is claimed.
 - Post-deployment selected-document chat probes: the utility-role answer returned in **9.40 seconds** with one citation; the unsupported-total-cost question returned a clear denial in **4.65 seconds** with one citation and no invented amount. Both cited the selected project file; temporary QA conversations were deleted. The public payload did not expose a route value in these probes, so a route/call-count conclusion is not inferred. Normal caches and the small sample apply.
 
-## UK spreadsheet dates and auth test isolation — 27 October 2026
+## Found-source reading and evidence coverage — controlled implementation
 
-Two items from the remaining-work recheck, based on integration `4da17dc`. No production configuration, stores or deployed services were changed.
+Work branch: `codex/long-document-evidence`, based on tested integration `4da17dc`. At the start of this work, remote main remained `f5b1238`; the integration changes had not yet appeared on main. This branch leaves Hasnain's merge source unchanged. CI builds/tests the feature branch. The regular automatic release remains on the integration branch; a feature qualification release requires the exact commit in `INTEGRATION_QUALIFICATION_COMMIT`, which is cleared after qualification. Integration deployments share a release lock.
 
-### Spreadsheet day/month order
+1. **Reproduce before changing:** three real in-memory DuckDB regressions fail against deployed `0fae0f9`: a relevant fact after the clipped passage prefix, a neighbouring page of the 75th found document, and a same-name unselected file admitted by the old filename-OR identity predicate. All three pass after source expansion.
+2. **Read found sources in bounded windows:** hydrate all distinct found document/page ranges from project-owned mirror rows; merge overlapping ranges, eliminate the global first-60-neighbour cut, prefer original text to display snippets, and split long text into 3,500-character windows with 200-character overlap. Stable source IDs include chunk/offset/content and retain exact page locators. Filename equality never widens the SQL identity. A legacy alias needs a unique project registry identity before entering an explicit selection. No OCR, vector rebuild or provider migration is required.
+3. **Track coverage and avoid repeat work:** a metadata-only evidence ledger records source identities, pages, content fingerprints, retrieval hits/errors/timings and source hydration completeness. One targeted retrieval round searches missing chronology facets rather than restarting the whole research process. Keyword facets are discovery signals, not a recall guarantee. Missing source text and failed retrieval lanes keep coverage partial. The existing Word generation, factual/date verifier and bounded synthesis remain in place.
+4. **Reuse only eligible extraction candidates:** completed reports may supply an identical extraction batch for the same user, project and pipeline version. Hashes include exact evidence, actual extraction topic/parties, model, prompt, schema and jargon version. Cached entries must pass schema/source checks again, and empty/invalid batches are re-extracted. Final synthesis and independent verification remain job-local. This is candidate reuse, not a claim that every cached extraction was independently proved correct or complete. Added sources can invalidate a batch; an unchanged batch can be reused even if its step number moves.
 
-`parse_mixed_datetime` previously decided each slash/dash value on its own and tried month-first first, so `03/04/2010` became 4 March and `12/01/2011` became 1 December while `25/03/2010` stayed 25 March in the same column. It now infers one order per column: day-first when any value has a first number above 12, month-first when any has a second number above 12, otherwise the configured default. Values that are unambiguous on their own (`25/03/2010`, `09/18/2027`) are always read their own way, including in a conflicting column. The default for fully ambiguous columns is day-first (UK/Gulf data); `SPREADSHEET_AMBIGUOUS_DATE_ORDER=month_first` restores US reading for a deployment. Dotted, ISO, month-name, `YYYY/MM/DD` and epoch forms are unchanged. A per-project setting is not implemented; the parser accepts an explicit `default_dayfirst` for a caller that later has one.
+No account, organization, payment, token-accounting or document schema was replaced. No new dependency is introduced. Broad semantic/lexical discovery still uses bounded per-query candidate pools; there is no claim of exhaustive automatic corpus coverage. Interactive chat's existing deep-agent retry and universal MAX_TOKENS continuation are not rewritten by this report-source change.
 
-This changes how newly converted or re-analysed spreadsheets read ambiguous dates. Tables already converted and stored keep their stored dates until re-imported; no automatic re-ingestion was performed.
+Targeted validation: 130 tests passed after coverage/cache integration; an additional focused run of 8 tests passed for model/jargon/query invalidation, corrupted cached claims, cross-user/project/version isolation and legacy alias scope. The old extraction checkpoint fixture had an invalid event with zero claims; it now uses an actually source-grounded event to exercise legitimate reuse instead of requiring acceptance of invalid cache contents.
 
-`tests/test_spreadsheet_date_order.py` (13 tests) covers UK, US, single-value, fully ambiguous default and override, conflicting columns, dash/two-digit-year/time forms, unchanged other formats and blanks; it is added to the CI gate. The existing manpower date test still passes.
+Qualification edge cases added before final release: automatic search can hydrate an obsolete vector ID through a unique, project-owned canonical mirror ID without trusting the obsolete preview at an unproven page. Expanded spreadsheet chunks retain sheet/row locators only when they match the exact retrieved chunk; neighbouring chunks cannot inherit another sheet's locator. The final focused package passes 58 tests. The first feature CI run passed 587 API tests plus 13 subtests, 3 PostgreSQL tests and 169 web tests; a follow-up CI/release covers these final two regressions as well.
 
-### Shared rate limiter between tests
+The first real repeat exposed an additional cache miss: the identical preparation and identical evidence-ID set arrived in a different relevance order, changing the extraction input hash. This was not counted as successful reuse. Extraction now canonicalizes the full chosen evidence by file/page/source identity before forming bounded batches; ranking still selects the evidence upstream and no source is removed. A reversal-order regression verifies one provider extraction across both orders. The focused package including parallel synthesis passes 61 tests. Live qualification of this correction is recorded below.
 
-`tests/conftest.py` gives every test a fresh in-process `platform_guard` limiter, as `test_org_api.py` and `test_commerce_api.py` already did per module. Limits still apply within a test; production behaviour is unchanged. `test_ops_api.py::test_password_reset_and_invite` now follows the current invitation flow (no temporary password, sign-in refused while invited, resend code, activate with token + code + password, then sign in) instead of weakening account-state checks.
 
-Local result for auth flow, ops API, superadmin role and Supabase username mapping: **27 passed**; the same run with `--noconftest` reproduces the recorded **12 pass / 15 fail**. These four modules are added to the CI gate. Across the full CI selection on a local Windows/Python 3.14 environment (missing some LlamaIndex packages and with CRLF prompt checkouts), the fixture changed only those 15 tests from failing to passing; the 58 other local failures and 24 collection errors are identical with and without it and are environment-specific. CI on the locked Linux image is the release gate.
+### Live qualification of the found-source changes — 27 October 2026
+
+Deployed code: `2cef22016df0bd898fee82457f0709f316794d01` on `https://coair-test.duckdns.org`; API and web use that exact immutable tag. [CI and qualification deployment](https://github.com/CoAirai/CoAIr/actions/runs/40541807758) passed: 590 API tests plus 13 subtests and 3 PostgreSQL adapter tests. The web image retains the previously qualified 169-test build (unchanged UI inputs). The exact-commit qualification pin was removed after deployment. This does not move main, the existing integration merge source, the reference RAG service, or Hasnain's VPS.
+
+The live project contains three Edinburgh PDFs, not the complete reference corpus. The automatic-discovery runs used the same topic; the two final runs used the same frozen preparation and identical eight evidence passages (15,813 characters, three documents). Word downloads have real footnotes, and all returned evidence document IDs belong to this project.
+
+| Run | Total observed time | Entries including overview | Reused extraction batches | Result |
+| --- | ---: | ---: | ---: | --- |
+| Before source changes (`0fae0f9`) | 45.5 s | 10 | unavailable | partial |
+| First qualification before stable ordering | 57.9 s | 12 | 0 | partial |
+| Repeat before stable ordering | 39.5 s | 7 | 0 | partial; genuine reuse miss |
+| Final code, first run | 36.4 s | 6 | 0 | partial |
+| Final code, identical preparation repeated | 48.7 s | 6 | 1 | partial |
+
+The reuse acceptance criterion passes: the final repeat skips provider extraction for one identical batch while final synthesis and verification run again. It does **not** demonstrate a latency improvement: synthesis took longer on that repeat. These are individual observations, not latency percentiles. Both final runs had zero unresolved source owners, locators or unread previews, and two retrieval rounds (initial discovery plus one targeted missing-facet query). No passage was dropped by the extraction batch budget. Two real chat checks also passed: source-grounded utility responsibilities (8.84 s) and refusal to invent an unsupported total cost (5.57 s).
+
+**Content-quality acceptance is not passed.** Manual comparison found fewer distinct programme-target occurrences in the final report than in earlier runs, despite identical available evidence. Both final reports had zero populated event-date fields. An earlier report had six dated entries. Event count alone is not a quality metric, but the missing supported programme targets and dates require correction before recommending this feature for a customer release. Stable ordering makes extraction reuse deterministic; it cannot make a thin extraction complete, and can reproduce that thin candidate set.
+
+Step-store inspection localizes one date loss: synthesis proposed `2007-03-15` with a quoted source passage but `date_source="text"`; the guard accepts only `content_header`, `content_body`, `table_period`, or `unresolved`, so the date was cleared. Another proposal for `2008-10-20` quoted only `On 20th October`, without a supported year; clearing that date remains correct. Do not relax date provenance to repair this. The model schema currently permits arbitrary strings for `date_source` while the prompt/guard require fixed values. Extraction already produced unresolved dates in its saved candidate set; synthesis alone is not the whole cause.
+
+Next controlled corrections, with separate before/after checks:
+
+1. Constrain generated date provenance to the actual allowed values and preserve exact source date quotations. Add a regression for the observed `text` mismatch; reject invented years and metadata-derived dates as before.
+2. Audit extraction coverage against distinct, source-supported occurrences in each document/window, not only keyword facets or total entry count. Use programme targets, the planned June 2007 agreement, and contractual responsibilities as source-reviewed fixtures. Repair only missing occurrences with bounded source windows; do not restart unrestricted research after a weak draft.
+3. Reject or repair incomplete cached candidate sets using that coverage check. Existing schema/source validation proves structural eligibility, not exhaustive recall.
+4. Repeat identical-preparation reports and then qualify a genuinely large, project-isolated corpus. The three-file staging sample cannot certify thousands of documents, OCR intake, every source viewer path, or full RAG quality parity.
+
+Reproducible server artifacts remain under `/opt/coair-integration/qualification/four-stage-review`: `coverage-report-probe.py`, frozen `results/coverage-preparation.json`, `results/coverage-metrics.json`, corresponding `long-evidence-coverage-*.json`/`.docx` files and stage logs. Final jobs: `249aa63294bf4df48499` and `d7f7bb666f5c4d409494`. The pre-order repeat failure is retained rather than presented as a successful cache benchmark. Qualification-only source expansions are removed after retaining their diagnostic test logs.
+
+
+### Continued occurrence/date corrections — 27 October 2026
+
+The first continuation CI run (`40559276452`) correctly blocked deployment: 593 tests passed and the accepted-prompt checksum test failed because the chronology instructions were intentionally changed. The guard remains in place. Prompt acceptance is reviewed against actual Edinburgh evidence and the new source/date regressions before recording a new checksum; this failure is not treated as a successful release.
+
+Implemented changes:
+
+- The provider JSON schema lists only supported date provenance values. PDF/OCR whitespace wrapping can no longer erase an otherwise exact quoted date. The actual source words and year remain mandatory; metadata dates and invented years remain forbidden.
+- Independent extraction uses page-scoped windows with a 12,000-character per-call budget. A document count or event-count cap is not introduced. Explicit `Complete by ...` programme rows are divided with their preceding task wording; every original character is retained. This makes each target receive attention without restarting whole-corpus research.
+- Exact schedule wording can restore a missing target date only when the event's own claim repeats that date and the same cited window has one explicit target. End/mid-month targets retain month precision. Different proposed dates stay unresolved. Final independent verification still applies.
+- Drafting preserves dates already proven against the cited candidate. The verifier separately assesses the date link for individual claims in mixed dated/background events. When the combined date is rejected but a proper subset is independently dated, the renderer keeps that subset dated and preserves the remaining supported background in an undated entry. No factual claim is discarded to rescue a date.
+- Changed prompt, schema, source windows and extraction policy invalidate the previous candidate cache. Unchanged new windows remain reusable for the same user/project/version, including after adding another document. Drafting and verification remain job-local; account, payment, role, database and dependency schemas are unchanged.
+
+Focused validation passes 95 tests plus 9 subtests, including source windows, cache scope, recursive failure handling, full Word delivery, individually verified dates and long-evidence regressions. The recursion fixtures now place multiple chunks on the same page so they still exercise a real split after page isolation.
+
+
+Pre-release prompt acceptance: isolated provider qualification uses the real three-file Edinburgh evidence and the production extraction/synthesis/independent-verification/Word functions, with production databases unmounted. The final reviewed run completed in 79.34 seconds, producing 23 entries including overview and 12 dated entries. All nine source-reviewed checks passed: phased transition, planned June memorandum, MUDFA programme targets, scope transfer, post-V31 incorporation, mobilisation review, January changes and February misalignment. These checks establish retention of the reviewed occurrences, not exhaustive material-event recall. `occurrence-provider-final.json`, `.docx` and `occurrence-provider-acceptance.json` retain the results. The accepted prompt checksum is updated only after this output review; historical source manifests remain historical. Authenticated staging and repeat/cache checks follow the full CI release.
+
+
+Final source review also found conflicting OCR day tokens (`1st 11 April 2007`). A new negative regression rejects interpreting the trailing `11 April 2007` as an exact proven event date; a source-proven April 2007 month remains admissible. This is conservative source validation, not an OCR correction or an asserted alternative day. The earlier reviewed output is not evidence for accepting that exact day. The extraction policy changes to invalidate earlier candidates, and source/date checks remain active on reuse.
+
+
+Authenticated qualification of `4b8545c` passed CI (600 API tests plus 13 subtests, 3 PostgreSQL adapter tests) and Word delivery. The first report took 100.21 s with 24 entries including overview; its repeat took 57.73 s with 22 entries. Source review found the January and February targets present despite overly literal keyword checks, but the June memorandum remained undated in that run. A final continuation restores a prose date only when the claim and its own cited source repeat the same date wording; conflicting date alternatives remain unresolved. A negative per-claim temporal decision now overrides a positive whole-paragraph decision. Both cases have regressions; the focused suite passes 99 tests plus 9 subtests. Final authenticated qualification reuses the same frozen preparation so this comparison does not depend on a new research plan.
+
+
+The first `55ef99f` authenticated run exposed a real regression in the OCR narrative guard: a bad April date caused a different, valid March meeting sentence on the same page to be rejected. The final correction limits the rejection to the conflicting day/month/year pair, and matches equivalent ordinal wording using the actual source quotation (`15th March`, not a fabricated quote). The new regression proves both retention of the March meeting and rejection of the ambiguous April day. The focused suite passes 100 tests plus 9 subtests. This live failure is retained in the qualification artifacts; the earlier output is not claimed as full acceptance.
+
+
+### One source-local claim repair after verification
+
+The `ba6219c` first report retained all nine reviewed dates, but its repeat rejected the memorandum wording: `formally executed` could imply completion although the source requires future execution. Reusing extraction does not prevent drafting/verification variation. The pipeline now attempts **one** local repair of rejected factual wording (or an explicitly stated date rejected by the semantic verifier). It sends only the rejected claims and their own existing citations, in small batches. It never re-runs retrieval, graph search or the research planner. Unsupported replacements remain rejected and keep the report partial.
+
+`chronology_claim_repair.py` requires one replacement/null per original claim reference; disallows new source IDs, counter-source IDs, unsupported numbers and quotations; and independently verifies every admitted replacement and its date. Planned/required/scheduled acts remain prospective. Job-local checkpoints include the exact repair instructions, models, base prompt, jargon, original draft, decisions and relevant evidence. Final repair output is not reused across users/jobs. Provider/auth/credit errors still propagate; malformed repair output cannot trigger an unlimited loop. The UI displays `Checking rejected claims` in English.
+
+A replay of the actual rejected report (same saved draft and source evidence, production databases unmounted) repaired two claims in 5.65 seconds, with one independently verified date and zero unresolved repairs. The memorandum became `to be formally executed ... in June 2007`, and both its factual and temporal checks passed. The result is retained as `source-local-repair-review.json`. No generic research restart was needed. Split dated/background entries now have separate audit counts; they no longer produce a negative removed-event count.
+
+
+### Final qualified release of this continuation
+
+Runtime commit: `c751b3a025949fb6e4479ed156a021a870a0d272`, deployed as matching API/web immutable images on `https://coair-test.duckdns.org`. [Full CI and deployment](https://github.com/CoAirai/CoAIr/actions/runs/40569366113) passed **611 API tests plus 13 subtests, 3 PostgreSQL adapter tests, and 169 web tests**. The additional reviewed repair-instruction fingerprint passes the complete 33-case prompt protection check against that deployed image. This final fingerprint/documentation change is test-only; runtime code stays on the qualified commit. The qualification release pin was cleared.
+
+The long-running older preparation correctly expired with HTTP 409. It was refreshed through the normal source-preview API. The final pair below uses one new frozen preparation, the same three project-owned Edinburgh PDFs, eight evidence passages and 15,813 source characters. Neither expired preparation nor an earlier failed content check is counted as acceptance.
+
+| Current release run | Time | Entries including overview | Dated events | Reviewed source occurrences | Extraction reuse |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| First, `eee0dabd4b3947c89f19` | 106.21 s | 22 | 11 | 9 / 9 | 0 / 16 batches |
+| Repeat, `c0b5b1d31d064cbab015` | 78.99 s | 26 | 11 | 9 / 9 | 16 / 16 batches |
+
+Both reports retain the March meeting, planned June memorandum and the seven reviewed programme targets with their source-supported dates. Source review confirms no invented 1/11/18 April event date from the conflicting OCR tokens, and PB's contractual responsibilities remain present. Word downloads contain real footnotes and references; all evidence IDs are among this project's three owned document IDs. Independent drafting/verification produces a different paragraph count, but the nine reviewed occurrences survive in both. These two reports needed no claim repair; the actual saved rejected wording separately exercised that path successfully (two claims repaired in 5.65 s, both independently checked, one verified date). The pipeline therefore avoids extra repair calls when the first verification accepts the wording.
+
+Real chat regression checks on this release passed: source-grounded responsibilities in 9.45 s and refusal to invent an unsupported total cost in 4.80 s. These are individual observations, not latency percentiles or a universal SLA. Reusing extraction avoids that work; model drafting and independent verification can still vary in duration.
+
+**Qualification boundary:** both reports remain `partial`, with `uncovered_facets`, `master_event_no_hits` and `master_counter_evidence_gap`. The three-file sample and empty master-event index do not prove exhaustive retrieval over the native 7,289-file reference corpus. This continuation closes the reproduced clipping, occurrence attention, date-loss, OCR spillover and rejected-wording cases; it does not certify every corpus, OCR intake path or all RAG/Coair quality as equivalent. No customer/organization/role/payment schema or runtime dependency changed, and no production RAG, dental or DGX deployment was moved.
+
+Current reproducible artifacts are in `/opt/coair-integration/qualification/four-stage-review`: `results/current-qualification-summary.json`, the two `long-evidence-source-local-current-*.json`/`.docx` reports, their occurrence-review JSON and stage logs, `coverage-metrics.json`, and `source-local-repair-review.json`. Intermediate downloaded Word copies from this continuation can be recreated from retained JSON and were removed after verifying current Word output; application originals and saved job checkpoints remain intact. Temporary source overlays/test containers were removed after retaining test logs.
+
+## Dependency, output-budget and DGX readiness audit (2026-10-27)
+
+Measured on AWS before changes: 7,818 MiB physical RAM, 3,778 MiB available,
+1,385 MiB swap in use. Coair integration API RSS/container working set was about
+929 MiB; web 83 MiB and Qdrant 24 MiB. This is an idle snapshot, not a peak-load
+certification. The API has no container RAM cap; DuckDB is separately budgeted
+at 1 GB/one thread. Physical memory, concurrent OCR/report work and other services
+still matter. Removing a container cap does not make memory unlimited.
+
+The existing Python closure passes `pip check` on amd64. Both Node builds use
+`npm ci` and committed locks. No broad library upgrade is warranted. ARM64
+binary-only dependency resolution fails at the pinned hdbscan 0.8.44; the existing
+API Dockerfile already has a disposable compiler stage for this situation.
+Native ARM64 build/testing is required before calling that closure portable.
+A dedicated ARM64 CI workflow now performs this check using the same Dockerfile,
+plus installed-lock, vector adapter, OCR executable, Word/Excel and model-output
+checks. DuckDB FTS is installed during image build rather than relying on a
+runtime extension download. No alternate unpinned DGX requirements were added.
+
+Chronology retains 12K-character extraction windows, 16,384 output tokens per
+extraction call, 12-event synthesis batches at 32,768 output tokens and verifier
+batches of 30 claims at 8,192 tokens. These are finite per-call budgets, not a
+whole-report length/event/document cap. The stored model capability table is an
+application configuration, not a fresh provider capability certification.
+
+A reproduced OCR gap was fixed: multimodal generation previously returned text
+without rejecting `MAX_TOKENS` or other incomplete finish reasons. It now applies
+the task's output cap and request timeout, records actual paid usage, then rejects
+incomplete/empty output. Selective OCR can retain its existing local fallback;
+truncated model text cannot silently replace the page. Four mocked provider
+regressions cover successful, capped, blocked and empty output, including usage
+accounting. This does not add an unbounded continuation loop.
+
+Tailscale reports `spark-9631` / `100.91.121.116` offline (last seen three days
+ago). Device-side build, GPU/physical memory measurement and end-to-end acceptance
+remain pending. The older CoAIr-fixes DGX installation uses vLLM; this branch's
+primary text provider policy accepts Gemini/ZAI and otherwise selects Gemini.
+Copying the old launcher would therefore silently change its intended execution
+mode. New `deploy/spark/compose.yml` explicitly qualifies this branch on ARM64
+with its current Gemini workflow, isolated volumes and no production DB/payment
+endpoints. It does not claim local-model support or migrate customer accounts.
+Full local-vLLM support requires a separately validated provider adapter, actual
+model context/output capabilities, structured-output tests and report-quality
+comparison. The cloud-backed device application and fully local inference are
+different acceptance milestones.
+
+The RAM audit also reproduced a budget bypass in DuckDB's disk-error fallback:
+the replacement `:memory:` connection previously dropped configured RAM/thread
+settings. It now keeps those settings, closes a failed partial connection, and
+refuses invalid explicit budgets instead of silently becoming unbudgeted. All
+three budget tests pass. The focused amd64 suite passes 90 tests when run with
+`GEMINI_INGESTION_MODEL=gemini-2.5-flash-lite`, matching staging. Without that
+explicit environment, two existing policy assertions expect 2.5 while the code's
+default is 3.5; Spark qualification now pins the staging ingestion model rather
+than changing the global default or weakening those assertions. The compose
+configuration also validates successfully without exposing resolved secrets.
+
+The output audit found the same truncation risk in the optional ZAI-compatible
+path: its OpenAI `choices[].finish_reason=length` metadata was not read by the
+Gemini-only finish check. A shared normalizer now reads native Gemini, wrapped
+Gemini, OpenAI-compatible and Anthropic stop metadata. Incomplete/filtered text
+is charged but never cached or returned as complete. Regression coverage checks
+provider envelopes and a full compatible-provider generation path, without
+changing routing, prompts or extending research loops.
+
+### Qualified source and remaining device acceptance
+
+Runtime source `54e030e0bdf8606f0c77b85c4a47b2d07f3835e2` passed:
+
+- [Full integration CI](https://github.com/CoAirai/CoAIr/actions/runs/40579212698):
+  625 API tests, 13 subtests, three PostgreSQL adapter tests, installed dependency
+  consistency and the existing Next.js build. Deployment was skipped because
+  this feature commit was not pinned for a staging release.
+- [Native ARM64 CI](https://github.com/CoAirai/CoAIr/actions/runs/40579212473):
+  API image built successfully with the existing pinned closure, `pip check`
+  clean, Tesseract language discovery successful, 83 runtime/limit/vector/Word/
+  Excel/markdown tests passed, and the ARM64 Next.js image build succeeded.
+- Independent source-overlay validation on the AWS host: the same 625 API tests
+  and 13 subtests passed in a disposable container (169.57 s, one CPU, 1.5 GiB
+  test-container cap). That cap applied only to the disposable test process.
+- Registry manifest inspection confirms `qdrant/qdrant:v1.15.4` includes Linux
+  ARM64. The dedicated Spark compose file validates. Owned temporary test
+  overlays were removed; production volumes and existing application history
+  were not mounted or changed.
+
+The pinned hdbscan dependency's absence from the binary-only cross-resolution
+therefore did not prevent a real native ARM64 build. No package-version loosening
+was needed. These checks establish CPU/ARM64 application portability, not DGX
+GPU/local-model equivalence. Device acceptance remains open while Spark is
+offline: build/start the isolated stack there, check available unified memory
+alongside its existing model, run concurrent real workloads, verify citations,
+Word/Excel and chronology coverage, and compare cold/cached report timings.
+The supplied Spark compose deliberately uses the current cloud model path;
+fully local vLLM inference remains a separate provider integration and quality
+qualification. Existing account, organization, role and payment schemas and
+production AWS/RAG/DGX deployments were not changed in this audit.
+
+## Live answer streaming and bounded chat source review (2026-10-28)
+
+The new authenticated/project-scoped `POST /api/chat/stream` wraps the same chat
+orchestrator, account/quota checks, selected-document scope, response builder,
+conversation persistence and final citation/SQL contract. The existing JSON
+endpoint and progress endpoint remain compatible. The Next.js proxy already
+passes a response body through without buffering. SSE sends actual Gemini public
+text deltas during prose synthesis, workflow activity and one authoritative final
+response. It does not replay a finished answer at an artificial typing speed.
+Only prose answer tasks may stream; routing, schema output, source reviews and
+provider thought/signature parts cannot reach the browser. Provider usage and
+finish metadata remain metered; incomplete output is not cached as success.
+The SDK's public-content/`thought` distinction follows the
+[Gemini API contract](https://ai.google.dev/api/generate-content).
+
+The existing progress orb remains, with English responsibility labels (Research
+coordinator, Project retrieval, Source review, Answer writer, Answer check) and
+real operation details. These are workflow roles, not invented autonomous work
+or a display of hidden model reasoning. A live draft is labelled pending; it has
+no Word export or final citation chips. The checked/mapped final response replaces
+it, and only that canonical response is persisted. Retries reset the current
+section instead of duplicating text. A disconnected stream is not accepted as
+complete or automatically resubmitted. A bounded queue protects server RAM;
+disconnect drains the still-running turn so accounting and saving can finish.
+Cached answers may arrive immediately. The active Gemini path is qualified;
+optional non-native providers retain their existing final-response behavior.
+
+For document chat, source packets up to 48K characters retain the accepted
+single-call prompts/system instructions. Larger retrieved evidence packets are
+reviewed in overlapping 12K-character source-local windows with at most three
+in-flight reviewers. Thread context carries project/user/usage identity. Reviewers
+return quotations, which must occur in their own source window; they cannot add
+source IDs or silently invent paraphrased evidence. Every selected window is
+processed. Only relevant checked quotations reach 32K-character section writers;
+when multiple sections are necessary they are all retained in the answer, rather
+than compressing the whole archive into one overflowing context. The former
+1500-character named-document prefix cut is removed from this synthesis path.
+
+If a prose call actually hits its output cap, it reuses the existing source
+packet/review results and splits the writing packet into strictly smaller parts;
+it does not restart retrieval, graph search or the full ReAct workflow. Auth,
+billing, policy failures and other errors do not trigger that split. A minimal
+packet can still fail explicitly; provider output/context limits remain finite.
+This is not a claim that context growth is the sole cause of every MAX_TOKENS
+failure. Existing chronology source windows, report verification/repair and
+Word/Excel/table rendering are retained. Retrieval candidate budgets are not
+removed, and all-window review means all supplied evidence, not an exhaustive
+search of every project document.
+
+Initial verification: 78 focused backend tests plus four subtests, 173 web tests
+and TypeScript checks passed. The late-fact regression uses more than 600K source
+characters while each reviewer prompt remains under 13K characters. Fabricated
+quotations, interrupted provider output, missing finish metadata, hidden thoughts,
+retry duplication, concurrent-stream separation and disconnected-client saving
+are covered. Local Vitest ignores AppleDouble `._*` metadata files; test modules
+remain included.
+
+A real Gemini synthetic-source probe reviewed eight source windows, retained a
+planned 03 April 2010 finish separately from an actual 12 January 2011 inspection
+and GBP 25 cost, cited both correct file/page references, and produced a Markdown
+table. All eight checks passed. Public text arrived in six real deltas; first
+nonempty delta at 11.959 s, complete at 12.632 s including parallel source review.
+This is a controlled synthetic case, not a full-corpus latency or recall claim.
+
+Follow-up stream checks preserve HTTP 402 semantics for quota/credit/budget errors
+that occur after SSE headers, and redact dedicated-credential failures as 503.
+The long-review activity buffer now retains the newest 200 steps with monotonic
+sequence IDs, instead of dropping all subsequent states. SSE reads those IDs so
+final writing remains visible after long reviews without unbounded RAM history.
+Five targeted status/concurrency/disconnect/quota regressions pass. A broad
+source-overlay attempt initially passed 635 tests but failed two RAM regressions
+because its older base image lacked the previously committed ChunkStore budget
+fix; mounting that current source corrected the harness. The corrected focused
+resource/stream/evidence/prompt suite passes all 50 tests. Fresh immutable-image
+CI remains the release gate; no regression assertion was weakened.
+
+### Controller previews must not become the final evidence record
+
+The final agent-path audit found separate inherited truncations: ReAct stored
+only 1,500 characters per tool observation, the plan combiner sent only 3,000
+characters of all results, both excerpt helpers defaulted to the first six
+retrieved passages, and their prose calls overrode the task profile with 2,048 /
+1,024 output tokens. Those could lose facts before the final model even saw them.
+
+ReAct now retains full tool findings for the answer writer while its controller
+still receives bounded, explicitly incomplete previews. After tool work, final
+prose is handed to the writer instead of adopting a JSON controller draft. The
+reviewed `FINISH_HANDOFF` addition asks the controller to finish without writing
+that draft. Raw controller `thought` text is replaced in public activity by an
+operation label. The plan combiner and final agent writer use the same bounded
+source-review/section-writing path and task-profile output budget. Retrieved
+passages are not silently dropped after the sixth or reduced to a short snippet;
+explicit callers may still request a smaller preview. Derived research findings
+are labelled as findings, not invented original PDF references; existing owned
+source IDs/citation collections remain attached by the original routing code.
+
+The original agent system/decide/final prompt fingerprints remain unchanged;
+final prose wording is preserved in its renderer, and the additional handoff is
+protected separately. Prompt protection initially caught the intentional refactor;
+the original protected expressions were restored rather than updating old hashes
+or removing checks. The corrected focused suite passes 92 tests plus four subtests,
+including controller preview bounds, retained late tool facts, writer handoff,
+source identity, the plan's post-3K fact and passages beyond the sixth.
+
+A real synthetic ReAct/provider probe placed the planned date, actual date and
+GBP 25 cost after the old observation cut. All eight date/qualification/source/
+table/stream checks passed. The final answer arrived in eight real public deltas:
+first delta 14.157 s, complete 14.908 s including controller calls. This is a
+controlled tool fixture, not a replacement for a full-corpus latency/recall study.
+
+### Public delivery acceptance and terminal-writer boundary
+
+The first public selected-PDF check passed with real HTTPS/proxy/authentication:
+first text 7.631 s, complete 10.230 s, 20 deltas, five activity steps and one owned
+citation. Persisted/reopened text matches the canonical response. Word preserves
+the source/page appendix and native table; Excel export opens as a valid workbook.
+Invalid credentials and an unknown/unowned project were rejected before work.
+The first export probe mistakenly expected chronology-style Word footnotes from
+the chat formatter; it was corrected to check chat's existing source/page appendix.
+No formatter behavior or assertions about chronology footnotes were changed.
+
+The first real AGENT public query also preserved three owned citations, canonical
+history, Word sources/table and Excel. However, its 23.714 s first text included
+internal SQL/tool drafts before final composition at 82.211 s; complete time was
+89.399 s. This did not satisfy the requested terminal-stage boundary. ReAct tools
+and nonterminal plan steps now suppress public text callbacks while retaining
+normal activity reporting, accounting and their findings. The callback is restored
+for the final writer/last plan step. Two regressions prove internal narratives
+cannot become public deltas and request-local streaming is restored afterwards.
+The focused suite passes 94 tests plus four subtests after this correction.
+
+The 89-second complex cost case is a remaining latency finding, not evidence that
+source partitioning eliminated all SQL/agent delays. This patch preserves the
+research capability instead of skipping necessary tool work to advertise a shorter
+number. Report windowing, finite per-call budgets and terminal-only streaming solve
+different problems; full-corpus recall and repeated SQL-tool latency remain separate
+qualification/optimization work.
+
+### Qualified terminal-only release
+
+Runtime source **`f9363c100087d90953c80f7f0b88c17218d29b15`** is deployed as matched,
+healthy API/web images on `https://coair-test.duckdns.org`.
+[Full CI/deployment](https://github.com/CoAirai/CoAIr/actions/runs/40607944536)
+passed **648 API tests, 13 subtests, three PostgreSQL adapter tests and the Next.js
+build**. The web suite passes **173 tests**; TypeScript validation passes.
+[Native ARM64 qualification](https://github.com/CoAirai/CoAIr/actions/runs/40607944531)
+passed both image builds and **104 runtime tests** with clean dependency checks.
+The completed exact-commit deployment pin was cleared.
+
+Public HTTPS acceptance on this release:
+
+| Case | First public text | Complete | Delivery | Owned citations |
+|---|---:|---:|---|---:|
+| Selected PDF responsibilities/table | 6.046 s | 8.104 s | 20 real deltas | 1 |
+| Complex document/cost question, actual AGENT route | 85.285 s | 90.495 s | 36 real deltas, all after final-writer handoff at 84.228 s | 2 |
+| Repeat selected-PDF answer | 0.508 s | 0.536 s | One immediate cached snapshot; no artificial typing delay | 1 |
+
+All three reject invalid credentials and an unknown/unowned project, retain the
+canonical answer on reload, preserve Word source/page references and native
+tables, and produce a valid Excel workbook. Final drafts match canonical text.
+The AGENT run explicitly asserts no public answer text before its final writer.
+Temporary test conversations were deleted; existing user conversations, documents
+and account/billing records were preserved. Original RAG remained healthy and
+was not redeployed.
+
+The slow AGENT case remains open as a performance finding. Its own run-store
+record contains **14 model calls**: three SQL calls with 30.07 s cumulative model
+latency, four answer-synthesis calls with 29.64 s, two document-synthesis calls
+with 18.98 s, three controller/generation calls with 7.26 s, classification 1.36 s
+and reranking 1.01 s. These are cumulative call durations, not a separate
+non-overlapping timing model. This points the next optimization at repeated SQL /
+intermediate synthesis work; it is not evidence of unresolved context clipping,
+nor a claim that every slow research case is fixed.
+
+Reproducible scripts and the three current acceptance JSON files are retained in
+`/opt/coair-integration/qualification/four-stage-review`:
+`chat-source-stream-provider-probe.py`, `chat-agent-stream-provider-probe.py`,
+`chat-public-stream-probe.py` and `results/chat-stream-{acceptance,agent-acceptance,cache-acceptance}.json`.
+Owned temporary source overlays/scripts were removed after integrity checks.
+The real public corpus remains the three-PDF staging sample; long-input unit
+coverage and synthetic provider fixtures do not certify complete native-archive
+recall. These features introduce no account/payment/database schema migration or
+new runtime library, and do not qualify fully local DGX/vLLM inference.
+
+
+## Main synchronization — 2026-11-01
+
+Imported the UK/US spreadsheet column-date policy, auth test isolation, fresh PostgreSQL startup fix and LF-safe VPS deployment updates from main. The later streaming, long-evidence and source validation work remains intact. Already converted spreadsheet dates require deliberate re-import; no customer corpus was rewritten.

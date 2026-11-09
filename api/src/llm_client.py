@@ -48,6 +48,33 @@ class LLMIncompleteResponseError(RuntimeError):
     """The provider stopped before producing a complete response."""
 
 
+def _response_finish_reason(response) -> str:
+    """Normalize native Gemini and OpenAI-compatible/Anthropic stop metadata."""
+    reason = None
+    for payload in (response, getattr(response, "raw", None)):
+        if payload is None:
+            continue
+        def field(value, *names):
+            for name in names:
+                result = value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+                if result is not None:
+                    return result
+            return None
+        candidates = field(payload, "candidates")
+        choices = field(payload, "choices")
+        reason = (field(candidates[0], "finish_reason", "finishReason") if candidates else None)
+        if reason is None and choices:
+            reason = field(choices[0], "finish_reason")
+        if reason is None:
+            reason = field(payload, "stop_reason", "finish_reason")
+        if reason is not None:
+            break
+    normalized = str(getattr(reason, "name", reason) or "STOP").upper().rsplit(".", 1)[-1]
+    return {"LENGTH": "MAX_TOKENS", "END_TURN": "STOP", "STOP_SEQUENCE": "STOP"}.get(
+        normalized, normalized,
+    )
+
+
 class LLMInvalidStructuredOutputError(RuntimeError):
     """A structured response failed syntactic or schema validation."""
 
@@ -442,12 +469,51 @@ def _gemini_generate_native(
         config_kwargs["response_json_schema"] = _gemini_compatible_response_schema(
             response_schema
         )
-    resp = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(**config_kwargs),
-    )
-    text = (resp.text or "").strip()
+    from .answer_stream import answer_stream_var, publish_answer
+    if answer_stream_var.get() and not (json_mode or response_schema):
+        chunks = []
+        resp = None
+        try:
+            for chunk in client.models.generate_content_stream(
+                model=model, contents=prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
+            ):
+                if getattr(chunk, "usage_metadata", None) is not None:
+                    usage_metadata = chunk.usage_metadata
+                candidates = getattr(chunk, "candidates", None) or []
+                if candidates and getattr(candidates[0], "finish_reason", None):
+                    finish_candidates = candidates
+                resp = chunk
+                # Read only public content parts. Never forward thought parts or
+                # reasoning signatures to the browser.
+                candidates = getattr(chunk, "candidates", None) or []
+                parts = getattr(getattr(candidates[0], "content", None), "parts", None) if candidates else None
+                delta = "".join(getattr(part, "text", "") or "" for part in (parts or [])
+                                if not getattr(part, "thought", False))
+                if delta:
+                    chunks.append(delta)
+                    publish_answer("answer_delta", text=delta)
+            text = "".join(chunks).strip()
+        except Exception:
+            if not chunks:
+                raise
+            # Preserve known usage for charging before failing a broken stream.
+            text = "".join(chunks).strip()
+            finish_candidates = None
+        finally:
+            client.close()
+        from types import SimpleNamespace
+        resp = SimpleNamespace(
+            candidates=locals().get("finish_candidates") or
+                [SimpleNamespace(finish_reason="STREAM_INCOMPLETE")],
+            usage_metadata=locals().get("usage_metadata"),
+        )
+    else:
+        resp = client.models.generate_content(
+            model=model, contents=prompt,
+            config=types.GenerateContentConfig(**config_kwargs),
+        )
+        text = (resp.text or "").strip()
     comp_tok = 0
     thoughts_tok = 0
     um = getattr(resp, "usage_metadata", None)
@@ -668,7 +734,37 @@ def effective_providers(providers: List[str]) -> List[str]:
 
 # ── Core API ─────────────────────────────────────────────────
 
-def generate_text(
+def generate_text(*args, **kwargs) -> LLMResponse:
+    from .answer_stream import answer_stream_var, answer_append_var, publish_answer
+    enabled = (kwargs.get("task_type", "generation") in
+               {"chat_answer", "answer_synthesis", "document_synthesis"}
+               and not kwargs.get("json_mode") and not kwargs.get("response_schema"))
+    callback = answer_stream_var.get()
+    token = None
+    if callback and enabled:
+        from backend.tasks.query_progress import report_step, query_progress, query_request_var
+        activity = query_progress.get(query_request_var.get())
+        if not activity or not activity.steps or activity.steps[-1].kind != "answer":
+            report_step("answer", "Writing the answer",
+                        "Combining the retrieved project evidence into the response")
+        publish_answer("answer_start", append=answer_append_var.get())
+    elif callback:
+        token = answer_stream_var.set(None)
+    try:
+        result = _generate_text(*args, **kwargs)
+        if callback and enabled and result.usage.cache_hit:
+            publish_answer("answer_delta", text=result.text)
+        return result
+    except Exception:
+        if callback and enabled:
+            publish_answer("answer_reset")
+        raise
+    finally:
+        if token is not None:
+            answer_stream_var.reset(token)
+
+
+def _generate_text(
     prompt: str,
     *,
     system: str = "",
@@ -885,6 +981,9 @@ def generate_text(
     retry_count = max(int(LLM_MAX_RETRIES), int(profile.provider_retries))
     original_prompt = prompt
     for attempt in range(1 + retry_count):
+        if attempt:
+            from .answer_stream import publish_answer
+            publish_answer("answer_retry")
         try:
             if chronology_budget_active_var.get():
                 call_count = chronology_call_count_var.get()
@@ -978,14 +1077,7 @@ def generate_text(
                 f"${cost:.6f} | {elapsed_ms:.0f}ms"
             )
 
-            finish_reason = ""
-            try:
-                value = response.candidates[0].finish_reason
-                finish_reason = str(getattr(value, "name", value) or "").upper()
-                if "." in finish_reason:
-                    finish_reason = finish_reason.rsplit(".", 1)[-1]
-            except Exception:
-                pass
+            finish_reason = _response_finish_reason(response)
             usage.finish_reason = finish_reason or "STOP"
 
             cacheable = bool(text)
@@ -1219,8 +1311,13 @@ def generate_multimodal_text(
     model = _model_for_task(task_type)
     if model not in LLM_PRICING:
         raise ValueError(f"No pricing configured for model: {model}")
+    profile = get_task_profile(task_type)
+    max_tokens = clamp_output_tokens(model, max_tokens, profile)
     started = time.time()
-    client = genai.Client(api_key=_google_api_key())
+    client = genai.Client(
+        api_key=_google_api_key(),
+        http_options=types.HttpOptions(timeout=profile.timeout_seconds * 1000),
+    )
     response = client.models.generate_content(
         model=model,
         contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)],
@@ -1233,6 +1330,7 @@ def generate_multimodal_text(
             ),
         ),
     )
+    finish_reason = _response_finish_reason(response)
     meta = getattr(response, "usage_metadata", None)
     prompt_tokens = int(getattr(meta, "prompt_token_count", 0) or estimate_tokens(prompt))
     candidates = int(getattr(meta, "candidates_token_count", 0) or estimate_tokens(response.text or ""))
@@ -1248,9 +1346,7 @@ def generate_multimodal_text(
         cache_hit=False, provider="gemini", reasoning_tokens=thoughts,
         cached_tokens=cached,
         task_type=task_type,
-        finish_reason=str(getattr(
-            (getattr(response, "candidates", None) or [None])[0], "finish_reason", "STOP"
-        )),
+        finish_reason=finish_reason,
     )
     record_usage(prompt_tokens, completion_tokens, usage.cost_estimate)
     _attribute_to_current_user(
@@ -1259,7 +1355,13 @@ def generate_multimodal_text(
         usage_source="provider" if meta else "estimated", task_type=task_type,
     )
     _record_run_usage(usage)
-    return LLMResponse(text=(response.text or "").strip(), usage=usage, raw=response)
+    # Charge the actual provider work, but never index truncated OCR as complete.
+    if finish_reason not in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+        raise LLMIncompleteResponseError(f"model_finish_{finish_reason.lower()}")
+    if not (response.text or "").strip():
+        raise LLMIncompleteResponseError("model_output_empty")
+    return LLMResponse(text=response.text.strip(), usage=usage, raw=response,
+                       finish_reason=finish_reason)
 
 
 def generate_response_json(

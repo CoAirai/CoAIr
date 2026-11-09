@@ -78,18 +78,18 @@ def _source_id(project_id: str, doc_id: str, anchor: str, excerpt: str) -> str:
 def _to_evidence(project_id: str, source: Dict) -> EvidenceItem | None:
     file_name = str(source.get("file_name") or source.get("doc_name") or "").strip()
     doc_id = str(source.get("doc_id") or file_name).strip()
-    text = str(source.get("text_snippet") or source.get("highlight_text")
-               or source.get("text") or "").strip()
+    text = str(source.get("text") or source.get("text_snippet")
+               or source.get("highlight_text") or "").strip()
     if not file_name or not text:
         return None
     try:
         page = int(source.get("page_number") or 1)
     except Exception:
-        page = 1
+        page = None
     kind = "email" if file_name.lower().endswith((".eml", ".msg")) else (
         "excel" if file_name.lower().endswith((".xlsx", ".xls", ".csv")) else "document"
     )
-    excerpt = text[:1200]
+    excerpt = text
     if kind == "excel":
         anchor = (
             f"sheet:{source.get('sheet') or ''}|rows:"
@@ -99,6 +99,8 @@ def _to_evidence(project_id: str, source: Dict) -> EvidenceItem | None:
         anchor = f"email:{source.get('subject') or ''}"
     else:
         anchor = f"page:{page}"
+    if source.get("chunk_id") or source.get("evidence_offset"):
+        anchor += f"|chunk:{source.get('chunk_id') or ''}|offset:{source.get('evidence_offset', 0)}"
     sid = _source_id(project_id, doc_id, anchor, excerpt)
     return EvidenceItem(
         source_id=sid, doc_id=doc_id, file_name=file_name,
@@ -139,26 +141,28 @@ def _rank_normalised(rows: Sequence[Dict]) -> List[Dict]:
 
 
 def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12,
-                      doc_ids: Sequence[str] = ()) -> List[EvidenceItem]:
+                      doc_ids: Sequence[str] = (), *, stats: Optional[Dict] = None) -> List[EvidenceItem]:
     """Run dense/hybrid and lexical lanes concurrently per research question."""
     from .document_rag import get_document_rag
     from .lexical_index import get_lexical_index
     from .project_context import set_current_project
 
+    if not project_id:
+        raise ValueError("project_required")
     set_current_project(project_id, "editor")
     rag = get_document_rag()
     lexical = get_lexical_index()
 
+    audit = stats if stats is not None else {}
+    audit.update({"queries": [], "lane_errors": []})
+
     def dense(question: str) -> List[Dict]:
-        try:
-            from .jargon_manager import set_current_prepared_query
-            set_current_prepared_query(question)
-            return (rag.query(
-                question, top_k=top_k, synthesize=False, rerank=True,
-                project_id=project_id, doc_ids=list(doc_ids) or None,
-            ) or {}).get("sources", [])
-        except Exception:
-            return []
+        from .jargon_manager import set_current_prepared_query
+        set_current_prepared_query(question)
+        return (rag.query(
+            question, top_k=top_k, synthesize=False, rerank=True,
+            project_id=project_id, doc_ids=list(doc_ids) or None,
+        ) or {}).get("sources", [])
 
     def bm25(question: str) -> List[Dict]:
         return lexical.search_chunks(
@@ -170,47 +174,41 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
     # and carry user, project, billing and progress context into each worker.
     questions = list(dict.fromkeys(q.strip() for q in questions if q.strip()))
     collected: List[Dict] = []
-    with ThreadPoolExecutor(max_workers=min(6, max(2, len(questions) * 2))) as pool:
-        futures = []
-        for question in questions:
-            futures.extend((
-                pool.submit(copy_context().run, dense, question),
-                pool.submit(copy_context().run, bm25, question),
-            ))
-        for future in futures:
-            try:
-                collected.extend(_rank_normalised(future.result()))
-            except Exception:
-                pass
-    # Relevance order, not submission order: the neighbour lane below reads the
-    # first 60, and those used to be whatever the first two or three research
-    # questions happened to return.
-    collected.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
+    from time import perf_counter
 
-    # Add adjacent pages from the scoped chunk mirror. A top-ranked sentence
-    # often depends on the paragraph immediately before or after it; this lane
-    # provides that context without broadening to another project.
+    def timed_search(function, question):
+        started = perf_counter()
+        try:
+            return function(question), "", round((perf_counter()-started)*1000, 2)
+        except Exception as exc:
+            return [], type(exc).__name__, round((perf_counter()-started)*1000, 2)
+
+    with ThreadPoolExecutor(max_workers=min(6, max(2, len(questions) * 2))) as pool:
+        futures = [(question, lane, pool.submit(copy_context().run, timed_search, function, question))
+                   for question in questions for lane, function in (("dense", dense), ("bm25", bm25))]
+        for question, lane, future in futures:
+            rows, error, elapsed_ms = future.result()
+            rows = _rank_normalised(rows)
+            audit["queries"].append({"query":question, "lane":lane, "hits":len(rows),
+                                      "elapsed_ms":elapsed_ms, "failed":bool(error)})
+            if error:
+                audit["lane_errors"].append({"query":question, "lane":lane, "error_type":error})
+            collected.extend(rows)
+    hydration_started = perf_counter()
+    collected.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
+    from .report_source_expansion import expand_report_sources
     try:
         from .chunk_store import get_chunk_store
         con = get_chunk_store().connection()
-        neighbours: List[Dict] = []
-        for source in collected[:60]:
-            file_name = str(source.get("file_name") or source.get("doc_name") or "")
-            doc_id = str(source.get("doc_id") or "")
-            page = int(source.get("page_number") or 1)
-            rows = con.execute(
-                "SELECT doc_id,file_name,page_number,text FROM chunks WHERE project_id=? "
-                "AND (doc_id=? OR file_name=?) AND page_number BETWEEN ? AND ?",
-                [project_id, doc_id, file_name, max(1, page - 1), page + 1],
-            ).fetchall()
-            neighbours.extend({
-                "doc_id": row[0], "file_name": row[1], "page_number": row[2],
-                "text": row[3], "score": float(source.get("score") or 0) * 0.85,
-            } for row in rows)
-        collected.extend(neighbours)
     except Exception:
-        pass
-
+        con = None
+    try:
+        from .document_registry import get_document_registry
+        registry = get_document_registry()
+    except Exception:
+        registry = None
+    collected = expand_report_sources(project_id, collected, con=con,
+                                      registry=registry, doc_ids=doc_ids, stats=audit)
     by_id: Dict[str, EvidenceItem] = {}
     for raw in collected:
         item = _to_evidence(project_id, raw)
@@ -219,7 +217,10 @@ def retrieve_evidence(project_id: str, questions: Sequence[str], top_k: int = 12
         current = by_id.get(item.source_id)
         if current is None or item.score > current.score:
             by_id[item.source_id] = item
-    return sorted(by_id.values(), key=lambda x: x.score, reverse=True)
+    audit["hydration_ms"] = round((perf_counter()-hydration_started)*1000, 2)
+    audit["evidence_passages"] = len(by_id)
+    audit["evidence_characters"] = sum(len(item.excerpt) for item in by_id.values())
+    return sorted(by_id.values(), key=lambda x: (-x.score, x.doc_id, x.page or 0, x.source_id))
 
 
 def _evidence_payload(evidence: Sequence[EvidenceItem]) -> str:
@@ -333,6 +334,15 @@ def _generate_chronology_v2(
     stage("evidence_pack", .2)
     selection_stats: Dict = {}
     event_discovery_audit: Dict = {}
+    retrieval_rounds: List[Dict] = []
+    coverage_repair: Dict = {}
+
+    def tracked_retrieve(project, queries, doc_ids=()):
+        details: Dict = {}
+        found = retrieve_evidence(project, queries, doc_ids=doc_ids, stats=details)
+        retrieval_rounds.append(details)
+        return found
+
     if source_doc_ids:
         # Read every selected passage across bounded extraction calls. A long
         # document must not lose its later pages to a total/per-file pack cap.
@@ -351,7 +361,7 @@ def _generate_chronology_v2(
         from .chronology_discovery import discover_chronology_evidence
         discovery = discover_chronology_evidence(
             project_id=project_id, prepared=prepared, date_from=date_from, date_to=date_to,
-            fallback=lambda queries, doc_ids: retrieve_evidence(
+            fallback=lambda queries, doc_ids: tracked_retrieve(
                 project_id, queries, doc_ids=doc_ids,
             ),
         )
@@ -359,9 +369,20 @@ def _generate_chronology_v2(
         selection = select_pack(discovery.evidence, facets=COVERAGE_FACETS, max_chars=None)
         evidence = selection.evidence
         selection_stats = selection.stats
+        from .report_evidence_ledger import repair_chronology_evidence
+        stage("coverage_repair", .24)
+        evidence = repair_chronology_evidence(
+            evidence, prepared, project_id=project_id, retrieve=tracked_retrieve,
+            audit=coverage_repair,
+        )
         chosen = sorted({item.doc_id for item in evidence if item.doc_id})
     if not evidence:
         raise ValueError("no_evidence")
+    from .report_evidence_ledger import evidence_ledger
+    ledger = evidence_ledger(
+        evidence, scope="selected_documents" if source_doc_ids else "topic_retrieval",
+        retrieval_rounds=retrieval_rounds, repair=coverage_repair,
+    )
 
     # Provider calls are governed by credits, bounded research rounds and
     # request timeouts. Do not make completion depend on corpus/cache-specific
@@ -391,7 +412,7 @@ def _generate_chronology_v2(
         load_step=load_step, save_step=save_step,
     )
     verification_hash = hashlib.sha256(json.dumps(
-        {"chronology": response, "policy": "claim-and-event-date-v1"}, sort_keys=True, ensure_ascii=False,
+        {"chronology": response, "policy": "claim-and-event-date-v2"}, sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
     stage("verification", .82)
     verification_step = load_step("verification", verification_hash) if load_step else None
@@ -418,6 +439,12 @@ def _generate_chronology_v2(
                 "verification", verification_hash, "ready",
                 {"decisions": verification}, "",
             )
+    from .chronology_claim_repair import repair_rejected_claims
+    response, verification, claim_repair_stats = repair_rejected_claims(
+        chronology=response, verification=verification, evidence=evidence, prepared=prepared,
+        cache_context=job_id or f"project:{project_id}", load_step=load_step, save_step=save_step,
+        on_repair=lambda: stage("claim_repair", .86),
+    )
     by_id = {e.source_id: e for e in evidence}
     entries: List[ChronologyEntry] = []
     removed = 0
@@ -451,8 +478,10 @@ def _generate_chronology_v2(
         " ".join(str(c.get("text") or "") for c in raw.get("claims", [])),
     ))
     original_event_indexes = {id(raw): index for index, raw in enumerate(response.get("entries", []))}
+    retained_event_count = 0
     for index, raw in enumerate(ordered_raw, 2):
         claims = []
+        supported_indexes = []
         event_index = original_event_indexes[id(raw)]
         for claim_index, item in enumerate(raw.get("claims", [])):
             claim = VerifiedClaim(
@@ -469,28 +498,45 @@ def _generate_chronology_v2(
             )
             if claim.supported:
                 claims.append(claim)
+                supported_indexes.append(claim_index)
             else:
                 removed += 1
-        if raw.get("event_date") and not verification.get(f"date:{event_index}", False):
-            raw = {**raw, "event_date": "", "date_precision": "unknown",
-                   "date_source": "unresolved", "date_evidence": ""}
-        if raw.get("date_precision") == "inferred" and claims:
-            claims[0].is_inference = True
-            if not claims[0].inference_basis:
-                claims[0].inference_basis = ("The event date is not established by the cited record"
-                    if not raw.get("event_date") else "The cited record establishes only an approximate event date")
-        if not claims:
-            continue
-        raw = _enforce_event_date({**raw, "claims": [asdict(c) for c in claims]}, evidence)
-        entries.append(ChronologyEntry(
-            entry_ref=f"6.{issue_number}.{index}", event_date=str(raw.get("event_date") or ""),
-            date_precision=str(raw.get("date_precision") or "unknown"), claims=claims,
-            date_source=str(raw.get("date_source") or "unresolved"),
-            date_evidence=str(raw.get("date_evidence") or ""),
-            parties=[str(x) for x in raw.get("parties", [])],
-            event_type=str(raw.get("event_type") or "event"),
-            conflicting_positions=[str(x) for x in raw.get("conflicting_positions", [])],
-        ))
+        retained_event_count += bool(claims)
+        groups = [(raw, claims)]
+        if raw.get("event_date") and (
+            not verification.get(f"date:{event_index}", False)
+            or any(verification.get(f"date:{event_index}:{original_index}") is False
+                   for original_index in supported_indexes)
+        ):
+            undated = {**raw, "event_date": "", "date_precision": "unknown",
+                       "date_source": "unresolved", "date_evidence": ""}
+            timed = [claim for claim, original_index in zip(claims, supported_indexes)
+                     if verification.get(f"date:{event_index}:{original_index}", False)]
+            if 0 < len(timed) < len(claims):
+                # Preserve the verified target/action date; keep background
+                # observations as a separate undated entry, without dropping it.
+                remaining = [claim for claim in claims if claim not in timed]
+                groups = [(raw, timed), (undated, remaining)]
+            else:
+                groups = [(undated, claims)]
+        for raw, claims in groups:
+            if raw.get("date_precision") == "inferred" and claims:
+                claims[0].is_inference = True
+                if not claims[0].inference_basis:
+                    claims[0].inference_basis = ("The event date is not established by the cited record"
+                        if not raw.get("event_date") else "The cited record establishes only an approximate event date")
+            if not claims:
+                continue
+            raw = _enforce_event_date({**raw, "claims": [asdict(c) for c in claims]}, evidence)
+            entries.append(ChronologyEntry(
+                entry_ref=f"6.{issue_number}.{index}", event_date=str(raw.get("event_date") or ""),
+                date_precision=str(raw.get("date_precision") or "unknown"), claims=claims,
+                date_source=str(raw.get("date_source") or "unresolved"),
+                date_evidence=str(raw.get("date_evidence") or ""),
+                parties=[str(x) for x in raw.get("parties", [])],
+                event_type=str(raw.get("event_type") or "event"),
+                conflicting_positions=[str(x) for x in raw.get("conflicting_positions", [])],
+            ))
     if len(entries) < 2:
         raise ValueError("insufficient_evidence")
     entries[1:] = sorted(entries[1:], key=lambda entry: entry.event_date or "9999-99-99")
@@ -516,9 +562,12 @@ def _generate_chronology_v2(
         extraction_stats=extraction_stats,
     )
     assessment.pack["selection"] = selection_stats
+    assessment.pack["extraction_batches_reused"] = int(extraction_stats.get("batches_reused", 0))
+    assessment.pack["claim_repair"] = claim_repair_stats
 
     discovery_reasons = list(event_discovery_audit.get("partial_reasons", []))
-    final_reasons = list(dict.fromkeys([*assessment.reasons, *discovery_reasons]))
+    repair_reasons = ["claim_repair_incomplete"] if claim_repair_stats["unresolved"] else []
+    final_reasons = list(dict.fromkeys([*assessment.reasons, *discovery_reasons, *ledger["partial_reasons"], *repair_reasons]))
     return {
         "entries": [asdict(e) for e in entries],
         "evidence": [asdict(e) for e in evidence],
@@ -526,9 +575,10 @@ def _generate_chronology_v2(
         "removed_claims": removed, "audit": {
             **asdict(audit), "candidate_clusters": len(candidates),
             "synthesized_events": len(response.get("entries", [])),
-            "verifier_removed_events": len(response.get("entries", [])) - (len(entries) - 1),
+            "verifier_removed_events": len(response.get("entries", [])) - retained_event_count,
+            "split_event_entries": (len(entries) - 1) - retained_event_count,
             "issued_events": len(entries) - 1,
-        }, "docx": blob, "research_audit": {"event_discovery": event_discovery_audit},
+        }, "docx": blob, "research_audit": {"event_discovery": event_discovery_audit, "evidence_ledger": ledger},
         "model": _model_for_task("report_structured"), "pipeline_version": PIPELINE_VERSION,
         "prompt_version": PROMPT_VERSION,
         "coverage": pack_coverage,

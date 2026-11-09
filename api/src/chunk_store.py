@@ -62,12 +62,12 @@ class ChunkStore:
             sync_chunks_from_gcs()
         except Exception:
             pass
+        settings = {}
+        if os.getenv("COAIR_DUCKDB_MEMORY_LIMIT"):
+            settings["memory_limit"] = os.environ["COAIR_DUCKDB_MEMORY_LIMIT"]
+        if os.getenv("COAIR_DUCKDB_THREADS"):
+            settings["threads"] = int(os.environ["COAIR_DUCKDB_THREADS"])
         try:
-            settings = {}
-            if os.getenv("COAIR_DUCKDB_MEMORY_LIMIT"):
-                settings["memory_limit"] = os.environ["COAIR_DUCKDB_MEMORY_LIMIT"]
-            if os.getenv("COAIR_DUCKDB_THREADS"):
-                settings["threads"] = int(os.environ["COAIR_DUCKDB_THREADS"])
             self._con = (duckdb.connect(str(CHUNKS_DB), config=settings) if settings
                          else duckdb.connect(str(CHUNKS_DB)))
             self._con.execute(
@@ -84,7 +84,12 @@ class ChunkStore:
         except Exception as e:
             logger.error(f"[ChunkStore] init failed: {e}")
             # In-memory fallback so the app still runs (lexical lane degrades).
-            self._con = duckdb.connect(":memory:")
+            if self._con is not None:
+                self._con.close()
+            # A degraded lexical lane must retain the operator's RAM/thread
+            # budget. Invalid explicit settings must fail rather than creating
+            # an unbudgeted in-memory connection.
+            self._con = duckdb.connect(":memory:", config=settings)
             self._con.execute(
                 "CREATE TABLE IF NOT EXISTS chunks ("
                 "chunk_id VARCHAR PRIMARY KEY, doc_id VARCHAR, "
